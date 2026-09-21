@@ -8,13 +8,13 @@ version = "0.0.1.dev0"
 description = "Local Tuya control: rustuya-bridge -> tuya2ildevice -> IL (ildevice). HA-independent core."
 requires-python = ">=3.13"
 license = "MIT"
-dependencies = ["tuya2ildevice", "il-ha", "paho-mqtt>=2.0"]
+dependencies = ["tuya2ildevice[host]"]
 
 [project.scripts]
 rustuya-local = "rustuya_local.cli:main"
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-asyncio", "jsonschema"]
+test = ["pytest", "pytest-asyncio", "il-ha"]      # il-ha: the IL consumer the end-to-end tests read the result with
 fullstack = ["pyrustuyabridge>=0.3.0,<0.4", "tuyamock"]      # the real bridge and the device emulator, for tests/e2e/test_full_stack*.py
 
 # Local sibling checkouts until the packages are on PyPI.

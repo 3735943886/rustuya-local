@@ -4,10 +4,10 @@ import json
 import pytest
 from devices import lamp
 from il_ha.core import IlModel
-from il_ha.core.memory import InProcessTransport
+from tuya2ildevice.host import InProcessTransport
 from tuya2ildevice import BridgeTopics, Hub, IlTopics
 
-from rustuya_local.runner import Runner
+from tuya2ildevice.host import Runner
 
 
 class Recorder:

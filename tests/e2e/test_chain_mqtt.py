@@ -7,8 +7,8 @@ from devices import lamp
 from il_ha.core import IlModel
 from tuya2ildevice import BridgeTopics, Hub, IlTopics
 
-from rustuya_local.runner import Runner
-from rustuya_local.transports import MqttTransport
+from tuya2ildevice.host import Runner
+from tuya2ildevice.host import MqttTransport
 from test_chain_in_process import Recorder, Timers
 
 

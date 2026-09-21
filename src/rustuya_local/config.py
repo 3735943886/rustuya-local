@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .devices import load_devices
+from tuya2ildevice.host import load_devices
 
 
 @dataclass

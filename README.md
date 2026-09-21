@@ -9,13 +9,12 @@ rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il
  raw LAN dps             Runner + tuya2ildevice.Hub      descriptors, values, commands (il-mqtt.md)
 ```
 
-- **tuya2ildevice** (sibling repo) is the only place that interprets Tuya: it turns a device's cloud schema and its dps
-  into an IL descriptor, values and events, and IL commands back into dps. It does no I/O.
-- **rustuya-local** runs it: `Runner` connects a Hub to two transports (the bridge's broker and the IL broker), executes
-  its publishes and timers, keeps the Last Will presence (il-mqtt.md M-12) and lets devices be added or removed at
-  run time.
-- **il-ha** (sibling repo) turns IL descriptors into Home Assistant entities. Its Home Assistant-free `core` is also
-  what the tests here use as the consumer.
+- **tuya2ildevice** (sibling repo) is the only place that interprets Tuya *and* the host around it: `tuya2ildevice.host`
+  runs the Hub on MQTT (Last Will presence, reconnects, runtime add/remove, following `tuyadevices.json`, the bridge's
+  own topic templates).
+- **rustuya-local** is only the deployment: a configuration file and the `rustuya-local run` daemon on top of that host
+  (about 150 lines). It does not depend on il-ha.
+- **il-ha** (sibling repo) turns IL descriptors into Home Assistant entities; it never sees Tuya.
 
 ## Run
 
@@ -36,19 +35,20 @@ bridge's own topic templates are read from its retained `{root}/bridge/config`.
 .venv/bin/python -m pytest
 ```
 
-- `tests/chain/`: every Home Assistant core tuya fixture (324 devices) through tuya2ildevice and il-ha's planner, compared
-  with core's own entity snapshots, per entity (platform, class, category, unit). The differences that remain are listed
-  and explained in `test_props.py`.
-- `tests/e2e/`: bridge → Runner → IL → consumer model, in one process and over a real `mosquitto` (skipped if it is
-  not installed), including the Last Will and reconnect, and the daemon as a subprocess.
+Everything here needs the sibling repos and, for the last two groups, `mosquitto`, `pyrustuya-bridge` and `tuyamock`
+(`pip install -e ".[test,fullstack]"`); those are skipped when missing. Parity with Home Assistant core's fixtures lives in
+`tuya2ildevice/tests/chain`, the wire and topic vectors in `ildevice/vectors`.
+
+- `tests/unit/`: the configuration.
+- `tests/e2e/test_chain_*.py`, `test_daemon.py`: the runner with il-ha's consumer model on the other side, in one process
+  and over a real broker; the daemon as a subprocess.
 - `tests/e2e/test_full_stack*.py`: the real rustuya-bridge (`pyrustuyabridge`, in process) and Tuya device emulators
   (`tuyamock`) around the daemon: state, commands, rejections, a device dropping off and returning, a daemon restart, and a
   differential check that 38 real device shapes come out of the whole chain exactly as `tuya2ildevice` computes them.
-- `tests/unit/`: configuration, device file, bridge config.
 
 ## Status
 
 Planning, progress and open decisions: `docs/REDESIGN.md`. The earlier Home Assistant-only implementation is kept in
-`legacy/` until the new one is verified; `docs/STATUS.md` describes it.
+`legacy/` (not in git) until the new one is verified; `docs/STATUS.md` describes it.
 
 Licence and third-party notices: `THIRD_PARTY_NOTICES.md`.

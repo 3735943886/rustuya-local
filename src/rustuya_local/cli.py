@@ -8,12 +8,9 @@ import logging
 import signal
 
 from tuya2ildevice import BridgeTopics, Hub, IlTopics
+from tuya2ildevice.host import DeviceWatcher, MqttTransport, Runner, read_bridge_config
 
-from .bridge import read_bridge_config, topic_templates
 from .config import Config
-from .devices import DeviceWatcher
-from .runner import Runner
-from .transports import MqttTransport
 
 log = logging.getLogger(__name__)
 
@@ -22,14 +19,12 @@ async def run(config: Config) -> None:
     bridge = MqttTransport(config.bridge.host, config.bridge.port, client_id="rustuya-local-bridge",
                            username=config.bridge.username, password=config.bridge.password)
     await bridge.connect()
-    topics, root = {}, config.root
     found = await read_bridge_config(bridge, config.root)
-    if found is not None:
-        root, topics = topic_templates(found, config.root)
-    else:
+    if found is None:
         log.warning("no configuration from the bridge on %s/bridge/config; using the default topic layout", config.root)
-    hub = Hub(config.devices, bridge=BridgeTopics(root, **topics), il=IlTopics(config.prefix, config.source),
-              **config.hub_options)
+    topics = BridgeTopics.from_config(found or {}, config.root)
+    root = topics.root
+    hub = Hub(config.devices, bridge=topics, il=IlTopics(config.prefix, config.source), **config.hub_options)
     will = hub.presence(False)                                           # M-12
     il = MqttTransport(config.il.host, config.il.port, client_id="rustuya-local-il", username=config.il.username,
                        password=config.il.password, will=(will.topic, will.payload, will.qos, will.retain))

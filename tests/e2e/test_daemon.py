@@ -7,7 +7,7 @@ import sys
 
 from devices import lamp
 
-from rustuya_local.transports import MqttTransport
+from tuya2ildevice.host import MqttTransport
 
 
 async def test_the_daemon_publishes_devices_and_goes_offline_on_sigterm(broker, tmp_path):
