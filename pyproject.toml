@@ -8,9 +8,11 @@ version = "0.0.1.dev0"
 description = "Local Tuya control: rustuya-bridge -> tuya2ildevice -> IL (ildevice). HA-independent core."
 requires-python = ">=3.13"
 license = "MIT"
-dependencies = ["tuya2ildevice[host]"]
-# rustuya-manager (custom_components/rustuya_local's config flow) and pyrustuyabridge (embedded bridge) are optional
-# at the package level (the HA manifest pulls them in); declared here too so the venv used for this repo's tests has them.
+dependencies = ["tuya2ildevice[host]>=0.2.0,<0.3", "pyrustuyabridge>=0.3.0,<0.4"]
+# rustuya-manager (custom_components/rustuya_local's config flow) is optional at the package level (the HA manifest
+# pulls it in); declared here too so the venv used for this repo's tests has it. pyrustuyabridge is a base dependency
+# now (not just for the embedded bridge): rustuya-local's own bridge_client uses it to interpret rustuya-bridge's
+# configurable MQTT topic/payload templates correctly, for BOTH bridge modes.
 
 [project.scripts]
 rustuya-local = "rustuya_local.cli:main"
@@ -18,11 +20,11 @@ rustuya-local = "rustuya_local.cli:main"
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio", "il-ha"]      # il-ha: the IL consumer the end-to-end tests read the result with
 test-ha = ["pytest-homeassistant-custom-component"]   # custom_components/rustuya_local's own tests
-fullstack = ["pyrustuyabridge>=0.3.0,<0.4", "tuyamock"]      # the real bridge and the device emulator, for tests/e2e/test_full_stack*.py
+fullstack = ["tuyamock"]      # the device emulator, for tests/e2e/test_full_stack*.py (pyrustuyabridge is now a base dep)
 
-# Local sibling checkouts until the packages are on PyPI.
+# Local sibling checkouts until the packages are on PyPI. tuya2ildevice is on PyPI now (see `dependencies` above);
+# the rest are not yet.
 [tool.uv.sources]
-tuya2ildevice = { path = "../tuya2ildevice", editable = true }
 il-ha = { path = "../il-ha", editable = true }
 tuyamock = { path = "../tuyamock", editable = true }
 rustuya-manager = { path = "../rustuya-manager", editable = true }

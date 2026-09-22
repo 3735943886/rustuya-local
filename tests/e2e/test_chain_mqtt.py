@@ -1,11 +1,13 @@
-"""The same chain over a real MQTT broker (mosquitto): bridge simulator -> Runner -> il-ha's model, three clients."""
+"""The same chain over a real MQTT broker (mosquitto): bridge simulator -> BridgeClient -> Runner -> il-ha's model,
+four clients."""
 import asyncio
 import json
 
 import pytest
 from devices import lamp
 from ildevice.core import IlModel
-from tuya2ildevice import BridgeTopics, Hub, IlTopics
+from rustuya_local.bridge_client import BridgeClient
+from tuya2ildevice import Hub, IlTopics
 
 from tuya2ildevice.host import Runner
 from tuya2ildevice.host import MqttTransport
@@ -22,7 +24,7 @@ async def until(cond, timeout=5.0):
 
 @pytest.fixture
 async def mqtt_chain(broker):
-    hub = Hub([lamp()], bridge=BridgeTopics("rustuya"), il=IlTopics("il", "tuya"))
+    hub = Hub([lamp()], il=IlTopics("il", "tuya"))
     will = hub.presence(False)
     bridge_side = MqttTransport("127.0.0.1", broker, client_id="t2il-bridge")
     il_side = MqttTransport("127.0.0.1", broker, client_id="t2il-il", will=(will.topic, will.payload, will.qos, will.retain))
@@ -30,11 +32,14 @@ async def mqtt_chain(broker):
     sim = MqttTransport("127.0.0.1", broker, client_id="bridge-sim")
     for t in (bridge_side, il_side, consumer, sim):
         await t.connect()
+    bridge_client = BridgeClient(bridge_side, "rustuya")
     sink = Recorder()
     model = IlModel(consumer, sink, Timers())
     await model.start()
-    runner = Runner(hub, bridge_side, il_side)
+    runner = Runner(hub, il_side, on_bridge_command=bridge_client.send_command)
+    bridge_client.runner = runner
     await runner.start()
+    await bridge_client.start(timeout=0.3)     # no real bridge here: falls straight back to the default topic layout
     yield sim, runner, model, il_side, sink
     await runner.stop()
     await model.stop()

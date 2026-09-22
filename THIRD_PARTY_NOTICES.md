@@ -1,46 +1,28 @@
 # Third-party notices
 
-## rustuya-homeassistant (`tuya2ha.v2`)
+This repository is config and a daemon/HA integration only: it contains no vendored or reproduced third-party
+code. The Apache-2.0-derived reproduction of Home Assistant core's `tuya` integration, tuya-device-handlers and
+tuya-device-sharing-sdk that this project used to carry directly (`entity_engine.py`, `bridge_device.py`,
+`rustuya_ha.tuya2ha.v2`) moved out during the redesign to `tuya2ildevice` — see
+[that repository's THIRD_PARTY_NOTICES.md](https://github.com/3735943886/tuya2ildevice/blob/main/THIRD_PARTY_NOTICES.md)
+for those notices; nothing of it remains here.
 
-Entity generation runs on [rustuya-homeassistant](https://github.com/3735943886/rustuya-homeassistant)'s
-`rustuya_ha.tuya2ha.v2` package -- a real dependency (`manifest.json`), not vendored code. It is a sans-I/O,
-data-driven reproduction of [home-assistant/core](https://github.com/home-assistant/core)'s official `tuya`
-integration (Apache-2.0) and of `tuya-device-handlers` (Apache-2.0): its category tables, quirk data and
-value-conversion rules are *generated* from those sources (see that repository's `scripts/gen_*.py` and
-`tests/golden/`), and it is verified against core's own test fixtures and snapshots. `entity_engine.py` here is
-the Home Assistant rendering half. `translations/en.json`'s `entity` section and `icons.json` are copied from
-core's `tuya/strings.json` / `tuya/icons.json` (Apache-2.0).
+## rustuya / rustuya-bridge / rustuya-manager / tuya2ildevice
 
-Same author as this project (MIT); the generated data derived from Apache-2.0 sources keeps that notice.
-
-## tuya_sharing (`tuya-device-sharing-sdk`)
-
-`bridge_device.py` and `entity_engine.py` build entities against
-`tuya_sharing.CustomerDevice`/`DeviceFunction`/`DeviceStatusRange`'s shape --
-plain `SimpleNamespace` subclasses, not a live Tuya Cloud SDK session (see
-`bridge_device.build_shadow_device`). Used for its data shape only; no
-network code from this package runs as part of this integration.
-
-## rustuya / rustuya-bridge / rustuya-manager
-
-This integration is a client of [rustuya-bridge](https://github.com/3735943886/rustuya-bridge)
-(itself built on [rustuya](https://github.com/3735943886/rustuya)),
-communicated with over MQTT, and depends on
-[rustuya-manager](https://github.com/3735943886/rustuya-manager)'s `Manager`
-facade for device registration/removal and the Tuya Cloud QR-login wizard.
-No code from any of the three is vendored; `bridge_supervisor.py` optionally
-depends at runtime on the `pyrustuyabridge` PyO3 bindings package when the
-user opts into embedded mode.
-
-## tuya-device-sharing-sdk value conversion
-
-`tuya2ha.v2.adapter` re-implements (does not vendor) the `default`, `enum` and `dj_v2_*_alg` `value_convert`
-strategies of [tuya-device-sharing-sdk](https://github.com/tuya/tuya-device-sharing-sdk) (`strategy_repo/`,
-Apache-2.0), plus the inverse write direction the SDK lacks; it is tested against the SDK's own strategies.
+This project is a client, over MQTT, of [rustuya-bridge](https://github.com/3735943886/rustuya-bridge) (itself
+built on [rustuya](https://github.com/3735943886/rustuya)), converts what it publishes with
+[tuya2ildevice](https://github.com/3735943886/tuya2ildevice), and depends on
+[rustuya-manager](https://github.com/3735943886/rustuya-manager)'s `Manager` facade for device
+registration/removal and the Tuya Cloud QR-login wizard, used only by `custom_components/rustuya_local`'s config
+and options flows. No code from any of these is vendored. `custom_components/rustuya_local/bridge_supervisor.py`
+optionally depends at runtime on the `pyrustuyabridge` PyO3 bindings package, only when the user opts into
+embedded-bridge mode; in external-bridge mode this integration never imports it (the topic layer it talks over is
+`tuya2ildevice`'s own, not `pyrustuyabridge`).
 
 ## History
 
-Earlier versions vendored HA core's `tuya` platform files (`vendor/ha_core/`), then depended on `tuya2ha` v1's own
-heuristic classifier. Both were replaced by `tuya2ha.v2`, which reproduces core's behaviour from data instead of
-carrying a copy of its code, and is checked against core's test snapshots (1205 entities, 58 service-call cases).
-See git history for the earlier designs.
+Earlier versions of this repository generated Home Assistant entities directly (`tuya2ha.v2`, later moved here as
+`rustuya_ha.tuya2ha.v2`); see git history for that design. The current architecture produces IL
+(`ildevice`/`il-ha`'s Instance Layer) instead: this repository has no Home Assistant entity code and creates no
+entities itself. All Apache-2.0-derived attribution now lives with the code it actually describes, in
+`tuya2ildevice`.

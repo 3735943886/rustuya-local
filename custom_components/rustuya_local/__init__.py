@@ -47,8 +47,9 @@ class RuntimeData:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    from tuya2ildevice import BridgeTopics, Hub, IlTopics
-    from tuya2ildevice.host import DeviceWatcher, MqttTransport, Runner, load_devices, read_bridge_config
+    from rustuya_local.bridge_client import BridgeClient
+    from tuya2ildevice import Hub, IlTopics
+    from tuya2ildevice.host import DeviceWatcher, MqttTransport, Runner, load_devices
 
     from .bridge_supervisor import EmbeddedBridge
 
@@ -72,15 +73,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                          username=username, password=password)
         await bridge_transport.connect()
         stack.push_async_callback(bridge_transport.close)
-
-        found = await read_bridge_config(bridge_transport, data[CONF_BRIDGE_ROOT])
-        if found is None:
-            _LOGGER.warning("no configuration from the bridge on %s/bridge/config; using the default topic layout",
-                            data[CONF_BRIDGE_ROOT])
-        topics = BridgeTopics.from_config(found or {}, data[CONF_BRIDGE_ROOT])
+        bridge_client = BridgeClient(bridge_transport, data[CONF_BRIDGE_ROOT])
 
         devices = await hass.async_add_executor_job(load_devices, data[CONF_DEVICES_PATH])
-        hub = Hub(devices, bridge=topics, il=IlTopics(data.get(CONF_IL_PREFIX, "il"), data.get(CONF_IL_SOURCE, "tuya")),
+        hub = Hub(devices, il=IlTopics(data.get(CONF_IL_PREFIX, "il"), data.get(CONF_IL_SOURCE, "tuya")),
                  allow_hazardous=options.get(CONF_ALLOW_HAZARDOUS, False),
                  expose_unused=options.get(CONF_EXPOSE_UNUSED, False))
         will = hub.presence(False)
@@ -90,9 +86,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await il_transport.connect()
         stack.push_async_callback(il_transport.close)
 
-        runner = Runner(hub, bridge_transport, il_transport)
+        runner = Runner(hub, il_transport, on_bridge_command=bridge_client.send_command)
+        bridge_client.runner = runner
         await runner.start()
         stack.push_async_callback(runner.stop)
+        await bridge_client.start()
 
         watcher = None
         interval = options.get(CONF_WATCH_INTERVAL, DEFAULT_WATCH_INTERVAL)
@@ -106,7 +104,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             embedded_bridge=embedded_bridge,
         )
         entry.async_on_unload(entry.add_update_listener(_async_reload))
-        _LOGGER.info("driving %d device(s) via %s (bridge: %s)", len(devices), topics.root, data[CONF_BRIDGE_MODE])
+        _LOGGER.info("driving %d device(s) via %s (bridge: %s)", len(devices), data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE])
 
         # everything above succeeded: async_unload_entry (RuntimeData) owns closing it now, not this stack
         stack.pop_all()

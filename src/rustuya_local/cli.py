@@ -7,39 +7,43 @@ import asyncio
 import logging
 import signal
 
-from tuya2ildevice import BridgeTopics, Hub, IlTopics
-from tuya2ildevice.host import DeviceWatcher, MqttTransport, Runner, read_bridge_config
+from tuya2ildevice import Hub, IlTopics
+from tuya2ildevice.host import DeviceWatcher, MqttTransport, Runner
 
+from .bridge_client import BridgeClient
 from .config import Config
 
 log = logging.getLogger(__name__)
 
 
 async def run(config: Config) -> None:
-    bridge = MqttTransport(config.bridge.host, config.bridge.port, client_id="rustuya-local-bridge",
-                           username=config.bridge.username, password=config.bridge.password)
-    await bridge.connect()
-    found = await read_bridge_config(bridge, config.root)
-    if found is None:
-        log.warning("no configuration from the bridge on %s/bridge/config; using the default topic layout", config.root)
-    topics = BridgeTopics.from_config(found or {}, config.root)
-    root = topics.root
-    hub = Hub(config.devices, bridge=topics, il=IlTopics(config.prefix, config.source), **config.hub_options)
-    will = hub.presence(False)                                           # M-12
-    il = MqttTransport(config.il.host, config.il.port, client_id="rustuya-local-il", username=config.il.username,
-                       password=config.il.password, will=(will.topic, will.payload, will.qos, will.retain))
-    await il.connect()
-    runner = Runner(hub, bridge, il)
-    await runner.start()
-    watcher = None
-    if config.devices_path and config.watch_interval > 0:
-        watcher = DeviceWatcher(config.devices_path, runner, config.watch_interval)
-        watcher.start()
+    # registered first: bridge_client.start() below can block for its whole bootstrap timeout waiting for a bridge
+    # that never answers, and a SIGTERM during that wait must still shut down gracefully, not fall through to
+    # Python's default (ungraceful) handling because nothing was listening for it yet
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
-    log.info("driving %d device(s) via %s", len(config.devices), root)
+
+    bridge = MqttTransport(config.bridge.host, config.bridge.port, client_id="rustuya-local-bridge",
+                           username=config.bridge.username, password=config.bridge.password)
+    await bridge.connect()
+    bridge_client = BridgeClient(bridge, config.root)
+
+    hub = Hub(config.devices, il=IlTopics(config.prefix, config.source), **config.hub_options)
+    will = hub.presence(False)                                           # M-12
+    il = MqttTransport(config.il.host, config.il.port, client_id="rustuya-local-il", username=config.il.username,
+                       password=config.il.password, will=(will.topic, will.payload, will.qos, will.retain))
+    await il.connect()
+    runner = Runner(hub, il, on_bridge_command=bridge_client.send_command)
+    bridge_client.runner = runner
+    await runner.start()
+    await bridge_client.start()
+    watcher = None
+    if config.devices_path and config.watch_interval > 0:
+        watcher = DeviceWatcher(config.devices_path, runner, config.watch_interval)
+        watcher.start()
+    log.info("driving %d device(s) via %s", len(config.devices), config.root)
     await stop.wait()
     if watcher:
         await watcher.stop()

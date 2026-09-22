@@ -70,7 +70,7 @@ def expected(rec, dps):
     """What the daemon should publish, computed with the driver directly."""
     drv = TuyaDriver(rec)
     drv.handle(0, Connected())
-    outs = drv.handle(1, Message("state", {"dps": dps}))
+    outs = drv.handle(1, Message("state", dps))
     return {o.prop: encode_value(o.value) for o in outs if isinstance(o, Value)}
 
 
