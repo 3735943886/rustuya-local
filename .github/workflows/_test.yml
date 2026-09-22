@@ -1,0 +1,91 @@
+name: Test (reusable)
+
+# Single source of truth for rustuya-local's pre-merge / pre-publish checks. Called from ci.yml
+# on push/PR and as a gate from release.yml, so a commit that fails these can't reach PyPI.
+#
+# rustuya-local depends on sibling repos that are not on PyPI yet (il-ha, rustuya-manager,
+# tuyamock -- see pyproject.toml's [tool.uv.sources]), so this checks them out as siblings under
+# $GITHUB_WORKSPACE and installs with `uv`: `uv` is what resolves [tool.uv.sources]'s local-path
+# overrides, plain `pip install -e ".[test]"` cannot see them and would try (and fail) to fetch
+# "il-ha" from PyPI.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]
+
+    steps:
+      - name: Check out rustuya-local
+        uses: actions/checkout@v7
+        with:
+          path: rustuya-local
+
+      # Siblings for the path dependencies in rustuya-local's [tool.uv.sources]. None of the
+      # three is on PyPI yet -- if a checkout here 404s, that sibling repo hasn't been pushed to
+      # GitHub (or renamed/moved) and this needs updating to match.
+      - name: Check out il-ha
+        uses: actions/checkout@v7
+        with:
+          repository: 3735943886/il-ha
+          path: il-ha
+
+      - name: Check out rustuya-manager
+        uses: actions/checkout@v7
+        with:
+          repository: 3735943886/rustuya-manager
+          path: rustuya-manager
+
+      - name: Check out tuyamock
+        uses: actions/checkout@v7
+        with:
+          repository: 3735943886/tuyamock
+          path: tuyamock
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install + start mosquitto
+        # tests/ha/ and tests/e2e/ each skip gracefully (pytest.skip / importorskip) when
+        # mosquitto, pyrustuyabridge or tuyamock is missing (see their conftest.py) -- installed
+        # here so CI actually exercises those tests instead of silently skipping them.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mosquitto mosquitto-clients
+          sudo tee /etc/mosquitto/conf.d/ci.conf > /dev/null <<'EOF'
+          listener 1883
+          allow_anonymous true
+          EOF
+          sudo systemctl restart mosquitto
+          for _ in $(seq 1 20); do
+            if mosquitto_sub -h localhost -t '$SYS/broker/version' -C 1 -W 2 >/dev/null 2>&1; then
+              echo "mosquitto reachable"
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "mosquitto did not become reachable"
+          sudo journalctl -u mosquitto --no-pager | tail -50
+          exit 1
+
+      - name: Install rustuya-local + test extras
+        working-directory: rustuya-local
+        run: uv pip install --system -e ".[test,test-ha,fullstack]"
+
+      - name: pytest
+        working-directory: rustuya-local
+        run: pytest -q

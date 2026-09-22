@@ -9,7 +9,7 @@ description = "Local Tuya control: rustuya-bridge -> tuya2ildevice -> IL (ildevi
 requires-python = ">=3.13"
 license = "MIT"
 dependencies = ["tuya2ildevice[host]>=0.2.0,<0.3", "pyrustuyabridge>=0.3.0,<0.4"]
-# rustuya-manager (custom_components/rustuya_local's config flow) is optional at the package level (the HA manifest
+# rustuya-manager (custom_components/rustuya's config flow) is optional at the package level (the HA manifest
 # pulls it in); declared here too so the venv used for this repo's tests has it. pyrustuyabridge is a base dependency
 # now (not just for the embedded bridge): rustuya-local's own bridge_client uses it to interpret rustuya-bridge's
 # configurable MQTT topic/payload templates correctly, for BOTH bridge modes.
@@ -19,7 +19,7 @@ rustuya-local = "rustuya_local.cli:main"
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio", "il-ha"]      # il-ha: the IL consumer the end-to-end tests read the result with
-test-ha = ["pytest-homeassistant-custom-component"]   # custom_components/rustuya_local's own tests
+test-ha = ["pytest-homeassistant-custom-component"]   # custom_components/rustuya's own tests
 fullstack = ["tuyamock"]      # the device emulator, for tests/e2e/test_full_stack*.py (pyrustuyabridge is now a base dep)
 
 # Local sibling checkouts until the packages are on PyPI. tuya2ildevice is on PyPI now (see `dependencies` above);

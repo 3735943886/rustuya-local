@@ -10,7 +10,7 @@ import pytest
 from fake_manager import FakeDevice, FakeDiff, FakeManager, WizardState, install
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.rustuya_local.const import (
+from custom_components.rustuya.const import (
     CONF_ALLOW_HAZARDOUS,
     CONF_BRIDGE_MODE,
     CONF_BRIDGE_ROOT,
@@ -26,7 +26,7 @@ from custom_components.rustuya_local.const import (
 def _no_real_setup():
     """A completed flow's `async_create_entry` makes Home Assistant set the entry up for real — this file is about
     the flow's own state machine, not a live MQTT connection (that belongs to test_init.py)."""
-    with patch("custom_components.rustuya_local.async_setup_entry", return_value=True):
+    with patch("custom_components.rustuya.async_setup_entry", return_value=True):
         yield
 
 
@@ -35,17 +35,17 @@ async def _start(hass):
 
 
 async def _wizard_flow(hass, manager, devices_path):
-    """A `RustuyaLocalConfigFlow` with `_data` already as it would be after menu -> external -> devices (that
+    """A `RustuyaConfigFlow` with `_data` already as it would be after menu -> external -> devices (that
     plain navigation is covered on its own by test_skipping_onboarding, through the real `hass.config_entries.flow`);
     `._manager` is the fake directly, so no config entry ever gets involved. Driven by calling its `async_step_*`
     methods directly rather than through `hass.config_entries.flow`: `async_show_progress`'s `progress_task` gets a
     Home Assistant-registered done callback that re-invokes the step on its own once it completes, which only a real
     flow going through the FlowManager has wired up — calling the methods directly sidesteps that entirely, so
     `FakeWizard.advance()` (no clock of its own) is the only thing moving the state machine, deterministically."""
-    from custom_components.rustuya_local.config_flow import RustuyaLocalConfigFlow
-    from custom_components.rustuya_local.const import CONF_BRIDGE_MODE, CONF_BRIDGE_ROOT, CONF_DEVICES_PATH
+    from custom_components.rustuya.config_flow import RustuyaConfigFlow
+    from custom_components.rustuya.const import CONF_BRIDGE_MODE, CONF_BRIDGE_ROOT, CONF_DEVICES_PATH
 
-    flow = RustuyaLocalConfigFlow()
+    flow = RustuyaConfigFlow()
     flow.hass = hass
     flow._manager = manager
     flow._data = {CONF_BRIDGE_MODE: "external", "broker_host": "h", "broker_port": 1883, "broker_username": "",
@@ -142,14 +142,14 @@ async def test_the_qr_step_carries_the_qr_image(hass):
     """A direct call of the step (not through `hass.config_entries.flow`, whose `show_progress` auto-continuation
     would just race a fake wizard that stays at `AWAITING_SCAN` forever): does the placeholder it builds carry the
     QR image once the session has one."""
-    from custom_components.rustuya_local.config_flow import RustuyaLocalConfigFlow
+    from custom_components.rustuya.config_flow import RustuyaConfigFlow
 
     manager = FakeManager()
     manager.wizard.session.state = WizardState.AWAITING_SCAN
     manager.wizard.session.qr_image_data_url = "data:image/png;base64,Zm9v"
     manager.wizard.session.message = "Scan me"
 
-    flow = RustuyaLocalConfigFlow()
+    flow = RustuyaConfigFlow()
     flow.hass = hass
     flow._manager = manager
     import sys
@@ -193,7 +193,7 @@ async def test_tuning_updates_options(hass, tmp_path):
 
 
 async def test_options_menu_hides_manager_steps_when_manager_is_unavailable(hass, tmp_path, monkeypatch):
-    from custom_components.rustuya_local import manager_session
+    from custom_components.rustuya import manager_session
 
     monkeypatch.setattr(manager_session, "available", lambda: False)
     entry = _entry(hass, tmp_path)

@@ -63,7 +63,7 @@ def _broker_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     })
 
 
-class RustuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
@@ -208,7 +208,7 @@ class RustuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_il(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
             self._data.update(user_input)
-            return self.async_create_entry(title="Rustuya Local", data=self._data, options={
+            return self.async_create_entry(title="Rustuya", data=self._data, options={
                 CONF_WATCH_INTERVAL: DEFAULT_WATCH_INTERVAL, CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False,
             })
         schema = vol.Schema({
@@ -227,8 +227,8 @@ class RustuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> RustuyaLocalOptionsFlow:
-        return RustuyaLocalOptionsFlow(config_entry)
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> RustuyaOptionsFlow:
+        return RustuyaOptionsFlow(config_entry)
 
 
 def cv_multi_select(options: dict[str, str]):
@@ -237,7 +237,7 @@ def cv_multi_select(options: dict[str, str]):
     return cv.multi_select(options)
 
 
-class RustuyaLocalOptionsFlow(config_entries.OptionsFlow):
+class RustuyaOptionsFlow(config_entries.OptionsFlow):
     """Maintenance after setup: tuning, and the same Manager-backed onboarding steps to add or remove devices
     later without re-adding the integration."""
 

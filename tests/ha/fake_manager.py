@@ -104,7 +104,7 @@ class FakeManager:
 
 def install(monkeypatch, manager: FakeManager) -> None:
     """Point `manager_session.open_manager`/`close_manager` at `manager` for the duration of a test."""
-    from custom_components.rustuya_local import manager_session
+    from custom_components.rustuya import manager_session
 
     async def open_manager(**kw):
         manager.kwargs = kw

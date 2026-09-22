@@ -1,6 +1,6 @@
 {
-  "domain": "rustuya_local",
-  "name": "Rustuya Local",
+  "domain": "rustuya",
+  "name": "Rustuya",
   "codeowners": ["@3735943886"],
   "config_flow": true,
   "documentation": "https://github.com/3735943886/rustuya-local",

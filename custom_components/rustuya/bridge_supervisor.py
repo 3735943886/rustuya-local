@@ -50,7 +50,7 @@ class EmbeddedBridge:
                 if not started.done():
                     loop.call_soon_threadsafe(started.set_result, None)
 
-        self._thread = threading.Thread(target=run, name="rustuya_local-embedded-bridge", daemon=True)
+        self._thread = threading.Thread(target=run, name="rustuya-embedded-bridge", daemon=True)
         self._thread.start()
         # give the bridge a moment to fail fast (a bad broker URL, a locked state file) before reporting success;
         # `run()` resolves `started` on exit, so a quick crash surfaces as this future finishing early too

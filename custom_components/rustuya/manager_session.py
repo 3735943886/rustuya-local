@@ -22,7 +22,7 @@ def available() -> bool:
 async def open_manager(*, broker: str, root: str, devices_path: str, username: str | None, password: str | None):
     from rustuya_manager import Manager
 
-    manager = Manager(cloud_path=devices_path, broker=broker, root=root, client_id="rustuya_local-config",
+    manager = Manager(cloud_path=devices_path, broker=broker, root=root, client_id="rustuya-config",
                       mqtt_user=username, mqtt_pass=password)
     await manager.__aenter__()
     return manager

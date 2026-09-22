@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-DOMAIN = "rustuya_local"
+DOMAIN = "rustuya"
 
 # --- entry data (set at setup, changed only through a reconfigure flow) ----------------
 CONF_BRIDGE_MODE = "bridge_mode"
@@ -33,5 +33,5 @@ DEFAULT_BRIDGE_ROOT = "rustuya"
 DEFAULT_IL_PREFIX = "il"
 DEFAULT_IL_SOURCE = "tuya"
 DEFAULT_DEVICES_FILE = "tuyadevices.json"
-DEFAULT_BRIDGE_STATE_FILE = "rustuya_local_bridge_state.json"
+DEFAULT_BRIDGE_STATE_FILE = "rustuya_bridge_state.json"
 DEFAULT_WATCH_INTERVAL = 5

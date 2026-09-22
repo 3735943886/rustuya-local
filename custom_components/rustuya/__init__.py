@@ -1,4 +1,4 @@
-"""Rustuya Local as a Home Assistant integration: runs the same `tuya2ildevice.host.Runner` the standalone
+"""Rustuya as a Home Assistant integration: runs the same `tuya2ildevice.host.Runner` the standalone
 `rustuya-local` daemon does, as a background task tied to this config entry, with an optional embedded
 rustuya-bridge (`pyrustuyabridge`). It creates no entities and does not depend on il-ha: it is only an IL
 *producer* — install il-ha (or any IL consumer) separately to turn its devices into entities.
@@ -69,7 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             stack.push_async_callback(embedded_bridge.stop)
 
         bridge_transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
-                                         client_id=f"rustuya_local-bridge-{entry.entry_id[:8]}",
+                                         client_id=f"rustuya-bridge-{entry.entry_id[:8]}",
                                          username=username, password=password)
         await bridge_transport.connect()
         stack.push_async_callback(bridge_transport.close)
@@ -81,7 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                  expose_unused=options.get(CONF_EXPOSE_UNUSED, False))
         will = hub.presence(False)
         il_transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
-                                     client_id=f"rustuya_local-il-{entry.entry_id[:8]}", username=username,
+                                     client_id=f"rustuya-il-{entry.entry_id[:8]}", username=username,
                                      password=password, will=(will.topic, will.payload, will.qos, will.retain))
         await il_transport.connect()
         stack.push_async_callback(il_transport.close)
