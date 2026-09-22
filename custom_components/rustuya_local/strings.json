@@ -1,0 +1,110 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "menu_options": {
+          "external": "An external rustuya-bridge (already running)",
+          "embedded": "Run rustuya-bridge inside Home Assistant"
+        }
+      },
+      "external": {
+        "title": "Connect to rustuya-bridge",
+        "description": "The MQTT broker and topic root your running rustuya-bridge uses.",
+        "data": {
+          "broker_host": "Broker host", "broker_port": "Broker port",
+          "broker_username": "Broker username (optional)", "broker_password": "Broker password (optional)",
+          "bridge_root": "Bridge topic root"
+        }
+      },
+      "embedded": {
+        "title": "Run rustuya-bridge here",
+        "description": "This still connects to a real MQTT broker; it just launches and owns the bridge process itself instead of you running one separately.",
+        "data": {
+          "broker_host": "Broker host", "broker_port": "Broker port",
+          "broker_username": "Broker username (optional)", "broker_password": "Broker password (optional)",
+          "bridge_root": "Bridge topic root", "bridge_state_file": "Bridge state file path",
+          "bridge_log_level": "Bridge log level"
+        }
+      },
+      "devices": {
+        "title": "Device list",
+        "description": "The tuyadevices.json rustuya-manager keeps (this integration only reads it, never writes it). {warning}",
+        "data": {
+          "devices_path": "Path to tuyadevices.json",
+          "onboard": "Log in to Tuya Cloud and register devices now"
+        }
+      },
+      "cloud_wizard_start": {
+        "title": "Log in to Tuya Cloud",
+        "description": "Leave the user code blank for a fresh QR login, or enter a saved one to skip scanning again.",
+        "data": { "user_code": "Saved user code (optional)" }
+      },
+      "cloud_wizard_progress": {
+        "title": "Tuya Cloud login"
+      },
+      "progress": {
+        "cloud_wizard_working": "{message}",
+        "cloud_wizard_awaiting_scan": "Scan with the Smart Life or Tuya Smart app:\n\n{qr}\n\n{message}"
+      },
+      "cloud_wizard_error": {
+        "title": "Login failed",
+        "description": "{error}",
+        "data": { "retry": "Try again" }
+      },
+      "sync_devices": {
+        "title": "Register devices on the bridge",
+        "description": "{count} device(s) from Tuya Cloud are not yet known to the bridge. Select the ones to add.",
+        "data": { "add": "Devices to register" }
+      },
+      "il": {
+        "title": "IL output",
+        "description": "Where this integration publishes IL (il-ha, or any IL consumer, reads from here).",
+        "data": { "il_prefix": "IL topic prefix", "il_source": "IL source name" }
+      }
+    },
+    "error": { "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead" },
+    "abort": { "already_configured": "Already set up." }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "menu_options": {
+          "tuning": "Tuning",
+          "cloud_wizard": "Log in to Tuya Cloud again",
+          "scan_lan": "Scan the LAN",
+          "remove_from_bridge": "Remove a device from the bridge"
+        }
+      },
+      "tuning": {
+        "data": {
+          "watch_interval": "Seconds between checks of the device file (0 to read once)",
+          "allow_hazardous": "Allow remote control of locks, alarms and garage doors",
+          "expose_unused": "Expose data points Home Assistant core would not classify"
+        }
+      },
+      "cloud_wizard": {
+        "title": "Log in to Tuya Cloud",
+        "data": { "user_code": "Saved user code (optional)" }
+      },
+      "cloud_wizard_progress": { "title": "Tuya Cloud login" },
+      "sync_devices": {
+        "title": "Register devices on the bridge",
+        "description": "{count} device(s) from Tuya Cloud are not yet known to the bridge.",
+        "data": { "add": "Devices to register" }
+      },
+      "scan_lan": {
+        "title": "Scan results",
+        "description": "The bridge saw {count} device(s) on the LAN: {ids}"
+      },
+      "remove_from_bridge": {
+        "title": "Remove from the bridge",
+        "description": "These are on the bridge but not in tuyadevices.json.",
+        "data": { "remove": "Devices to remove" }
+      }
+    },
+    "abort": {
+      "wizard_failed": "The Tuya Cloud login failed: {error}",
+      "nothing_orphaned": "Every device on the bridge is still in tuyadevices.json."
+    }
+  }
+}

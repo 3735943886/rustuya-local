@@ -4,7 +4,7 @@ import json
 
 import pytest
 from devices import lamp
-from il_ha.core import IlModel
+from ildevice.core import IlModel
 from tuya2ildevice import BridgeTopics, Hub, IlTopics
 
 from tuya2ildevice.host import Runner

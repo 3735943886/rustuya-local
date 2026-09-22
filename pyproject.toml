@@ -9,12 +9,15 @@ description = "Local Tuya control: rustuya-bridge -> tuya2ildevice -> IL (ildevi
 requires-python = ">=3.13"
 license = "MIT"
 dependencies = ["tuya2ildevice[host]"]
+# rustuya-manager (custom_components/rustuya_local's config flow) and pyrustuyabridge (embedded bridge) are optional
+# at the package level (the HA manifest pulls them in); declared here too so the venv used for this repo's tests has them.
 
 [project.scripts]
 rustuya-local = "rustuya_local.cli:main"
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio", "il-ha"]      # il-ha: the IL consumer the end-to-end tests read the result with
+test-ha = ["pytest-homeassistant-custom-component"]   # custom_components/rustuya_local's own tests
 fullstack = ["pyrustuyabridge>=0.3.0,<0.4", "tuyamock"]      # the real bridge and the device emulator, for tests/e2e/test_full_stack*.py
 
 # Local sibling checkouts until the packages are on PyPI.
@@ -22,6 +25,7 @@ fullstack = ["pyrustuyabridge>=0.3.0,<0.4", "tuyamock"]      # the real bridge a
 tuya2ildevice = { path = "../tuya2ildevice", editable = true }
 il-ha = { path = "../il-ha", editable = true }
 tuyamock = { path = "../tuyamock", editable = true }
+rustuya-manager = { path = "../rustuya-manager", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rustuya_local"]
@@ -29,4 +33,4 @@ packages = ["src/rustuya_local"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["src", "tests/e2e"]
+pythonpath = ["src", "tests/e2e", "."]
