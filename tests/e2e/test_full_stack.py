@@ -40,6 +40,15 @@ class Observer:
     """A paho client that remembers the last payload of every topic it sees."""
 
     def __init__(self, port, filters):
+        # `stack`/`many` are module-scoped fixtures that construct this before anything
+        # function-scoped (like tests/e2e/conftest.py's `_real_sockets`) has run for that test --
+        # see the `broker` fixture there for the full explanation. Enable directly.
+        try:
+            import pytest_socket
+        except ImportError:
+            pass
+        else:
+            pytest_socket.enable_socket()
         self.last: dict[str, str] = {}
         self.log: list[tuple[str, str]] = []
         self._c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"obs-{uuid.uuid4().hex[:6]}")
