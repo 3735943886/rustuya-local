@@ -36,7 +36,7 @@ jobs:
       - name: Check out il-ha
         uses: actions/checkout@v7
         with:
-          repository: 3735943886/il-ha
+          repository: 3735943886/ildevice-homeassistant
           path: il-ha
 
       - name: Check out rustuya-manager
