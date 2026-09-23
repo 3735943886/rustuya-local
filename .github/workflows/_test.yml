@@ -22,7 +22,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13"]
+        # il-ha (the test/fullstack sibling dep) requires Python>=3.14; rustuya-local's own
+        # requires-python floor (3.13, in pyproject.toml) stays lower since only the test extras
+        # need 3.14, not the base package.
+        python-version: ["3.14"]
 
     steps:
       - name: Check out rustuya-local
