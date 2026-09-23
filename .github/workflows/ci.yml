@@ -1,14 +1,14 @@
 name: CI
 
-# Runs on PRs targeting main and on direct pushes to main.
+# Runs on PRs targeting master and on direct pushes to master.
 # The actual pytest matrix lives in _test.yml so the same checks also run as a
 # pre-flight gate inside release.yml.
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 concurrency:
   group: ci-${{ github.ref }}
