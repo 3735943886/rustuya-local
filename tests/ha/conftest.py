@@ -25,6 +25,16 @@ def _free_port() -> int:
 def broker():
     """A real mosquitto on a free port (skipped when the binary is not installed) — for test_init.py, which sets
     entries up for real and needs an actual MQTT connection; test_config_flow.py never reaches this."""
+    # session-scoped, so its first (and only) use can land in a test before pytest sets up the
+    # function-scoped `socket_enabled` a test requests -- higher-scoped fixtures are set up before
+    # lower-scoped ones within the same test, regardless of request-argument order. Enable
+    # directly rather than depending on that ordering.
+    try:
+        import pytest_socket
+    except ImportError:
+        pass
+    else:
+        pytest_socket.enable_socket()
     exe = shutil.which("mosquitto")
     if exe is None:
         pytest.skip("mosquitto is not installed")

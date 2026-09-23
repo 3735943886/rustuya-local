@@ -45,6 +45,16 @@ def _free_port() -> int:
 @pytest.fixture(scope="session")
 def broker():
     """A real mosquitto on a free port (skipped when the binary is not installed)."""
+    # session-scoped, so its first (and only) use can land in a test where pytest hasn't set up
+    # the function-scoped `_real_sockets`/`socket_enabled` fixture yet -- higher-scoped fixtures
+    # are set up before lower-scoped ones within the same test, autouse or not. Enable directly
+    # rather than depending on that ordering.
+    try:
+        import pytest_socket
+    except ImportError:
+        pass
+    else:
+        pytest_socket.enable_socket()
     exe = shutil.which("mosquitto")
     if exe is None:
         pytest.skip("mosquitto is not installed")
