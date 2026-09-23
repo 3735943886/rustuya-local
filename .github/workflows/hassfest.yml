@@ -1,0 +1,20 @@
+name: Hassfest
+
+# Home Assistant's own manifest.json / translations / config-flow schema validator for
+# custom_components/rustuya. HACS runs this same check before listing an integration, so it's
+# worth catching here first.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: home-assistant/actions/hassfest@master

@@ -1,8 +1,11 @@
 # rustuya-local
 
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+
 Local control of Tuya devices through [rustuya-bridge](https://github.com/3735943886/rustuya-bridge), as IL
-([ildevice](../ildevice)) devices. It runs without Home Assistant; a Home Assistant integration is a thin layer on top
-(not written yet, see `docs/REDESIGN.md`).
+([ildevice](../ildevice)) devices. It runs without Home Assistant as the standalone `rustuya-local` daemon
+(this package); `custom_components/rustuya` is a thin Home Assistant integration on top of the same core, installable
+through HACS.
 
 ```
 rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il-ha / any IL consumer
@@ -29,6 +32,16 @@ for the Hub (`allow_hazardous`, `expose_unused`, `overrides`). The device list i
 `category`/`function`/`status_range`/`local_strategy`); rustuya-local follows it as it changes and never writes it. The
 bridge's own topic templates are read from its retained `{root}/bridge/config`.
 
+## Home Assistant (HACS)
+
+`custom_components/rustuya` runs the same `Hub`/`Runner` as the standalone daemon, as a background task tied to a
+config entry, with an optional embedded rustuya-bridge. It creates no entities itself — install
+[il-ha](../il-ha) (or any IL consumer) separately to turn its devices into entities.
+
+1. HACS → the three-dot menu → **Custom repositories** → add this repository URL with category **Integration**.
+2. Install **Rustuya**, restart Home Assistant.
+3. Settings → Devices & Services → **Add Integration** → **Rustuya**, and follow the config flow.
+
 ## Tests
 
 ```
@@ -51,4 +64,4 @@ Everything here needs the sibling repos and, for the last two groups, `mosquitto
 Planning, progress and open decisions: `docs/REDESIGN.md`. The earlier Home Assistant-only implementation is kept in
 `legacy/` (not in git) until the new one is verified; `docs/STATUS.md` describes it.
 
-Licence and third-party notices: `THIRD_PARTY_NOTICES.md`.
+Licence: `LICENSE` (MIT). Third-party notices: `THIRD_PARTY_NOTICES.md`.

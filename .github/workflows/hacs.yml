@@ -1,0 +1,24 @@
+name: HACS Validation
+
+# Validates that custom_components/rustuya can be installed through HACS (hacs.json, manifest.json
+# shape, repo metadata). Runs on every push/PR plus a daily schedule so a change on GitHub's side
+# (e.g. a new HACS check) surfaces without needing a code change here to trigger it.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration
