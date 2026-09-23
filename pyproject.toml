@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rustuya-local"
-version = "0.0.3"
+version = "0.0.4"
 description = "Local Tuya control: rustuya-bridge -> tuya2ildevice -> IL (ildevice). HA-independent core."
 requires-python = ">=3.13"
 license = "MIT"
