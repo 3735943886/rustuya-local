@@ -65,11 +65,11 @@
       },
       "sync_devices": {
         "title": "Sync devices with the bridge",
-        "description": "Cloud list vs. what the bridge holds: {missing} missing from the bridge, {mismatched} with differing settings, {orphaned} on the bridge but not in the cloud list. Nothing is changed unless you select it. {error}",
+        "description": "Cloud list vs. what the bridge holds: {synced} in sync, {missing} missing from the bridge, {mismatched} with differing settings, {orphaned} on the bridge but not in the cloud list. Every device is listed with its state; nothing is changed unless you select it. {error}",
         "data": {
           "add": "Add to the bridge",
           "update": "Update on the bridge (push the cloud's settings)",
-          "remove": "Remove from the bridge"
+          "remove": "Remove from the bridge (any device it holds)"
         }
       },
       "il": {
@@ -98,13 +98,11 @@
         "menu_options": {
           "tuning": "Tuning",
           "cloud_wizard": "Log in to Tuya Cloud again",
-          "scan_lan": "Scan the LAN",
           "bridge_sync": "Sync devices with the bridge"
         }
       },
       "tuning": {
         "data": {
-          "watch_interval": "Seconds between checks of the device file (0 to read once)",
           "allow_hazardous": "Allow remote control of locks, alarms and garage doors",
           "expose_unused": "Expose data points Home Assistant core would not classify"
         }
@@ -125,17 +123,13 @@
           "scanned": "I've scanned it"
         }
       },
-      "scan_lan": {
-        "title": "Scan results",
-        "description": "The bridge saw {count} device(s) on the LAN: {ids}"
-      },
       "bridge_sync": {
         "title": "Sync devices with the bridge",
-        "description": "Cloud list vs. what the bridge holds: {missing} missing from the bridge, {mismatched} with differing settings, {orphaned} on the bridge but not in the cloud list. Nothing is changed unless you select it. {error}",
+        "description": "Cloud list vs. what the bridge holds: {synced} in sync, {missing} missing from the bridge, {mismatched} with differing settings, {orphaned} on the bridge but not in the cloud list. Every device is listed with its state; nothing is changed unless you select it. {error}",
         "data": {
           "add": "Add to the bridge",
           "update": "Update on the bridge (push the cloud's settings)",
-          "remove": "Remove from the bridge"
+          "remove": "Remove from the bridge (any device it holds)"
         }
       }
     },
@@ -144,7 +138,7 @@
     },
     "abort": {
       "wizard_failed": "The Tuya Cloud login failed: {error}",
-      "in_sync": "The bridge already matches the cloud device list."
+      "no_devices": "There are no devices in the cloud list or on the bridge."
     },
     "error": {
       "publish_failed": "Could not send the command to the bridge."

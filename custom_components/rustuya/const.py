@@ -26,7 +26,6 @@ CONF_DEVICES_PATH = "devices_path"              # tuyadevices.json; the cloud wi
                                                  # side only ever reads it
 
 # --- entry options (changed any time through the options flow) -------------------------
-CONF_WATCH_INTERVAL = "watch_interval"
 CONF_ALLOW_HAZARDOUS = "allow_hazardous"
 CONF_EXPOSE_UNUSED = "expose_unused"
 
@@ -36,4 +35,3 @@ DEFAULT_IL_PREFIX = "il"
 DEFAULT_IL_SOURCE = "tuya"
 DEFAULT_DEVICES_FILE = ".storage/rustuya_tuyadevices.json"     # not user-facing config -- HA's own storage area
 DEFAULT_BRIDGE_STATE_FILE = ".storage/rustuya_bridge_state.json"
-DEFAULT_WATCH_INTERVAL = 5

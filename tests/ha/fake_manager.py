@@ -75,6 +75,7 @@ class FakeDevice:
 
 @dataclass
 class FakeDiff:
+    synced: list = field(default_factory=list)
     missing: list = field(default_factory=list)
     orphaned: list = field(default_factory=list)
     mismatched: list = field(default_factory=list)      # [(FakeDevice, ["IP: 1.1.1.1 -> 2.2.2.2"])]

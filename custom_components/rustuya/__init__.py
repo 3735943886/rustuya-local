@@ -29,8 +29,6 @@ from .const import (
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
-    CONF_WATCH_INTERVAL,
-    DEFAULT_WATCH_INTERVAL,
     DOMAIN,
 )
 
@@ -40,7 +38,6 @@ _LOGGER = logging.getLogger(__name__)
 @dataclass
 class RuntimeData:
     runner: Any
-    watcher: Any | None
     bridge_transport: Any
     il_transport: Any
     embedded_bridge: Any | None
@@ -49,7 +46,7 @@ class RuntimeData:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from rustuya_local.bridge_client import BridgeClient
     from tuya2ildevice import Hub, IlTopics
-    from tuya2ildevice.host import DeviceWatcher, MqttTransport, Runner, load_devices
+    from tuya2ildevice.host import MqttTransport, Runner, load_devices
 
     from .bridge_supervisor import EmbeddedBridge
 
@@ -92,15 +89,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         stack.push_async_callback(runner.stop)
         await bridge_client.start()
 
-        watcher = None
-        interval = options.get(CONF_WATCH_INTERVAL, DEFAULT_WATCH_INTERVAL)
-        if interval > 0:
-            watcher = DeviceWatcher(data[CONF_DEVICES_PATH], runner, interval)
-            watcher.start()
-            stack.push_async_callback(watcher.stop)
-
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = RuntimeData(
-            runner=runner, watcher=watcher, bridge_transport=bridge_transport, il_transport=il_transport,
+            runner=runner, bridge_transport=bridge_transport, il_transport=il_transport,
             embedded_bridge=embedded_bridge,
         )
         entry.async_on_unload(entry.add_update_listener(_async_reload))
@@ -111,14 +101,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def async_refresh_devices(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, list[str]] | None:
+    """Make the running Hub drive exactly what tuyadevices.json holds now: new devices get their descriptor published,
+    dropped ones get every retained IL topic cleared (empty retained payloads), and no connection is restarted. A
+    reload would not do that last part — a fresh Hub has no memory of what the old one published."""
+    from tuya2ildevice.host import load_devices
+
+    runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if runtime is None:
+        return None
+    records = await hass.async_add_executor_job(load_devices, entry.data[CONF_DEVICES_PATH])
+    return runtime.runner.sync_devices(records)
+
+
 async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     runtime: RuntimeData = hass.data[DOMAIN].pop(entry.entry_id)
-    if runtime.watcher:
-        await runtime.watcher.stop()
     await runtime.runner.stop()
     await runtime.il_transport.close()
     await runtime.bridge_transport.close()

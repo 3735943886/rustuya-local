@@ -35,14 +35,12 @@ from .const import (
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
-    CONF_WATCH_INTERVAL,
     DEFAULT_BRIDGE_ROOT,
     DEFAULT_BRIDGE_STATE_FILE,
     DEFAULT_BROKER_PORT,
     DEFAULT_DEVICES_FILE,
     DEFAULT_IL_PREFIX,
     DEFAULT_IL_SOURCE,
-    DEFAULT_WATCH_INTERVAL,
     DOMAIN,
 )
 
@@ -227,7 +225,7 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._data.update(user_input)
             return self.async_create_entry(title="Rustuya", data=self._data, options={
-                CONF_WATCH_INTERVAL: DEFAULT_WATCH_INTERVAL, CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False,
+                CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False,
             })
         schema = vol.Schema({
             vol.Required(CONF_IL_PREFIX, default=DEFAULT_IL_PREFIX): str,
@@ -263,7 +261,7 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         options = ["tuning"]
         if manager_session.available():
-            options = ["tuning", "cloud_wizard", "scan_lan", "bridge_sync"]
+            options = ["tuning", "cloud_wizard", "bridge_sync"]
         return self.async_show_menu(step_id="init", menu_options=options)
 
     async def async_step_tuning(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -271,7 +269,6 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
         current = self.config_entry.options
         schema = vol.Schema({
-            vol.Required(CONF_WATCH_INTERVAL, default=current.get(CONF_WATCH_INTERVAL, DEFAULT_WATCH_INTERVAL)): int,
             vol.Required(CONF_ALLOW_HAZARDOUS, default=current.get(CONF_ALLOW_HAZARDOUS, False)): bool,
             vol.Required(CONF_EXPOSE_UNUSED, default=current.get(CONF_EXPOSE_UNUSED, False)): bool,
         })
@@ -326,7 +323,8 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
             await asyncio.sleep(0.1)
 
     async def async_step_bridge_sync(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Missing (add), mismatched (update) and orphaned (remove) devices in one form, nothing pre-selected."""
+        """Every device, in sync or not: add the missing, update the mismatched, remove anything on the bridge
+        (orphans included). Nothing is pre-selected."""
         manager = await self._async_manager()
         diff = await manager.sync()
         if user_input is not None:
@@ -337,23 +335,16 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
                     step_id="bridge_sync", data_schema=bridge_sync.schema(diff), errors={"base": "publish_failed"},
                     description_placeholders={**bridge_sync.placeholders(diff), "error": str(e)})
             await self._async_close()
+            # nothing watches tuyadevices.json (it only changes through the cloud login here): tell the running Hub
+            from . import async_refresh_devices
+
+            await async_refresh_devices(self.hass, self.config_entry)
             return self.async_create_entry(title="", data=dict(self.config_entry.options))
-        if not bridge_sync.has_changes(diff):
+        if not bridge_sync.has_devices(diff):
             await self._async_close()
-            return self.async_abort(reason="in_sync")
+            return self.async_abort(reason="no_devices")
         return self.async_show_form(step_id="bridge_sync", data_schema=bridge_sync.schema(diff),
                                     description_placeholders={**bridge_sync.placeholders(diff), "error": ""})
-
-    async def async_step_scan_lan(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """A bare LAN scan (no cloud login): surface devices the bridge can already see but that are not yet
-        registered, for a network where the wizard's cloud step is undesirable."""
-        manager = await self._async_manager()
-        sightings = await manager.scan_coordinator.run()
-        await self._async_close()
-        return self.async_show_form(
-            step_id="scan_lan", data_schema=vol.Schema({}),
-            description_placeholders={"count": str(len(sightings)), "ids": ", ".join(sorted(sightings)) or "none"},
-        )
 
     async def _async_close(self) -> None:
         if self._manager is not None:

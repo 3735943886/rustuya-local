@@ -24,7 +24,6 @@ from custom_components.rustuya.const import (  # noqa: E402
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
-    CONF_WATCH_INTERVAL,
     DOMAIN,
 )
 
@@ -64,7 +63,7 @@ async def test_setup_publishes_and_unload_goes_offline(hass, broker, tmp_path, s
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
         CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
-    }, options={CONF_WATCH_INTERVAL: 0, CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
     entry.add_to_hass(hass)
     watcher = Watcher(broker)
     try:
@@ -100,7 +99,7 @@ async def test_setup_fails_cleanly_when_the_broker_is_unreachable(hass, tmp_path
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": 1, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
         CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
-    }, options={CONF_WATCH_INTERVAL: 0, CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
     entry.add_to_hass(hass)
     assert not await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()

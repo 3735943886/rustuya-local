@@ -17,7 +17,6 @@ from custom_components.rustuya.const import (
     CONF_DEVICES_PATH,
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
-    CONF_WATCH_INTERVAL,
     DOMAIN,
 )
 
@@ -89,7 +88,7 @@ async def test_skipping_onboarding_goes_straight_to_il_and_creates_the_entry(has
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"il_prefix": "il", "il_source": "tuya"})
     assert r["type"] == "create_entry"
     assert r["data"][CONF_DEVICES_PATH] == devices_path and r["data"][CONF_BRIDGE_ROOT] == "rustuya"
-    assert r["options"] == {CONF_WATCH_INTERVAL: 5, CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False}
+    assert r["options"] == {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False}
 
 
 async def test_embedded_mode_without_pyrustuyabridge_shows_an_error(hass, monkeypatch):
@@ -187,7 +186,7 @@ def _entry(hass, tmp_path):
         CONF_BRIDGE_MODE: "external", "broker_host": "h", "broker_port": 1883,
         "broker_username": "", "broker_password": "", CONF_BRIDGE_ROOT: "rustuya",
         CONF_DEVICES_PATH: str(tmp_path / "tuyadevices.json"), CONF_IL_PREFIX: "il", "il_source": "tuya",
-    }, options={CONF_WATCH_INTERVAL: 5, CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
     entry.add_to_hass(hass)
     return entry
 
@@ -197,9 +196,9 @@ async def test_tuning_updates_options(hass, tmp_path):
     result = await hass.config_entries.options.async_init(entry.entry_id)
     r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tuning"})
     r = await hass.config_entries.options.async_configure(
-        r["flow_id"], {CONF_WATCH_INTERVAL: 10, CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True})
+        r["flow_id"], {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True})
     assert r["type"] == "create_entry"
-    assert r["data"] == {CONF_WATCH_INTERVAL: 10, CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True}
+    assert r["data"] == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True}
 
 
 async def test_options_menu_hides_manager_steps_when_manager_is_unavailable(hass, tmp_path, monkeypatch):
@@ -226,6 +225,32 @@ async def test_removing_an_orphaned_device_from_the_bridge(hass, tmp_path, monke
     assert r["step_id"] == "bridge_sync"
     r = await hass.config_entries.options.async_configure(r["flow_id"], {"remove": ["gone"]})
     assert r["type"] == "create_entry" and manager.removed == ["gone"] and manager.closed
+
+
+async def test_finishing_the_sync_refreshes_the_running_hubs_device_list(hass, tmp_path, monkeypatch):
+    import json
+
+    from custom_components.rustuya import RuntimeData
+    from custom_components.rustuya.const import DOMAIN
+
+    manager, r = await _open_sync(hass, tmp_path, monkeypatch, FakeDiff(synced=[FakeDevice("ok")]))
+    from devices import lamp
+
+    record = lamp("new1")
+    (tmp_path / "tuyadevices.json").write_text(json.dumps([record]))
+    seen = []
+
+    class _Runner:
+        def sync_devices(self, records):
+            seen.append(records)
+            return {"added": ["new1"], "changed": [], "removed": ["old1"], "failed": []}
+
+    entry_id = next(iter(hass.config_entries.async_entries(DOMAIN))).entry_id
+    hass.data.setdefault(DOMAIN, {})[entry_id] = RuntimeData(
+        runner=_Runner(), bridge_transport=None, il_transport=None, embedded_bridge=None)
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {})
+    assert r["type"] == "create_entry"
+    assert [[d["id"] for d in records] for records in seen] == [["new1"]]   # the file as it is now, to the live Hub
 
 
 async def test_nothing_selected_changes_nothing(hass, tmp_path, monkeypatch):
@@ -267,9 +292,31 @@ async def test_a_failed_publish_keeps_the_form_open_with_the_error(hass, tmp_pat
     assert "MQTT broker not connected" in r["description_placeholders"]["error"] and not manager.closed
 
 
-async def test_in_sync_aborts(hass, tmp_path, monkeypatch):
+async def test_a_fully_synced_setup_is_still_shown_and_a_synced_device_can_be_removed(hass, tmp_path, monkeypatch):
+    manager, r = await _open_sync(hass, tmp_path, monkeypatch,
+                                  FakeDiff(synced=[FakeDevice("ok1", "Plug"), FakeDevice("ok2", "Lamp")]))
+    assert r["type"] == "form" and r["step_id"] == "bridge_sync"
+    assert r["description_placeholders"]["synced"] == "2"
+    assert [str(k) for k in r["data_schema"].schema] == ["remove"]          # nothing to add or update
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"remove": ["ok1"]})
+    assert r["type"] == "create_entry" and manager.removed == ["ok1"] and manager.closed
+
+
+async def test_every_bridge_device_is_removable_and_each_is_tagged_with_its_state(hass, tmp_path, monkeypatch):
+    diff = FakeDiff(synced=[FakeDevice("s")], orphaned=[FakeDevice("o")],
+                    mismatched=[(FakeDevice("m"), ["IP: 1.1.1.1 -> 2.2.2.2"])], missing=[FakeDevice("n")])
+    manager, r = await _open_sync(hass, tmp_path, monkeypatch, diff)
+    fields = {str(k): v for k, v in r["data_schema"].schema.items()}
+    assert set(fields) == {"add", "update", "remove"}
+    assert set(fields["add"].options) == {"n"} and set(fields["update"].options) == {"m"}
+    assert set(fields["remove"].options) == {"s", "o", "m"}                  # not "n": the bridge does not hold it
+    assert fields["remove"].options["o"].startswith("[orphan]") and fields["remove"].options["s"].startswith("[synced]")
+    assert "IP: 1.1.1.1 -> 2.2.2.2" in fields["remove"].options["m"]
+
+
+async def test_no_devices_at_all_aborts(hass, tmp_path, monkeypatch):
     manager, r = await _open_sync(hass, tmp_path, monkeypatch, FakeDiff())
-    assert r["type"] == "abort" and r["reason"] == "in_sync" and manager.closed
+    assert r["type"] == "abort" and r["reason"] == "no_devices" and manager.closed
 
 
 async def test_add_extra_for_a_sub_device_carries_cid_and_parent(hass):
@@ -278,11 +325,3 @@ async def test_add_extra_for_a_sub_device_carries_cid_and_parent(hass):
     sub = FakeDevice("s", type="SubDevice", cid="c1", parent_id="p1")
     assert add_extra(sub) == {"cid": "c1", "parent_id": "p1"}
     assert add_extra(FakeDevice("w")) == {}
-
-
-async def test_scan_lan_shows_the_sightings(hass, tmp_path, monkeypatch):
-    install(monkeypatch, FakeManager(scan_result={"dev1": object(), "dev2": object()}))
-    entry = _entry(hass, tmp_path)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "scan_lan"})
-    assert r["step_id"] == "scan_lan" and r["description_placeholders"]["count"] == "2"
