@@ -54,6 +54,15 @@ jobs:
           repository: 3735943886/tuyamock
           path: tuyamock
 
+      # tuya2ildevice is on PyPI (installed below via uv), so this isn't for dependency
+      # resolution -- it's so tests/e2e/test_full_stack_devices.py can reach its sibling
+      # checkout's tests/golden fixture data, which isn't shipped in the published package.
+      - name: Check out tuya2ildevice
+        uses: actions/checkout@v7
+        with:
+          repository: 3735943886/tuya2ildevice
+          path: tuya2ildevice
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v7
         with:
