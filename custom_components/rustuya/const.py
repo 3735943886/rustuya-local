@@ -21,7 +21,9 @@ CONF_BRIDGE_LOG_LEVEL = "bridge_log_level"      # embedded only
 CONF_IL_PREFIX = "il_prefix"
 CONF_IL_SOURCE = "il_source"
 
-CONF_DEVICES_PATH = "devices_path"              # tuyadevices.json; rustuya-manager writes it, we only read it
+CONF_DEVICES_PATH = "devices_path"              # tuyadevices.json; the cloud wizard (config/options flow) writes
+                                                 # it through rustuya-manager's Manager, the always-on Runner/Hub
+                                                 # side only ever reads it
 
 # --- entry options (changed any time through the options flow) -------------------------
 CONF_WATCH_INTERVAL = "watch_interval"
@@ -32,6 +34,6 @@ DEFAULT_BROKER_PORT = 1883
 DEFAULT_BRIDGE_ROOT = "rustuya"
 DEFAULT_IL_PREFIX = "il"
 DEFAULT_IL_SOURCE = "tuya"
-DEFAULT_DEVICES_FILE = "tuyadevices.json"
-DEFAULT_BRIDGE_STATE_FILE = "rustuya_bridge_state.json"
+DEFAULT_DEVICES_FILE = ".storage/rustuya_tuyadevices.json"     # not user-facing config -- HA's own storage area
+DEFAULT_BRIDGE_STATE_FILE = ".storage/rustuya_bridge_state.json"
 DEFAULT_WATCH_INTERVAL = 5

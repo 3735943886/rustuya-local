@@ -28,7 +28,7 @@
       },
       "devices": {
         "title": "Device list",
-        "description": "The tuyadevices.json rustuya-manager keeps (this integration only reads it, never writes it). {warning}",
+        "description": "The tuyadevices.json rustuya-manager keeps. Only the Tuya Cloud login wizard (later in this flow) writes to it; once set up, this integration only reads it. {warning}",
         "data": {
           "devices_path": "Path to tuyadevices.json",
           "onboard": "Log in to Tuya Cloud and register devices now"
