@@ -18,7 +18,7 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
-from . import manager_session
+from . import bridge_sync, manager_session
 from .const import (
     BRIDGE_EMBEDDED,
     BRIDGE_EXTERNAL,
@@ -207,17 +207,19 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         manager = self._manager
         diff = await manager.sync()
         if user_input is not None:
-            for device_id in user_input.get("add", []):
-                await manager.add_device(device_id)
+            try:
+                await bridge_sync.apply(manager, diff, user_input)
+            except RuntimeError as e:
+                return self.async_show_form(
+                    step_id="sync_devices", data_schema=bridge_sync.schema(diff), errors={"base": "publish_failed"},
+                    description_placeholders={**bridge_sync.placeholders(diff), "error": str(e)})
             await self._async_close_manager()
             return await self.async_step_il()
-        if not diff.missing:
+        if not bridge_sync.has_changes(diff):
             await self._async_close_manager()
             return await self.async_step_il()
-        options = {d.id: f"{d.name} ({d.id})" for d in diff.missing}
-        schema = vol.Schema({vol.Optional("add", default=list(options)): cv_multi_select(options)})
-        return self.async_show_form(step_id="sync_devices", data_schema=schema,
-                                    description_placeholders={"count": str(len(diff.missing))})
+        return self.async_show_form(step_id="sync_devices", data_schema=bridge_sync.schema(diff),
+                                    description_placeholders={**bridge_sync.placeholders(diff), "error": ""})
 
     # ---- IL side and finish ----------------------------------------------------------
 
@@ -247,11 +249,6 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return RustuyaOptionsFlow(config_entry)
 
 
-def cv_multi_select(options: dict[str, str]):
-    from homeassistant.helpers import config_validation as cv
-
-    return cv.multi_select(options)
-
 
 class RustuyaOptionsFlow(config_entries.OptionsFlow):
     """Maintenance after setup: tuning, and the same Manager-backed onboarding steps to add or remove devices
@@ -266,7 +263,7 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         options = ["tuning"]
         if manager_session.available():
-            options = ["tuning", "cloud_wizard", "scan_lan", "remove_from_bridge"]
+            options = ["tuning", "cloud_wizard", "scan_lan", "bridge_sync"]
         return self.async_show_menu(step_id="init", menu_options=options)
 
     async def async_step_tuning(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -303,7 +300,7 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
 
         session = self._manager.wizard.session
         if session.state == WizardState.DONE:
-            return self.async_show_progress_done(next_step_id="sync_devices")
+            return self.async_show_progress_done(next_step_id="bridge_sync")
         if session.state == WizardState.ERROR:
             await self._async_close()
             return self.async_abort(reason="wizard_failed", description_placeholders={"error": session.error or ""})
@@ -328,22 +325,24 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
                 return
             await asyncio.sleep(0.1)
 
-    async def async_step_sync_devices(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        manager = self._manager
+    async def async_step_bridge_sync(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Missing (add), mismatched (update) and orphaned (remove) devices in one form, nothing pre-selected."""
+        manager = await self._async_manager()
         diff = await manager.sync()
         if user_input is not None:
-            for device_id in user_input.get("add", []):
-                await manager.add_device(device_id)
+            try:
+                await bridge_sync.apply(manager, diff, user_input)
+            except RuntimeError as e:
+                return self.async_show_form(
+                    step_id="bridge_sync", data_schema=bridge_sync.schema(diff), errors={"base": "publish_failed"},
+                    description_placeholders={**bridge_sync.placeholders(diff), "error": str(e)})
             await self._async_close()
             return self.async_create_entry(title="", data=dict(self.config_entry.options))
-        if not diff.missing:
+        if not bridge_sync.has_changes(diff):
             await self._async_close()
-            return self.async_create_entry(title="", data=dict(self.config_entry.options))
-        options = {d.id: f"{d.name} ({d.id})" for d in diff.missing}
-        return self.async_show_form(
-            step_id="sync_devices",
-            data_schema=vol.Schema({vol.Optional("add", default=list(options)): cv_multi_select(options)}),
-        )
+            return self.async_abort(reason="in_sync")
+        return self.async_show_form(step_id="bridge_sync", data_schema=bridge_sync.schema(diff),
+                                    description_placeholders={**bridge_sync.placeholders(diff), "error": ""})
 
     async def async_step_scan_lan(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """A bare LAN scan (no cloud login): surface devices the bridge can already see but that are not yet
@@ -354,23 +353,6 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="scan_lan", data_schema=vol.Schema({}),
             description_placeholders={"count": str(len(sightings)), "ids": ", ".join(sorted(sightings)) or "none"},
-        )
-
-    async def async_step_remove_from_bridge(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        manager = await self._async_manager()
-        diff = await manager.sync()
-        if user_input is not None:
-            for device_id in user_input.get("remove", []):
-                await manager.remove_device(device_id)
-            await self._async_close()
-            return self.async_create_entry(title="", data=dict(self.config_entry.options))
-        if not diff.orphaned:
-            await self._async_close()
-            return self.async_abort(reason="nothing_orphaned")
-        options = {d.id: f"{d.name} ({d.id})" for d in diff.orphaned}
-        return self.async_show_form(
-            step_id="remove_from_bridge",
-            data_schema=vol.Schema({vol.Optional("remove", default=[]): cv_multi_select(options)}),
         )
 
     async def _async_close(self) -> None:

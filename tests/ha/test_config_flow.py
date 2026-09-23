@@ -107,7 +107,7 @@ async def test_embedded_mode_without_pyrustuyabridge_shows_an_error(hass, monkey
     assert r["type"] == "form" and r["errors"] == {"base": "pyrustuyabridge_missing"}
 
 
-async def test_a_successful_login_registers_the_missing_devices_then_reaches_il(hass, tmp_path, monkeypatch):
+async def test_a_successful_login_registers_only_the_selected_devices_then_reaches_il(hass, tmp_path, monkeypatch):
     manager = FakeManager(sync_result=FakeDiff(missing=[FakeDevice("a", "Plug"), FakeDevice("b", "Lamp")]))
     install(monkeypatch, manager)
     flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
@@ -116,6 +116,7 @@ async def test_a_successful_login_registers_the_missing_devices_then_reaches_il(
     r["progress_task"].cancel()
     r = await _drain_progress(flow, manager)
     assert r["step_id"] == "sync_devices"
+    assert all(k.default() == [] for k in r["data_schema"].schema)     # nothing pre-selected
     r = await flow.async_step_sync_devices({"add": ["a"]})
     assert r["step_id"] == "il" and manager.added == ["a"] and manager.closed
     r = await flow.async_step_il({"il_prefix": "il", "il_source": "tuya"})
@@ -210,23 +211,73 @@ async def test_options_menu_hides_manager_steps_when_manager_is_unavailable(hass
     assert result["menu_options"] == ["tuning"]
 
 
-async def test_removing_an_orphaned_device_from_the_bridge(hass, tmp_path, monkeypatch):
-    manager = FakeManager(sync_result=FakeDiff(orphaned=[FakeDevice("gone", "Old plug")]))
+async def _open_sync(hass, tmp_path, monkeypatch, diff):
+    manager = FakeManager(sync_result=diff)
     install(monkeypatch, manager)
     entry = _entry(hass, tmp_path)
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "remove_from_bridge"})
-    assert r["step_id"] == "remove_from_bridge"
+    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "bridge_sync"})
+    return manager, r
+
+
+async def test_removing_an_orphaned_device_from_the_bridge(hass, tmp_path, monkeypatch):
+    manager, r = await _open_sync(hass, tmp_path, monkeypatch,
+                                  FakeDiff(orphaned=[FakeDevice("gone", "Old plug"), FakeDevice("keep", "Kept")]))
+    assert r["step_id"] == "bridge_sync"
     r = await hass.config_entries.options.async_configure(r["flow_id"], {"remove": ["gone"]})
     assert r["type"] == "create_entry" and manager.removed == ["gone"] and manager.closed
 
 
-async def test_nothing_orphaned_aborts(hass, tmp_path, monkeypatch):
-    install(monkeypatch, FakeManager(sync_result=FakeDiff()))
-    entry = _entry(hass, tmp_path)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "remove_from_bridge"})
-    assert r["type"] == "abort" and r["reason"] == "nothing_orphaned"
+async def test_nothing_selected_changes_nothing(hass, tmp_path, monkeypatch):
+    diff = FakeDiff(missing=[FakeDevice("new")], orphaned=[FakeDevice("gone")],
+                    mismatched=[(FakeDevice("moved"), ["IP: 1.1.1.1 -> 2.2.2.2"])])
+    manager, r = await _open_sync(hass, tmp_path, monkeypatch, diff)
+    assert r["description_placeholders"]["missing"] == "1" and r["description_placeholders"]["orphaned"] == "1"
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {})
+    assert r["type"] == "create_entry" and manager.commands == [] and manager.removed == []
+
+
+async def test_add_sends_the_clouds_credentials_and_update_pushes_them_again(hass, tmp_path, monkeypatch):
+    new = FakeDevice("new", "Lamp", key="k" * 16, ip="192.168.1.9", version="3.4")
+    moved = FakeDevice("moved", "Plug", key="j" * 16, ip="192.168.1.7", version="Auto")
+    manager, r = await _open_sync(
+        hass, tmp_path, monkeypatch,
+        FakeDiff(missing=[new, FakeDevice("skipped")], mismatched=[(moved, ["IP: 1.1.1.1 -> 192.168.1.7"])]))
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"add": ["new"], "update": ["moved"]})
+    assert r["type"] == "create_entry"
+    assert manager.commands == [
+        ("add", "new", "Lamp", {"key": "k" * 16, "ip": "192.168.1.9", "version": "3.4"}),
+        ("add", "moved", "Plug", {"key": "j" * 16, "ip": "192.168.1.7"}),      # "Auto" version is not pushed
+    ]
+
+
+async def test_an_id_that_is_not_in_the_diff_is_ignored(hass, tmp_path, monkeypatch):
+    manager, r = await _open_sync(hass, tmp_path, monkeypatch, FakeDiff(orphaned=[FakeDevice("gone")]))
+    from custom_components.rustuya import bridge_sync
+
+    sent = await bridge_sync.apply(manager, manager._sync_result, {"remove": ["not-listed"], "add": ["gone"]})
+    assert sent == 0 and manager.removed == [] and manager.commands == []
+
+
+async def test_a_failed_publish_keeps_the_form_open_with_the_error(hass, tmp_path, monkeypatch):
+    manager, r = await _open_sync(hass, tmp_path, monkeypatch, FakeDiff(missing=[FakeDevice("new")]))
+    manager.publish_error = RuntimeError("MQTT broker not connected")
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"add": ["new"]})
+    assert r["type"] == "form" and r["errors"] == {"base": "publish_failed"}
+    assert "MQTT broker not connected" in r["description_placeholders"]["error"] and not manager.closed
+
+
+async def test_in_sync_aborts(hass, tmp_path, monkeypatch):
+    manager, r = await _open_sync(hass, tmp_path, monkeypatch, FakeDiff())
+    assert r["type"] == "abort" and r["reason"] == "in_sync" and manager.closed
+
+
+async def test_add_extra_for_a_sub_device_carries_cid_and_parent(hass):
+    from custom_components.rustuya.bridge_sync import add_extra
+
+    sub = FakeDevice("s", type="SubDevice", cid="c1", parent_id="p1")
+    assert add_extra(sub) == {"cid": "c1", "parent_id": "p1"}
+    assert add_extra(FakeDevice("w")) == {}
 
 
 async def test_scan_lan_shows_the_sightings(hass, tmp_path, monkeypatch):

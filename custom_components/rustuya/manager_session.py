@@ -25,6 +25,9 @@ async def open_manager(*, broker: str, root: str, devices_path: str, username: s
     manager = Manager(cloud_path=devices_path, broker=broker, root=root, client_id="rustuya-config",
                       mqtt_user=username, mqtt_pass=password)
     await manager.__aenter__()
+    # `sync()`'s diff is only meaningful once the bridge's device list has arrived; without this every cloud device
+    # looks "missing" (an empty bridge side), which is how a whole device list ended up offered for registration.
+    await manager.wait_ready()
     return manager
 
 

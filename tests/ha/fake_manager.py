@@ -65,12 +65,19 @@ class FakeWizard:
 class FakeDevice:
     id: str
     name: str = "Device"
+    type: str = "WiFi"
+    key: str | None = None
+    ip: str = "Auto"
+    version: str = "Auto"
+    cid: str | None = None
+    parent_id: str | None = None
 
 
 @dataclass
 class FakeDiff:
     missing: list = field(default_factory=list)
     orphaned: list = field(default_factory=list)
+    mismatched: list = field(default_factory=list)      # [(FakeDevice, ["IP: 1.1.1.1 -> 2.2.2.2"])]
 
 
 class FakeManager:
@@ -84,6 +91,8 @@ class FakeManager:
         self._scan_result = scan_result or {}
         self.added: list[str] = []
         self.removed: list[str] = []
+        self.commands: list[tuple] = []     # every publish_command: (action, target_id, target_name, extra)
+        self.publish_error: Exception | None = None
         self.closed = False
 
         class _ScanCoordinator:
@@ -100,6 +109,13 @@ class FakeManager:
 
     async def sync(self):
         return self._sync_result
+
+    async def publish_command(self, action, *, target_id=None, target_name=None, extra=None):
+        if self.publish_error is not None:
+            raise self.publish_error
+        self.commands.append((action, target_id, target_name, extra))
+        if action == "add":
+            self.added.append(target_id)
 
     async def add_device(self, target_id, **extra):
         self.added.append(target_id)

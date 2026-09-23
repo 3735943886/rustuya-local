@@ -11,8 +11,10 @@
         "title": "Connect to rustuya-bridge",
         "description": "The MQTT broker and topic root your running rustuya-bridge uses.",
         "data": {
-          "broker_host": "Broker host", "broker_port": "Broker port",
-          "broker_username": "Broker username (optional)", "broker_password": "Broker password (optional)",
+          "broker_host": "Broker host",
+          "broker_port": "Broker port",
+          "broker_username": "Broker username (optional)",
+          "broker_password": "Broker password (optional)",
           "bridge_root": "Bridge topic root"
         }
       },
@@ -20,9 +22,12 @@
         "title": "Run rustuya-bridge here",
         "description": "This still connects to a real MQTT broker; it just launches and owns the bridge process itself instead of you running one separately.",
         "data": {
-          "broker_host": "Broker host", "broker_port": "Broker port",
-          "broker_username": "Broker username (optional)", "broker_password": "Broker password (optional)",
-          "bridge_root": "Bridge topic root", "bridge_state_file": "Bridge state file path",
+          "broker_host": "Broker host",
+          "broker_port": "Broker port",
+          "broker_username": "Broker username (optional)",
+          "broker_password": "Broker password (optional)",
+          "bridge_root": "Bridge topic root",
+          "bridge_state_file": "Bridge state file path",
           "bridge_log_level": "Bridge log level"
         }
       },
@@ -37,7 +42,9 @@
       "cloud_wizard_start": {
         "title": "Log in to Tuya Cloud",
         "description": "Leave the user code blank for a fresh QR login, or enter a saved one to skip scanning again.",
-        "data": { "user_code": "Saved user code (optional)" }
+        "data": {
+          "user_code": "Saved user code (optional)"
+        }
       },
       "cloud_wizard_progress": {
         "title": "Tuya Cloud login"
@@ -45,29 +52,45 @@
       "cloud_wizard_scan": {
         "title": "Scan the QR code",
         "description": "Scan with the Smart Life or Tuya Smart app, then submit.",
-        "data": { "scanned": "I've scanned it" }
+        "data": {
+          "scanned": "I've scanned it"
+        }
       },
       "cloud_wizard_error": {
         "title": "Login failed",
         "description": "{error}",
-        "data": { "retry": "Try again" }
+        "data": {
+          "retry": "Try again"
+        }
       },
       "sync_devices": {
-        "title": "Register devices on the bridge",
-        "description": "{count} device(s) from Tuya Cloud are not yet known to the bridge. Select the ones to add.",
-        "data": { "add": "Devices to register" }
+        "title": "Sync devices with the bridge",
+        "description": "Cloud list vs. what the bridge holds: {missing} missing from the bridge, {mismatched} with differing settings, {orphaned} on the bridge but not in the cloud list. Nothing is changed unless you select it. {error}",
+        "data": {
+          "add": "Add to the bridge",
+          "update": "Update on the bridge (push the cloud's settings)",
+          "remove": "Remove from the bridge"
+        }
       },
       "il": {
         "title": "IL output",
         "description": "Where this integration publishes IL (il-ha, or any IL consumer, reads from here).",
-        "data": { "il_prefix": "IL topic prefix", "il_source": "IL source name" }
+        "data": {
+          "il_prefix": "IL topic prefix",
+          "il_source": "IL source name"
+        }
       }
     },
     "progress": {
       "cloud_wizard_working": "{message}"
     },
-    "error": { "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead" },
-    "abort": { "already_configured": "Already set up." }
+    "error": {
+      "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead",
+      "publish_failed": "Could not send the command to the bridge."
+    },
+    "abort": {
+      "already_configured": "Already set up."
+    }
   },
   "options": {
     "step": {
@@ -76,7 +99,7 @@
           "tuning": "Tuning",
           "cloud_wizard": "Log in to Tuya Cloud again",
           "scan_lan": "Scan the LAN",
-          "remove_from_bridge": "Remove a device from the bridge"
+          "bridge_sync": "Sync devices with the bridge"
         }
       },
       "tuning": {
@@ -88,27 +111,32 @@
       },
       "cloud_wizard": {
         "title": "Log in to Tuya Cloud",
-        "data": { "user_code": "Saved user code (optional)" }
+        "data": {
+          "user_code": "Saved user code (optional)"
+        }
       },
-      "cloud_wizard_progress": { "title": "Tuya Cloud login" },
+      "cloud_wizard_progress": {
+        "title": "Tuya Cloud login"
+      },
       "cloud_wizard_scan": {
         "title": "Scan the QR code",
         "description": "Scan with the Smart Life or Tuya Smart app, then submit.",
-        "data": { "scanned": "I've scanned it" }
-      },
-      "sync_devices": {
-        "title": "Register devices on the bridge",
-        "description": "{count} device(s) from Tuya Cloud are not yet known to the bridge.",
-        "data": { "add": "Devices to register" }
+        "data": {
+          "scanned": "I've scanned it"
+        }
       },
       "scan_lan": {
         "title": "Scan results",
         "description": "The bridge saw {count} device(s) on the LAN: {ids}"
       },
-      "remove_from_bridge": {
-        "title": "Remove from the bridge",
-        "description": "These are on the bridge but not in tuyadevices.json.",
-        "data": { "remove": "Devices to remove" }
+      "bridge_sync": {
+        "title": "Sync devices with the bridge",
+        "description": "Cloud list vs. what the bridge holds: {missing} missing from the bridge, {mismatched} with differing settings, {orphaned} on the bridge but not in the cloud list. Nothing is changed unless you select it. {error}",
+        "data": {
+          "add": "Add to the bridge",
+          "update": "Update on the bridge (push the cloud's settings)",
+          "remove": "Remove from the bridge"
+        }
       }
     },
     "progress": {
@@ -116,7 +144,10 @@
     },
     "abort": {
       "wizard_failed": "The Tuya Cloud login failed: {error}",
-      "nothing_orphaned": "Every device on the bridge is still in tuyadevices.json."
+      "in_sync": "The bridge already matches the cloud device list."
+    },
+    "error": {
+      "publish_failed": "Could not send the command to the bridge."
     }
   }
 }
