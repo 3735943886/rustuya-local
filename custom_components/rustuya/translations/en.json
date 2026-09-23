@@ -42,6 +42,11 @@
       "cloud_wizard_progress": {
         "title": "Tuya Cloud login"
       },
+      "cloud_wizard_scan": {
+        "title": "Scan the QR code",
+        "description": "Scan with the Smart Life or Tuya Smart app, then submit.",
+        "data": { "scanned": "I've scanned it" }
+      },
       "cloud_wizard_error": {
         "title": "Login failed",
         "description": "{error}",
@@ -59,8 +64,7 @@
       }
     },
     "progress": {
-      "cloud_wizard_working": "{message}",
-      "cloud_wizard_awaiting_scan": "Scan with the Smart Life or Tuya Smart app:\n\n{qr}\n\n{message}"
+      "cloud_wizard_working": "{message}"
     },
     "error": { "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead" },
     "abort": { "already_configured": "Already set up." }
@@ -87,6 +91,11 @@
         "data": { "user_code": "Saved user code (optional)" }
       },
       "cloud_wizard_progress": { "title": "Tuya Cloud login" },
+      "cloud_wizard_scan": {
+        "title": "Scan the QR code",
+        "description": "Scan with the Smart Life or Tuya Smart app, then submit.",
+        "data": { "scanned": "I've scanned it" }
+      },
       "sync_devices": {
         "title": "Register devices on the bridge",
         "description": "{count} device(s) from Tuya Cloud are not yet known to the bridge.",
@@ -103,8 +112,7 @@
       }
     },
     "progress": {
-      "cloud_wizard_working": "{message}",
-      "cloud_wizard_awaiting_scan": "Scan with the Smart Life or Tuya Smart app:\n\n{qr}\n\n{message}"
+      "cloud_wizard_working": "{message}"
     },
     "abort": {
       "wizard_failed": "The Tuya Cloud login failed: {error}",

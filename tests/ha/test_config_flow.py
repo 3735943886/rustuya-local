@@ -56,12 +56,18 @@ async def _wizard_flow(hass, manager, devices_path):
 async def _drain_progress(flow, manager, max_steps=10):
     for _ in range(max_steps):
         r = await flow.async_step_cloud_wizard_progress()
-        if r["type"] != "progress":
-            if r["type"] == "progress_done":
-                return await getattr(flow, f"async_step_{r['step_id']}")()
+        if r["type"] == "progress":
+            r["progress_task"].cancel()   # driven by hand here; nothing needs Home Assistant's own tracking of it
+            manager.wizard.advance()
+            continue
+        if r["type"] != "progress_done":
             return r
-        r["progress_task"].cancel()   # driven by hand here; nothing needs Home Assistant's own tracking of it
-        manager.wizard.advance()
+        if r["step_id"] == "cloud_wizard_scan":
+            # the QR form itself is covered on its own by test_the_qr_step_shows_a_real_qr_selector; here just
+            # simulate the scan being detected server-side (the wizard's own background poll, not a button click)
+            manager.wizard.advance()
+            continue
+        return await getattr(flow, f"async_step_{r['step_id']}")()
     raise AssertionError("progress never finished")
 
 
@@ -138,15 +144,17 @@ async def test_a_failed_login_can_be_retried_or_skipped(hass, tmp_path, monkeypa
     assert r["step_id"] == "il" and manager.closed
 
 
-async def test_the_qr_step_carries_the_qr_image(hass):
-    """A direct call of the step (not through `hass.config_entries.flow`, whose `show_progress` auto-continuation
-    would just race a fake wizard that stays at `AWAITING_SCAN` forever): does the placeholder it builds carry the
-    QR image once the session has one."""
+async def test_the_qr_step_shows_a_real_qr_selector(hass):
+    """A direct call of the steps (not through `hass.config_entries.flow`, whose `show_progress` auto-continuation
+    would just race a fake wizard that stays at `AWAITING_SCAN` forever): once the session has a QR, does
+    `cloud_wizard_progress` hand off to a `cloud_wizard_scan` form carrying a real `QrCodeSelector` (the same
+    mechanism HA core's own Tuya integration uses) rather than a markdown image data URL, which HA's frontend does
+    not reliably render inside a progress step's description."""
     from custom_components.rustuya.config_flow import RustuyaConfigFlow
 
     manager = FakeManager()
     manager.wizard.session.state = WizardState.AWAITING_SCAN
-    manager.wizard.session.qr_image_data_url = "data:image/png;base64,Zm9v"
+    manager.wizard.session.qr_url = "tuyaSmart--qrLogin?token=fake"
     manager.wizard.session.message = "Scan me"
 
     flow = RustuyaConfigFlow()
@@ -160,13 +168,14 @@ async def test_the_qr_step_carries_the_qr_image(hass):
     sys.modules["rustuya_manager.wizard"] = fake_module
     try:
         result = await flow.async_step_cloud_wizard_progress()
+        assert result["type"] == "progress_done" and result["step_id"] == "cloud_wizard_scan"
+        form = await flow.async_step_cloud_wizard_scan()
     finally:
         del sys.modules["rustuya_manager.wizard"]
-        result["progress_task"].cancel()   # this call bypassed the FlowManager, so nothing else owns it
 
-    assert result["progress_action"] == "cloud_wizard_awaiting_scan"
-    assert "data:image/png;base64" in result["description_placeholders"]["qr"]
-    assert "Scan me" in result["description_placeholders"]["message"]
+    assert form["type"] == "form" and form["step_id"] == "cloud_wizard_scan"
+    (qr_selector,) = form["data_schema"].schema.values()
+    assert qr_selector.config["data"] == "tuyaSmart--qrLogin?token=fake"
 
 
 # ---- options flow ---------------------------------------------------------------------

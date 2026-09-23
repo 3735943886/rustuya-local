@@ -14,6 +14,7 @@ class WizardState:
 @dataclass
 class Session:
     state: str = WizardState.IDLE
+    qr_url: str | None = None
     qr_image_data_url: str | None = None
     message: str = ""
     error: str | None = None
@@ -50,7 +51,12 @@ class FakeWizard:
     def _advance(self) -> None:
         self.session.state = self._script[self._i]
         if self.session.state == WizardState.AWAITING_SCAN:
+            self.session.qr_url = "tuyaSmart--qrLogin?token=fake"
             self.session.qr_image_data_url = "data:image/png;base64,Zm9v"
+        else:
+            # mirrors the real wizard's qr_callback(None), fired once scanning moves the state on
+            self.session.qr_url = None
+            self.session.qr_image_data_url = None
         if self.session.state == WizardState.ERROR:
             self.session.error = "login failed"
 

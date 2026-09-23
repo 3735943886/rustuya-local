@@ -16,6 +16,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import selector
 
 from . import manager_session
 from .const import (
@@ -50,6 +51,16 @@ _LOGGER = logging.getLogger(__name__)
 
 def _broker_url(data: dict[str, Any]) -> str:
     return f"mqtt://{data[CONF_BROKER_HOST]}:{data[CONF_BROKER_PORT]}"
+
+
+def _qr_schema(qr_url: str) -> vol.Schema:
+    """A real `QrCodeSelector` (the same one HA core's own Tuya integration uses for this exact login flow),
+    not a markdown image data URL: the frontend renders the QR client-side from `qr_url` itself, which HA's
+    description-text markdown does not reliably do for a `data:` image. `scanned` carries no real input --
+    submitting it (with anything or nothing) is just how the user tells this flow to check again."""
+    return vol.Schema({vol.Optional("scanned"): selector.QrCodeSelector(
+        config=selector.QrCodeSelectorConfig(
+            data=qr_url, scale=5, error_correction_level=selector.QrErrorCorrectionLevel.QUARTILE))})
 
 
 def _broker_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
@@ -149,16 +160,21 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_show_progress_done(next_step_id="sync_devices")
         if session.state == WizardState.ERROR:
             return self.async_show_progress_done(next_step_id="cloud_wizard_error")
-        placeholders = {"message": session.message}
-        if session.qr_image_data_url:
-            action = "cloud_wizard_awaiting_scan"
-            placeholders["qr"] = f"![QR code]({session.qr_image_data_url})"
-        else:
-            action = "cloud_wizard_working"
+        if session.qr_url:
+            return self.async_show_progress_done(next_step_id="cloud_wizard_scan")
         return self.async_show_progress(
-            step_id="cloud_wizard_progress", progress_action=action, description_placeholders=placeholders,
+            step_id="cloud_wizard_progress", progress_action="cloud_wizard_working",
+            description_placeholders={"message": session.message},
             progress_task=self.hass.async_create_task(self._async_wait_wizard_tick()),
         )
+
+    async def async_step_cloud_wizard_scan(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """`async_show_progress` only takes plain description text -- no selector, so a QR needs an actual form
+        step; go back through `cloud_wizard_progress` on submit (`scanned` carries no real data) to reuse its
+        state check instead of duplicating it here."""
+        if user_input is not None:
+            return await self.async_step_cloud_wizard_progress()
+        return self.async_show_form(step_id="cloud_wizard_scan", data_schema=_qr_schema(self._manager.wizard.session.qr_url))
 
     async def _async_wait_wizard_tick(self) -> None:
         """`async_show_progress` needs a task to await; the wizard already runs in the background
@@ -291,14 +307,16 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
         if session.state == WizardState.ERROR:
             await self._async_close()
             return self.async_abort(reason="wizard_failed", description_placeholders={"error": session.error or ""})
-        placeholders = {"message": session.message}
-        if session.qr_image_data_url:
-            action, placeholders["qr"] = "cloud_wizard_awaiting_scan", f"![QR code]({session.qr_image_data_url})"
-        else:
-            action = "cloud_wizard_working"
-        return self.async_show_progress(step_id="cloud_wizard_progress", progress_action=action,
-                                        description_placeholders=placeholders,
+        if session.qr_url:
+            return self.async_show_progress_done(next_step_id="cloud_wizard_scan")
+        return self.async_show_progress(step_id="cloud_wizard_progress", progress_action="cloud_wizard_working",
+                                        description_placeholders={"message": session.message},
                                         progress_task=self.hass.async_create_task(self._tick()))
+
+    async def async_step_cloud_wizard_scan(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        if user_input is not None:
+            return await self.async_step_cloud_wizard_progress()
+        return self.async_show_form(step_id="cloud_wizard_scan", data_schema=_qr_schema(self._manager.wizard.session.qr_url))
 
     async def _tick(self) -> None:
         from rustuya_manager.wizard import WizardState
