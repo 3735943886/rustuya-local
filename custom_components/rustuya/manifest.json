@@ -8,10 +8,10 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/3735943886/rustuya-local/issues",
   "requirements": [
-    "tuya2ildevice[host]>=0.2.0,<0.3",
+    "tuya2ildevice[host]>=0.3.0,<0.4",
     "rustuya-manager>=0.2.0.dev1,<0.3",
     "pyrustuyabridge>=0.3.0,<0.4",
-    "rustuya-local>=0.0.5,<0.1"
+    "rustuya-local>=0.0.6,<0.1"
   ],
-  "version": "0.0.5"
+  "version": "0.0.6"
 }
