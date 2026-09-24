@@ -1,5 +1,5 @@
 """rustuya-local as a rustuya-manager plugin: the same `Service` the daemon and the Home Assistant integration run,
-supervised by the manager, with Home Assistant MQTT discovery on by default (entities without any custom integration).
+supervised by the manager. It publishes IL; il-ha (or any IL consumer) turns the devices into entities.
 
 Found through the `rustuya_manager.plugins` entry point. It imports nothing from rustuya_manager: `ctx` is used by
 its documented contract (api_version >= 4). What it takes from the manager:
@@ -13,7 +13,6 @@ its documented contract (api_version >= 4). What it takes from the manager:
 `settings.json`, every key optional:
 
     {"il": {"prefix": "il", "source": "tuya"},
-     "discovery": {"prefix": "homeassistant", "node_id": "rustuya_local"},     # null: publish IL only (il-ha shows it)
      "options": {"allow_hazardous": false, "expose_unused": false}}
 
 The tab shows what the service is doing, from the plugin's state namespace.
@@ -35,22 +34,18 @@ MIN_API = 4
 
 def load_settings(data_dir: Path, bridge_root: str, devices: list[dict]):
     """The service settings from the plugin's data dir (defaults when `settings.json` is missing)."""
-    from ..service import Discovery, Settings
+    from ..service import Settings
 
     path = data_dir / "settings.json"
     raw: dict[str, Any] = json.loads(path.read_text()) if path.is_file() else {}
-    unknown = set(raw) - {"il", "discovery", "options"}
+    unknown = set(raw) - {"il", "options"}
     if unknown:
         raise ValueError(f"{path}: unknown keys {sorted(unknown)}")
     il = raw.get("il") or {}
-    discovery = Discovery(**raw["discovery"]) if raw.get("discovery") else None
-    if "discovery" not in raw:
-        discovery = Discovery()                       # the default: this is how Home Assistant sees the devices
     conv = data_dir / "custom_converters"
     conv.mkdir(exist_ok=True)
     return Settings(root=bridge_root, prefix=il.get("prefix", "il"), source=il.get("source", "tuya"),
-                    devices=devices, overrides_path=conv, hub_options=dict(raw.get("options") or {}),
-                    discovery=discovery)
+                    devices=devices, overrides_path=conv, hub_options=dict(raw.get("options") or {}))
 
 
 def usable(records: dict[str, dict]) -> list[dict]:
@@ -117,14 +112,8 @@ class Plugin:
             devices.append({"id": device_id, "name": desc.get("label") or desc.get("model") or device_id,
                             "kind": desc.get("kind"), "online": bool(drv.linked),
                             "props": sum(1 for p in desc["props"] if p != "available")})
-        disc = s.discovery
-        return {
-            "running": True, "error": self.error, "bridge_root": s.settings.root, "il_prefix": s.settings.prefix,
-            "devices": devices,
-            "discovery": None if disc is None else {
-                "prefix": disc.options.discovery_prefix, "node_id": disc.options.node_id,
-                "configs": sum(len(r.configs) for r in disc.devices.values())},
-        }
+        return {"running": True, "error": self.error, "bridge_root": s.settings.root, "il_prefix": s.settings.prefix,
+                "devices": devices}
 
     async def publish_status(self) -> None:
         await self.namespace.set(self.status())
@@ -137,4 +126,4 @@ def register(ctx: Any) -> None:
     plugin = Plugin(ctx)
     ctx.add_service(plugin.run)
     ctx.watch_devices(plugin.on_devices)
-    ctx.add_page(NAME, "Home Assistant", static_dir=str(Path(__file__).parent / "static"))
+    ctx.add_page(NAME, "Tuya (IL)", static_dir=str(Path(__file__).parent / "static"))

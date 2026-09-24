@@ -248,3 +248,7 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
 - **2026-09-24 단계 6(rustuya-homeassistant 정리, 커밋 안 함)**: 미커밋 v2 코드·문서·스크립트·골든 도구 삭제(모두 tuya2ildevice 에 최신본 존재,
   세션 스크래치패드에 백업), v2 용 추적 파일 수정 되돌림, README/CHANGELOG 에 폐기 안내(이전 방법 포함). v1 테스트 255 통과(격리 venv).
   PyPI 배포·저장소 아카이브는 사용자 결정으로 남김.
+- **2026-09-24 discovery 제거(사용자 결정)**: rustuya-local 은 IL 생산자만 한다. `discovery/` 모듈·CLI `discovery` 하위 명령·설정 키
+  `discovery`(데몬, 매니저 플러그인 `settings.json`)·`[discovery]` extra·관련 테스트 삭제. 이유: IL → HA 변환은 Tuya 와 무관하고
+  il-ha core 에 의존하게 만들어 PyPI·매니저 drop-in 배포를 막았다. HA 는 il-ha 로 본다. 코드는 `c646922` 에 남아 있다. 남은 일은
+  [ROADMAP.md](ROADMAP.md).

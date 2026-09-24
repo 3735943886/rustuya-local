@@ -1,5 +1,5 @@
 """The rustuya-manager plugin under the manager's real plugin host (entry-point discovery, PluginContext, State),
-against a real broker: the service it registers publishes IL and discovery, follows the manager's device set, reports
+against a real broker: the service it registers publishes IL, follows the manager's device set, reports
 itself in the state namespace, and goes offline when the manager cancels it."""
 import asyncio
 import json
@@ -30,8 +30,7 @@ async def test_the_plugin_runs_the_service_under_the_manager(broker, tmp_path):
     ctx = plugins.PluginContext(plugins.PluginRegistry(), state=state, data_root=tmp_path,
                                 bridge_client=BridgeClient(f"mqtt://127.0.0.1:{broker}", "rmp", state))
     (tmp_path / "rustuya-local").mkdir()
-    (tmp_path / "rustuya-local" / "settings.json").write_text(json.dumps({
-        "il": {"prefix": "ilmp"}, "discovery": {"prefix": "hamp", "node_id": "mp", "relay_prefix": "rmp-ha"}}))
+    (tmp_path / "rustuya-local" / "settings.json").write_text(json.dumps({"il": {"prefix": "ilmp"}}))
     plugins.load_plugins(ctx)                                     # finds us through the entry point
     reg = ctx._registry
     assert [p["id"] for p in reg.pages] == ["rustuya-local"] and len(reg.services) == 1
@@ -39,19 +38,18 @@ async def test_the_plugin_runs_the_service_under_the_manager(broker, tmp_path):
     seen = {}
     w = MqttTransport("127.0.0.1", broker, client_id="mpwatch")
     await w.connect()
-    for f in ("ilmp/#", "hamp/#"):
-        await w.subscribe(f, lambda m: seen.__setitem__(m.topic, m.payload.decode()))
+    await w.subscribe("ilmp/#", lambda m: seen.__setitem__(m.topic, m.payload.decode()))
     await answer_status(w, "rmp", ["mp1", "mp2"])
     task = asyncio.ensure_future(reg.services[0]())
     try:
-        await until(lambda: "ilmp/mp1" in seen and "hamp/light/mp/mp1_light/config" in seen, "not published")
+        await until(lambda: "ilmp/mp1" in seen, "not published")
         assert seen["ilmp/_producer/tuya"] == "online"
         await until(lambda: (state.get_plugin_data("rustuya-local") or {}).get("devices"), "no status", n=300)
         status = state.get_plugin_data("rustuya-local")
-        assert [d["id"] for d in status["devices"]] == ["mp1"] and status["discovery"]["configs"] == 1
+        assert [d["id"] for d in status["devices"]] == ["mp1"]
 
         await state.set_cloud({"mp1": Device.from_dict(lamp("mp1")), "mp2": Device.from_dict(lamp("mp2"))})
-        await until(lambda: "ilmp/mp2" in seen and "hamp/light/mp/mp2_light/config" in seen, "mp2 not followed")
+        await until(lambda: "ilmp/mp2" in seen, "mp2 not followed")
         assert (tmp_path / "rustuya-local" / "custom_converters").is_dir()
     finally:
         task.cancel()

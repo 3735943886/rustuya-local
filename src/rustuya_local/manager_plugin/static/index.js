@@ -26,13 +26,10 @@ function paint(root, data) {
     root.append(el("p", {}, "The service is not running."));
     return;
   }
-  const disc = data.discovery;
   root.append(
     el("p", {},
       `Bridge root "${data.bridge_root}", IL prefix "${data.il_prefix}". `,
-      disc
-        ? `Home Assistant discovery: ${disc.configs} entity config(s) under ${disc.prefix}/+/${disc.node_id}/.`
-        : "Home Assistant discovery is off (IL only; use il-ha to show the devices)."),
+      "Home Assistant shows these devices through il-ha."),
   );
   const rows = (data.devices || []).map((d) =>
     el("tr", {}, el("td", {}, d.name), el("td", {}, d.id), el("td", {}, d.kind || "-"),

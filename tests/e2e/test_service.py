@@ -127,25 +127,6 @@ async def test_a_failed_start_releases_what_it_connected(tmp_path):
     await service.stop()                                          # nothing to stop: no error
 
 
-async def test_discovery_runs_with_the_service_and_sweeps(tmp_path, monkeypatch):
-    from rustuya_local.service import Discovery
-    t = Transports()
-    await t.il.publish("homeassistant/switch/rustuya_local/old_x/config", '{"name": "old"}', 1, True)
-    await _answer_status(t.bridge, ["lamp1"])
-    import rustuya_local.bridge_client as bc
-    orig = bc.BridgeClient.start
-    monkeypatch.setattr(bc.BridgeClient, "start", lambda self, timeout=0.05: orig(self, timeout))
-    service = _service(t, tmp_path, discovery=Discovery(sweep_after=-1))
-    await service.start()
-    await settle(service, t)
-    await service.discovery.drain()
-    assert "homeassistant/light/rustuya_local/lamp1_light/config" in t.il.retained
-    cfg = json.loads(t.il.retained["homeassistant/light/rustuya_local/lamp1_light/config"].payload)
-    assert cfg["availability"][0]["topic"] == "il/_producer/tuya"
-    assert service.discovery.sweep() == ["homeassistant/switch/rustuya_local/old_x/config"]
-    await service.stop()
-
-
 async def test_another_producer_online_is_warned_about(tmp_path, monkeypatch, caplog):
     t = Transports()
     await t.il.publish("il/_producer/tuya", "online", 1, True)

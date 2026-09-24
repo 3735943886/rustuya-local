@@ -51,29 +51,14 @@ class Settings:
     hub_options: dict[str, Any] = field(default_factory=dict)
     """`tuya2ildevice.Hub` keyword arguments: `allow_hazardous`, `expose_unused`, `use_quirks`, `overrides` (inline,
     merged over the directory's), `converters`, `converter_types`."""
-    discovery: Discovery | None = None
-    """Also publish Home Assistant MQTT discovery for the devices (no Home Assistant integration needed)."""
-
-
-@dataclass
-class Discovery:
-    prefix: str = "homeassistant"
-    node_id: str = "rustuya_local"
-    relay_prefix: str = "rustuya-local/ha"
-    sweep_after: float = 10.0
-    """Seconds after start to clear owned configs no device produces (the retained descriptors have arrived by then)."""
 
 
 class Service:
     def __init__(self, settings: Settings, *, connect_bridge: Callable[[], Awaitable[Transport]],
-                 connect_il: Callable[[Will], Awaitable[Transport]],
-                 connect_ha: Callable[[], Awaitable[Transport]] | None = None) -> None:
-        """`connect_ha`: Home Assistant's broker for discovery, when it is not the IL one."""
+                 connect_il: Callable[[Will], Awaitable[Transport]]) -> None:
         self.settings = settings
         self._connect_bridge = connect_bridge
         self._connect_il = connect_il
-        self._connect_ha = connect_ha
-        self.discovery = None
         self.bridge: Transport | None = None
         self.il: Transport | None = None
         self.hub: Hub | None = None
@@ -122,8 +107,6 @@ class Service:
             if self.override_watcher is not None and s.watch_interval > 0:
                 self.override_watcher.watch()
                 stack.push_async_callback(self.override_watcher.stop)
-            if s.discovery is not None:
-                await self._start_discovery(stack, s.discovery)
             self._stack = stack.pop_all()
         _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s", len(s.devices), s.root)
 
@@ -143,23 +126,6 @@ class Service:
         if seen and seen[-1] == "online":
             _LOGGER.warning("%s is already online: another producer (the Home Assistant integration, the "
                             "rustuya-manager plugin or a daemon) serves the same IL prefix and source; run one", presence_topic)
-
-    async def _start_discovery(self, stack: contextlib.AsyncExitStack, d: Discovery) -> None:
-        from .discovery.publisher import DiscoveryPublisher      # needs il-ha's core: only when discovery is on
-        from .discovery.render import Options
-
-        ha = self.il
-        if self._connect_ha is not None:
-            ha = await self._connect_ha()
-            _close_later(stack, ha)
-        options = Options(il_prefix=self.settings.prefix, discovery_prefix=d.prefix, node_id=d.node_id,
-                          relay_prefix=d.relay_prefix, source=self.settings.source)
-        self.discovery = DiscoveryPublisher(self.il, ha, options)
-        await self.discovery.start()
-        stack.push_async_callback(self.discovery.stop)
-        if d.sweep_after >= 0:
-            handle = asyncio.get_running_loop().call_later(d.sweep_after, self.discovery.sweep)
-            stack.callback(handle.cancel)
 
     async def stop(self) -> None:
         """Presence goes offline, pending bridge commands are sent, then both transports close. Idempotent."""
