@@ -326,3 +326,24 @@ async def test_add_extra_for_a_sub_device_carries_cid_and_parent(hass):
     sub = FakeDevice("s", type="SubDevice", cid="c1", parent_id="p1")
     assert add_extra(sub) == {"cid": "c1", "parent_id": "p1"}
     assert add_extra(FakeDevice("w")) == {}
+
+
+@pytest.mark.parametrize("manager_installed", [True, False])
+async def test_the_devices_step_gives_every_placeholder_its_description_names(hass, manager_installed):
+    """The frontend cannot format a description whose placeholder was not given (`MISSING_VALUE`), so `{warning}`
+    is always passed, empty when there is nothing to warn about."""
+    import json
+    import pathlib
+    import re
+
+    strings = json.loads((pathlib.Path(__file__).resolve().parents[2] / "custom_components/rustuya/strings.json").read_text())
+    named = set(re.findall(r"\{(\w+)\}", strings["config"]["step"]["devices"]["description"]))
+    with patch("custom_components.rustuya.manager_session.available", return_value=manager_installed):
+        result = await _start(hass)
+        r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+            "broker_host": "h", "broker_port": 1883, "broker_username": "", "broker_password": "",
+            "bridge_root": "rustuya"})
+    assert r["step_id"] == "devices"
+    assert named <= set(r["description_placeholders"] or {})
+    assert bool(r["description_placeholders"]["warning"]) is not manager_installed

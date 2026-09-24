@@ -109,3 +109,45 @@ async def test_setup_fails_cleanly_when_the_broker_is_unreachable(hass, tmp_path
     entry.add_to_hass(hass)
     assert not await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+
+
+async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(hass, broker, tmp_path, socket_enabled,
+                                                                               monkeypatch):
+    """tuya2ildevice reads its data files on first use (quirks, platform tables): the service preloads them in a
+    worker thread, so Home Assistant sees no blocking call when the first device's driver is made."""
+    from tuya2ildevice.tuya import quirks, runtime
+
+    monkeypatch.setattr(quirks, "_QUIRKS", None)               # as in a fresh Home Assistant process
+    monkeypatch.setattr(runtime, "_TABLE_CACHE", {})
+    import pathlib
+    import threading
+
+    loop_thread, in_loop = threading.current_thread(), []
+    real_read = pathlib.Path.read_text
+
+    def read_text(self, *args, **kwargs):      # what Home Assistant's blocking-call detector flags, recorded instead
+        if threading.current_thread() is loop_thread and "tuya2ildevice" in str(self):
+            in_loop.append(self.name)
+        return real_read(self, *args, **kwargs)
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    devices_path = tmp_path / "tuyadevices.json"
+    devices_path.write_text(json.dumps([lamp("lamp1")]))
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
+        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
+        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
+    entry.add_to_hass(hass)
+    watcher = Watcher(broker, registered=("lamp1",))
+    try:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await until(lambda: "il/lamp1" in watcher.last)
+        assert in_loop == []
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+    finally:
+        for topic in list(watcher.last):
+            watcher.publish(topic, "", retain=True)
+        await asyncio.sleep(0.1)
+        watcher.close()

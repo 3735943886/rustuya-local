@@ -41,9 +41,17 @@ class RuntimeData:
     embedded_bridge: Any | None
 
 
+def _import_runtime() -> None:
+    """Importing tuya2ildevice reads its data files; run in Home Assistant's import executor, not the event loop."""
+    import tuya2ildevice.host  # noqa: F401
+
+    import rustuya_local.service  # noqa: F401
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from pathlib import Path
 
+    await hass.async_add_import_executor_job(_import_runtime)
     from tuya2ildevice.host import MqttTransport, load_devices
 
     from rustuya_local.service import Service, Settings

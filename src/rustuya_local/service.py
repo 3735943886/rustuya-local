@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tuya2ildevice import Hub, IlTopics
+from tuya2ildevice import Hub, IlTopics, preload
 from tuya2ildevice.host import DeviceWatcher, OverrideWatcher, Runner, load_devices
 from tuya2ildevice.host.transport import Transport
 
@@ -71,6 +71,8 @@ class Service:
 
     async def start(self) -> None:
         s = self.settings
+        # tuya2ildevice reads its data files on first use; here, not in the event loop when the first device arrives
+        await asyncio.to_thread(preload)
         async with contextlib.AsyncExitStack() as stack:
             self.bridge = await self._connect_bridge()
             _close_later(stack, self.bridge)

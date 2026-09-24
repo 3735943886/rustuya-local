@@ -119,7 +119,8 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_DEVICES_PATH, default=default_path): str,
             vol.Required("onboard", default=manager_session.available()): bool,
         })
-        placeholders = {} if manager_session.available() else {"warning": "rustuya-manager is not installed"}
+        # every placeholder the description names must be given, even empty, or the frontend cannot format it
+        placeholders = {"warning": "" if manager_session.available() else "rustuya-manager is not installed"}
         return self.async_show_form(step_id="devices", data_schema=schema, description_placeholders=placeholders)
 
     # ---- Tuya Cloud QR login wizard (rustuya_manager.Manager.wizard) ----------------
