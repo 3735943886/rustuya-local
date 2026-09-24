@@ -17,9 +17,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from tuya2ildevice import Hub, IlTopics
 from tuya2ildevice.host import DeviceWatcher, OverrideWatcher, Runner, load_devices

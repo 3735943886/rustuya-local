@@ -41,7 +41,11 @@ async def _wizard_flow(hass, manager, devices_path):
     flow going through the FlowManager has wired up — calling the methods directly sidesteps that entirely, so
     `FakeWizard.advance()` (no clock of its own) is the only thing moving the state machine, deterministically."""
     from custom_components.rustuya.config_flow import RustuyaConfigFlow
-    from custom_components.rustuya.const import CONF_BRIDGE_MODE, CONF_BRIDGE_ROOT, CONF_DEVICES_PATH
+    from custom_components.rustuya.const import (
+        CONF_BRIDGE_MODE,
+        CONF_BRIDGE_ROOT,
+        CONF_DEVICES_PATH,
+    )
 
     flow = RustuyaConfigFlow()
     flow.hass = hass
@@ -232,7 +236,7 @@ async def test_finishing_the_sync_hands_the_new_device_file_to_the_service(hass,
     from custom_components.rustuya import RuntimeData
     from custom_components.rustuya.const import DOMAIN
 
-    manager, r = await _open_sync(hass, tmp_path, monkeypatch, FakeDiff(synced=[FakeDevice("ok")]))
+    _manager, r = await _open_sync(hass, tmp_path, monkeypatch, FakeDiff(synced=[FakeDevice("ok")]))
     from devices import lamp
 
     record = lamp("new1")
@@ -274,7 +278,7 @@ async def test_add_sends_the_clouds_credentials_and_update_pushes_them_again(has
 
 
 async def test_an_id_that_is_not_in_the_diff_is_ignored(hass, tmp_path, monkeypatch):
-    manager, r = await _open_sync(hass, tmp_path, monkeypatch, FakeDiff(orphaned=[FakeDevice("gone")]))
+    manager, _r = await _open_sync(hass, tmp_path, monkeypatch, FakeDiff(orphaned=[FakeDevice("gone")]))
     from custom_components.rustuya import bridge_sync
 
     sent = await bridge_sync.apply(manager, manager._sync_result, {"remove": ["not-listed"], "add": ["gone"]})
@@ -302,7 +306,7 @@ async def test_a_fully_synced_setup_is_still_shown_and_a_synced_device_can_be_re
 async def test_every_bridge_device_is_removable_and_each_is_tagged_with_its_state(hass, tmp_path, monkeypatch):
     diff = FakeDiff(synced=[FakeDevice("s")], orphaned=[FakeDevice("o")],
                     mismatched=[(FakeDevice("m"), ["IP: 1.1.1.1 -> 2.2.2.2"])], missing=[FakeDevice("n")])
-    manager, r = await _open_sync(hass, tmp_path, monkeypatch, diff)
+    _manager, r = await _open_sync(hass, tmp_path, monkeypatch, diff)
     fields = {str(k): v for k, v in r["data_schema"].schema.items()}
     assert set(fields) == {"add", "update", "remove"}
     assert set(fields["add"].options) == {"n"} and set(fields["update"].options) == {"m"}

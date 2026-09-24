@@ -22,11 +22,11 @@ tuyamock = pytest.importorskip("tuyamock")
 
 GOLDEN = pathlib.Path(__file__).resolve().parents[3] / "tuya2ildevice/tests/golden"      # the sibling checkout
 sys.path.insert(0, str(GOLDEN))
-import fixtures  # noqa: E402
-from test_full_stack import Observer, wait  # noqa: E402
-from tuya2ildevice import Connected, Message, TuyaDriver, Value  # noqa: E402
-from tuya2ildevice.mqtt import encode_value  # noqa: E402
-from devices import fixture_record as record  # noqa: E402
+import fixtures
+from devices import fixture_record as record
+from test_full_stack import Observer, wait
+from tuya2ildevice import Connected, Message, TuyaDriver, Value
+from tuya2ildevice.mqtt import encode_value
 
 KEY = "thisisarealkey00"
 def pick(per_platform=4, cap=60):
@@ -75,7 +75,7 @@ def many(broker, tmp_path_factory):
         mock = tuyamock.MockDevice(local_key=KEY, version="3.4", host=ip, port=6668, gw_id=dev_id, dps=dps)
         mock.start()
         obs.publish(f"{root}/command", json.dumps({"action": "add", "id": dev_id, "key": KEY, "ip": ip, "version": "3.4"}))
-        cases.append(dict(code=code, id=dev_id, rec=rec, dps=dps, mock=mock, want=expected(rec, dps)))
+        cases.append({"code": code, "id": dev_id, "rec": rec, "dps": dps, "mock": mock, "want": expected(rec, dps)})
     assert wait(lambda: all(c["mock"].connected for c in cases), 60), [c["code"] for c in cases if not c["mock"].connected]
 
     devfile = tmp / "tuyadevices.json"
@@ -85,7 +85,7 @@ def many(broker, tmp_path_factory):
                                "devices": "tuyadevices.json", "watch_interval": 0}))
     daemon = subprocess.Popen([sys.executable, "-m", "rustuya_local", "run", "--config", str(cfg)],
                               stderr=subprocess.PIPE, text=True)
-    yield type("Many", (), dict(obs=obs, cases=cases, prefix=prefix, daemon=daemon))
+    yield type("Many", (), {"obs": obs, "cases": cases, "prefix": prefix, "daemon": daemon})
     daemon.send_signal(signal.SIGTERM)
     try:
         daemon.wait(10)

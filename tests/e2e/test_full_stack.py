@@ -102,8 +102,8 @@ def stack(broker, tmp_path_factory):
     daemon = subprocess.Popen([sys.executable, "-m", "rustuya_local", "run", "--config", str(cfg)],
                               stderr=subprocess.PIPE, text=True)
     assert wait(lambda: obs.last.get(f"{prefix}/{DEV}"), 20), "the daemon never published the descriptor"
-    st = type("Stack", (), dict(obs=obs, mock=mock, root=root, prefix=prefix, daemon=daemon, bridge=bridge,
-                                devfile=devfile))
+    st = type("Stack", (), {"obs": obs, "mock": mock, "root": root, "prefix": prefix, "daemon": daemon, "bridge": bridge,
+                            "devfile": devfile})
     yield st
     st.daemon.send_signal(signal.SIGTERM)
     try:

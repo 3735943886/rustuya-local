@@ -34,7 +34,7 @@ MIN_API = 4
 
 # The manager loads pip-installed plugins by entry point and dropped-in ones by their top-level `register`, and does not
 # dedup the two: installed both ways, this is called twice with the same ctx (one module, whichever copy won sys.path)
-_REGISTERED: "weakref.WeakSet[Any]" = weakref.WeakSet()
+_REGISTERED: weakref.WeakSet[Any] = weakref.WeakSet()
 
 
 def load_settings(data_dir: Path, bridge_root: str, devices: list[dict]):

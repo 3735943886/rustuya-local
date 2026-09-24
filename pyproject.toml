@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rustuya-local"
-version = "0.0.8"
+version = "0.0.9"
 description = "Local Tuya control: rustuya-bridge -> tuya2ildevice -> IL (ildevice). HA-independent core."
 requires-python = ">=3.13"
 license = "MIT"
-dependencies = ["tuya2ildevice[host]>=0.3.0,<0.4", "pyrustuyabridge>=0.3.0,<0.4"]
+dependencies = ["tuya2ildevice[host]>=0.3.1,<0.4", "pyrustuyabridge>=0.3.0,<0.4"]
 # rustuya-manager (custom_components/rustuya's config flow) is optional at the package level (the HA manifest
 # pulls it in); declared here too so the venv used for this repo's tests has it. pyrustuyabridge is a base dependency
 # now (not just for the embedded bridge): rustuya-local's own bridge_client uses it to interpret rustuya-bridge's
@@ -36,6 +36,9 @@ rustuya-manager = { path = "../rustuya-manager", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rustuya_local"]
+
+[tool.ruff]
+required-version = ">=0.16"      # CI pins 0.16.8; older ones disagree on some rules
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

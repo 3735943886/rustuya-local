@@ -26,7 +26,8 @@ from typing import Any
 import pyrustuyabridge as pb
 from tuya2ildevice import BridgeCommand, Connected, Disconnected, Message
 from tuya2ildevice.host import Runner
-from tuya2ildevice.host.transport import Message as TransportMessage, Transport, Unsubscribe
+from tuya2ildevice.host.transport import Message as TransportMessage
+from tuya2ildevice.host.transport import Transport, Unsubscribe
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class BridgeClient:
         await self.transport.subscribe(f"{self.root}/bridge/config", self._on_config)
         try:
             await asyncio.wait_for(self._bootstrapped.wait(), timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _LOGGER.warning("no bridge config on %s/bridge/config within %.0fs; using the default topic layout",
                             self.root, timeout)
             await self._apply_templates({})

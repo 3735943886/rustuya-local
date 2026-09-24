@@ -15,7 +15,7 @@ def strat(pairs):
 
 
 def lamp(dev_id="lamp1"):
-    ints = dict(unit="", min=10, max=1000, scale=0, step=1)
+    ints = {"unit": "", "min": 10, "max": 1000, "scale": 0, "step": 1}
     f = {"switch_led": fn("switch_led", "Boolean"), "bright_value_v2": fn("bright_value_v2", "Integer", **ints),
          "temp_value_v2": fn("temp_value_v2", "Integer", **ints)}
     return {"id": dev_id, "category": "dj", "product_id": "p", "name": "Lamp", "product_name": "Bulb",
@@ -25,7 +25,7 @@ def lamp(dev_id="lamp1"):
 
 
 def curtain(dev_id="cur1"):
-    pct = dict(unit="%", min=0, max=100, scale=0, step=1)
+    pct = {"unit": "%", "min": 0, "max": 100, "scale": 0, "step": 1}
     f = {"control": fn("control", "Enum", range=["open", "stop", "close"]),
          "percent_control": fn("percent_control", "Integer", **pct)}
     return {"id": dev_id, "category": "cl", "product_id": "pc", "name": "Curtain", "product_name": "Curtain",

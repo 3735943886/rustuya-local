@@ -51,7 +51,7 @@ class Config:
     """Keyword arguments for `tuya2ildevice.Hub`: `allow_hazardous`, `expose_unused`, `overrides`, `converters`."""
 
     @classmethod
-    def from_dict(cls, data: dict, base: Path | None = None) -> "Config":
+    def from_dict(cls, data: dict, base: Path | None = None) -> Config:
         unknown = set(data) - {"bridge", "il", "devices", "options", "watch_interval", "custom_converters"}
         if unknown:
             raise ValueError(f"unknown config keys: {sorted(unknown)}")
@@ -88,6 +88,6 @@ class Config:
                         watch_interval=self.watch_interval, hub_options=dict(self.hub_options))
 
     @classmethod
-    def from_file(cls, path: str | Path) -> "Config":
+    def from_file(cls, path: str | Path) -> Config:
         path = Path(path)
         return cls.from_dict(json.loads(path.read_text()), path.parent)

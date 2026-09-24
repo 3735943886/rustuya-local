@@ -44,8 +44,9 @@ class RuntimeData:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from pathlib import Path
 
-    from rustuya_local.service import Service, Settings
     from tuya2ildevice.host import MqttTransport, load_devices
+
+    from rustuya_local.service import Service, Settings
 
     from .bridge_supervisor import EmbeddedBridge
 

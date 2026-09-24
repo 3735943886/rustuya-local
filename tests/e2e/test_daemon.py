@@ -6,7 +6,6 @@ import subprocess
 import sys
 
 from devices import lamp, status_reply
-
 from tuya2ildevice.host import MqttTransport
 
 
@@ -27,7 +26,7 @@ async def test_the_daemon_publishes_devices_and_goes_offline_on_sigterm(broker, 
     await watcher.connect()
     await watcher.subscribe("ild/#", lambda m: seen.__setitem__(m.topic, m.payload.decode()))
     await answer_status(watcher, "rustuya", ["daemon1"])
-    proc = subprocess.Popen([sys.executable, "-m", "rustuya_local", "run", "--config", str(cfg)],
+    proc = subprocess.Popen([sys.executable, "-m", "rustuya_local", "run", "--config", str(cfg)],  # noqa: ASYNC220  (spawning does not block; the test waits on the broker)
                             stderr=subprocess.DEVNULL)
     try:
         for _ in range(100):
@@ -66,7 +65,8 @@ async def test_the_daemon_uses_the_bridges_templates_and_follows_the_device_file
     # the bridge's own layout: events under {root}/ev/{type}/{id}
     await t.publish("rb/bridge/config", json.dumps({"mqtt_root_topic": "rb", "mqtt_event_topic": "{root}/ev/{type}/{id}"}), 1, True)
     await answer_status(t, "rb", ["w1", "w2"])                       # the bridge holds both, however the file changes
-    proc = subprocess.Popen([sys.executable, "-m", "rustuya_local", "run", "--config", str(cfg)], stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen([sys.executable, "-m", "rustuya_local", "run", "--config", str(cfg)],  # noqa: ASYNC220
+                            stderr=subprocess.DEVNULL)
 
     async def until(cond, what):
         for _ in range(100):

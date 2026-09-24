@@ -31,8 +31,8 @@ class EmbeddedBridge:
     async def start(self) -> None:
         import pyrustuyabridge as pb
 
-        kwargs = dict(mqtt_broker=self.broker, mqtt_root_topic=self.root, mqtt_retain=True,
-                      state_file=self.state_file, no_signals=True, log_level=self.log_level)
+        kwargs = {"mqtt_broker": self.broker, "mqtt_root_topic": self.root, "mqtt_retain": True,
+                  "state_file": self.state_file, "no_signals": True, "log_level": self.log_level}
         if self.username:
             kwargs["mqtt_username"] = self.username
         if self.password:

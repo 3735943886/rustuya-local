@@ -5,9 +5,10 @@ import json
 
 import pytest
 from devices import lamp, status_reply
-from rustuya_local.bridge_client import BridgeClient
 from tuya2ildevice import Hub, IlTopics
 from tuya2ildevice.host import InProcessTransport, Runner
+
+from rustuya_local.bridge_client import BridgeClient
 
 
 @pytest.fixture

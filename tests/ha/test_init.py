@@ -13,9 +13,9 @@ import paho.mqtt.client as mqtt
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "e2e"))
-from devices import lamp, status_reply  # noqa: E402
+from devices import lamp, status_reply
 
-from custom_components.rustuya.const import (  # noqa: E402
+from custom_components.rustuya.const import (
     CONF_ALLOW_HAZARDOUS,
     CONF_BRIDGE_MODE,
     CONF_BRIDGE_ROOT,

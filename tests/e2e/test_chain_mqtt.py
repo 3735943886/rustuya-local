@@ -6,12 +6,11 @@ import json
 import pytest
 from devices import lamp
 from ildevice.core import IlModel
-from rustuya_local.bridge_client import BridgeClient
-from tuya2ildevice import Hub, IlTopics
-
-from tuya2ildevice.host import Runner
-from tuya2ildevice.host import MqttTransport
 from test_chain_in_process import Recorder, Timers
+from tuya2ildevice import Hub, IlTopics
+from tuya2ildevice.host import MqttTransport, Runner
+
+from rustuya_local.bridge_client import BridgeClient
 
 
 async def until(cond, timeout=5.0):
@@ -56,7 +55,7 @@ async def mqtt_chain(broker):
 
 
 async def test_values_and_commands_over_a_real_broker(mqtt_chain):
-    sim, runner, model, il_side, sink = mqtt_chain
+    sim, _runner, model, _il_side, _sink = mqtt_chain
     await until(lambda: "lamp1" in model.devices)
     commands = []
     await sim.subscribe("rustuya/command", lambda m: commands.append(json.loads(m.payload)))
@@ -71,7 +70,7 @@ async def test_values_and_commands_over_a_real_broker(mqtt_chain):
 
 
 async def test_a_dropped_connection_fires_the_last_will_and_the_runner_recovers(mqtt_chain):
-    sim, runner, model, il_side, sink = mqtt_chain
+    sim, _runner, model, il_side, _sink = mqtt_chain
     await until(lambda: "lamp1" in model.devices)
     presence = []
     await sim.subscribe("il/_producer/tuya", lambda m: presence.append(m.payload.decode()))

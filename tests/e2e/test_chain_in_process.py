@@ -5,11 +5,10 @@ import json
 import pytest
 from devices import lamp
 from ildevice.core import IlModel
-from rustuya_local.bridge_client import BridgeClient
-from tuya2ildevice.host import InProcessTransport
 from tuya2ildevice import Hub, IlTopics
+from tuya2ildevice.host import InProcessTransport, Runner
 
-from tuya2ildevice.host import Runner
+from rustuya_local.bridge_client import BridgeClient
 
 
 class Recorder:
@@ -57,7 +56,7 @@ async def settle(runner, bridge_client, *buses):
 
 
 async def test_device_appears_and_values_flow_from_the_bridge(chain):
-    bridge, il, runner, model, sink, bridge_client = chain
+    bridge, il, runner, model, _sink, bridge_client = chain
     assert "lamp1" in model.devices and model.devices["lamp1"].desc.kind == "light"
     assert il.retained["il/_producer/tuya"].payload == "online"
     assert model.devices["lamp1"].online is False                       # nothing heard from the device yet
@@ -80,12 +79,12 @@ async def test_a_consumer_command_reaches_the_bridge_as_dps(chain):
     bridge.published.clear()
     await model.transport.publish("il/lamp1/brightness/set", "50", 1)
     await settle(runner, bridge_client, bridge, il)
-    (topic, payload, *_), = [p for p in bridge.published if p[0] == "rustuya/command"]
+    (_topic, payload, *_), = [p for p in bridge.published if p[0] == "rustuya/command"]
     assert json.loads(payload) == {"action": "set", "id": "lamp1", "dps": {"20": True, "22": 507}}
 
 
 async def test_a_refused_command_comes_back_as_a_rejection(chain):
-    bridge, il, runner, model, sink, bridge_client = chain
+    bridge, il, runner, _model, sink, bridge_client = chain
     await bridge.publish("rustuya/error/lamp1", '{"errorCode":0,"errorMsg":"Connection Successful"}', 0, True)
     await settle(runner, bridge_client, bridge, il)
     await il.publish("il/lamp1/brightness/set", "500", 1)
@@ -94,7 +93,7 @@ async def test_a_refused_command_comes_back_as_a_rejection(chain):
 
 
 async def test_devices_can_be_added_and_removed_while_running(chain):
-    bridge, il, runner, model, sink, bridge_client = chain
+    bridge, il, runner, model, _sink, bridge_client = chain
     runner.set_device(lamp("lamp2"))
     await settle(runner, bridge_client, bridge, il)
     assert set(model.devices) == {"lamp1", "lamp2"}
@@ -105,7 +104,7 @@ async def test_devices_can_be_added_and_removed_while_running(chain):
 
 
 async def test_stopping_publishes_offline_presence(chain):
-    bridge, il, runner, model, sink, bridge_client = chain
+    _bridge, il, runner, _model, _sink, _bridge_client = chain
     await runner.stop()
     assert il.retained.get("il/_producer/tuya") is None or il.retained["il/_producer/tuya"].payload == "offline"
     assert il.published[-1][:2] == ("il/_producer/tuya", "offline")

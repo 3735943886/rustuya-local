@@ -98,6 +98,10 @@ jobs:
         working-directory: rustuya-local
         run: uv pip install --system -e ".[test,test-ha,fullstack,manager]"
 
+      - name: ruff
+        working-directory: rustuya-local
+        run: uv pip install --system ruff==0.16.8 && ruff check src tests custom_components scripts
+
       - name: pytest
         working-directory: rustuya-local
         run: pytest -q

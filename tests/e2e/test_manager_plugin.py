@@ -7,13 +7,12 @@ import json
 import pytest
 from devices import lamp
 from test_daemon import answer_status
-
 from tuya2ildevice.host import MqttTransport
 
 plugins = pytest.importorskip("rustuya_manager.plugins")
-from rustuya_manager.models import Device  # noqa: E402
-from rustuya_manager.mqtt import BridgeClient  # noqa: E402
-from rustuya_manager.state import State  # noqa: E402
+from rustuya_manager.models import Device
+from rustuya_manager.mqtt import BridgeClient
+from rustuya_manager.state import State
 
 
 async def until(cond, what, n=200):
@@ -141,6 +140,6 @@ def test_the_drop_in_zip_loads_in_the_manager_with_its_vendored_tuya2ildevice(tm
     plugin_dir = tmp_path / "plugins"
     zipfile.ZipFile(build_dropin.build(tmp_path)).extractall(plugin_dir)
     out = subprocess.run([sys.executable, "-c", DROPIN_CHECK, str(plugin_dir)], capture_output=True, text=True,
-                         cwd=tmp_path, timeout=60)
+                         cwd=tmp_path, timeout=60, check=False)
     assert out.returncode == 0, out.stderr
     assert out.stdout.split() == ["1", "['rustuya-local']", "1"]

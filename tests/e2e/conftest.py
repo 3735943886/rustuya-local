@@ -5,7 +5,6 @@ import time
 
 import pytest
 
-
 try:
     import pytest_socket  # noqa: F401
 except ImportError:

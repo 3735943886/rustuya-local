@@ -5,8 +5,9 @@ import json
 
 import pytest
 from devices import lamp, status_reply
-from rustuya_local.service import Service, Settings
 from tuya2ildevice.host import InProcessTransport
+
+from rustuya_local.service import Service, Settings
 
 CONVERTER_PY = """
 from tuya2ildevice import Converter
