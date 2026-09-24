@@ -227,7 +227,7 @@ async def test_removing_an_orphaned_device_from_the_bridge(hass, tmp_path, monke
     assert r["type"] == "create_entry" and manager.removed == ["gone"] and manager.closed
 
 
-async def test_finishing_the_sync_hands_the_new_device_file_to_the_bridge_client(hass, tmp_path, monkeypatch):
+async def test_finishing_the_sync_hands_the_new_device_file_to_the_service(hass, tmp_path, monkeypatch):
     import json
 
     from custom_components.rustuya import RuntimeData
@@ -240,13 +240,12 @@ async def test_finishing_the_sync_hands_the_new_device_file_to_the_bridge_client
     (tmp_path / "tuyadevices.json").write_text(json.dumps([record]))
     seen = []
 
-    class _BridgeClient:
-        def sync_devices(self, records):
+    class _Service:
+        def refresh_devices(self, records):
             seen.append(records)
 
     entry_id = next(iter(hass.config_entries.async_entries(DOMAIN))).entry_id
-    hass.data.setdefault(DOMAIN, {})[entry_id] = RuntimeData(
-        runner=None, bridge_client=_BridgeClient(), bridge_transport=None, il_transport=None, embedded_bridge=None)
+    hass.data.setdefault(DOMAIN, {})[entry_id] = RuntimeData(service=_Service(), embedded_bridge=None)
     r = await hass.config_entries.options.async_configure(r["flow_id"], {})
     assert r["type"] == "create_entry"
     assert [[d["id"] for d in records] for records in seen] == [["new1"]]   # the file as it is now

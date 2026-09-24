@@ -1,12 +1,11 @@
-"""Rustuya as a Home Assistant integration: runs the same `tuya2ildevice.host.Runner` the standalone
-`rustuya-local` daemon does, as a background task tied to this config entry, with an optional embedded
-rustuya-bridge (`pyrustuyabridge`). It creates no entities and does not depend on il-ha: it is only an IL
+"""Rustuya as a Home Assistant integration: runs the same `rustuya_local.service.Service` the standalone
+`rustuya-local` daemon does, tied to this config entry, with an optional embedded rustuya-bridge (`pyrustuyabridge`)
+and user overrides from `<config>/rustuya_converters`. It creates no entities and does not depend on il-ha: it is only an IL
 *producer* — install il-ha (or any IL consumer) separately to turn its devices into entities.
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +28,7 @@ from .const import (
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
+    CONVERTERS_DIR,
     DOMAIN,
 )
 
@@ -37,17 +37,15 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class RuntimeData:
-    runner: Any
-    bridge_client: Any
-    bridge_transport: Any
-    il_transport: Any
+    service: Any
     embedded_bridge: Any | None
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    from rustuya_local.bridge_client import BridgeClient
-    from tuya2ildevice import Hub, IlTopics
-    from tuya2ildevice.host import MqttTransport, Runner, load_devices
+    from pathlib import Path
+
+    from rustuya_local.service import Service, Settings
+    from tuya2ildevice.host import MqttTransport, load_devices
 
     from .bridge_supervisor import EmbeddedBridge
 
@@ -55,67 +53,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     broker = f"mqtt://{data[CONF_BROKER_HOST]}:{data[CONF_BROKER_PORT]}"
     username, password = data.get(CONF_BROKER_USERNAME) or None, data.get(CONF_BROKER_PASSWORD) or None
 
-    # a failure partway through (a later transport, the device file, Runner.start) must not leak what already
-    # connected — each `push_async_callback` only runs if everything after it is unwound because of an exception,
-    # or immediately by `stack.pop_all()` never being reached
-    async with contextlib.AsyncExitStack() as stack:
-        embedded_bridge = None
-        if data[CONF_BRIDGE_MODE] == BRIDGE_EMBEDDED:
-            embedded_bridge = EmbeddedBridge(broker, data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_STATE_FILE],
-                                             data.get(CONF_BRIDGE_LOG_LEVEL, "warn"), username, password)
-            await embedded_bridge.start()
-            stack.push_async_callback(embedded_bridge.stop)
+    async def connect(kind: str, will=None):
+        t = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT], client_id=f"rustuya-{kind}-{entry.entry_id[:8]}",
+                          username=username, password=password, will=will)
+        await t.connect()
+        return t
 
-        bridge_transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
-                                         client_id=f"rustuya-bridge-{entry.entry_id[:8]}",
-                                         username=username, password=password)
-        await bridge_transport.connect()
-        stack.push_async_callback(bridge_transport.close)
-        bridge_client = BridgeClient(bridge_transport, data[CONF_BRIDGE_ROOT])
-
+    embedded_bridge = None
+    if data[CONF_BRIDGE_MODE] == BRIDGE_EMBEDDED:
+        embedded_bridge = EmbeddedBridge(broker, data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_STATE_FILE],
+                                         data.get(CONF_BRIDGE_LOG_LEVEL, "warn"), username, password)
+        await embedded_bridge.start()
+    try:
         devices = await hass.async_add_executor_job(load_devices, data[CONF_DEVICES_PATH])
-        hub = Hub([], il=IlTopics(data.get(CONF_IL_PREFIX, "il"), data.get(CONF_IL_SOURCE, "tuya")),
-                 allow_hazardous=options.get(CONF_ALLOW_HAZARDOUS, False),
-                 expose_unused=options.get(CONF_EXPOSE_UNUSED, False))
-        will = hub.presence(False)
-        il_transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
-                                     client_id=f"rustuya-il-{entry.entry_id[:8]}", username=username,
-                                     password=password, will=(will.topic, will.payload, will.qos, will.retain))
-        await il_transport.connect()
-        stack.push_async_callback(il_transport.close)
+        # the device file is not polled here: the config/options flow writes it and calls async_refresh_devices
+        settings = Settings(root=data[CONF_BRIDGE_ROOT], prefix=data.get(CONF_IL_PREFIX, "il"),
+                            source=data.get(CONF_IL_SOURCE, "tuya"), devices=devices,
+                            overrides_path=Path(hass.config.path(CONVERTERS_DIR)),
+                            hub_options={"allow_hazardous": options.get(CONF_ALLOW_HAZARDOUS, False),
+                                         "expose_unused": options.get(CONF_EXPOSE_UNUSED, False)})
+        service = Service(settings, connect_bridge=lambda: connect("bridge"), connect_il=lambda will: connect("il", will))
+        await service.start()          # releases whatever it had connected if it fails
+    except BaseException:
+        if embedded_bridge:
+            await embedded_bridge.stop()
+        raise
 
-        runner = Runner(hub, il_transport, on_bridge_command=bridge_client.send_command)
-        bridge_client.runner = runner
-        await runner.start()
-        stack.push_async_callback(runner.stop)
-        await bridge_client.start()
-        bridge_client.sync_devices(devices)      # IL follows the devices the bridge holds
-
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = RuntimeData(
-            runner=runner, bridge_client=bridge_client, bridge_transport=bridge_transport, il_transport=il_transport,
-            embedded_bridge=embedded_bridge,
-        )
-        entry.async_on_unload(entry.add_update_listener(_async_reload))
-        _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s (bridge: %s)", len(devices),
-                     data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE])
-
-        # everything above succeeded: async_unload_entry (RuntimeData) owns closing it now, not this stack
-        stack.pop_all()
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = RuntimeData(service=service, embedded_bridge=embedded_bridge)
+    entry.async_on_unload(entry.add_update_listener(_async_reload))
+    _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s (bridge: %s)", len(devices),
+                 data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE])
     return True
 
 
 async def async_refresh_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Hand the running bridge client the device file as it is now: devices in it that the bridge holds get their
-    descriptor published, ones that dropped out get every retained IL topic cleared (empty retained payloads), and no
-    connection is restarted. A reload would not do that last part — a fresh Hub has no memory of what the old one
-    published."""
+    """Hand the running service the device file as it is now: devices in it that the bridge holds get their descriptor
+    published, ones that dropped out get every retained IL topic cleared (empty retained payloads), and no connection
+    is restarted. A reload would not do that last part — a fresh Hub has no memory of what the old one published."""
     from tuya2ildevice.host import load_devices
 
     runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if runtime is None:
         return
     records = await hass.async_add_executor_job(load_devices, entry.data[CONF_DEVICES_PATH])
-    runtime.bridge_client.sync_devices(records)
+    runtime.service.refresh_devices(records)
 
 
 async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -124,9 +105,7 @@ async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     runtime: RuntimeData = hass.data[DOMAIN].pop(entry.entry_id)
-    await runtime.runner.stop()
-    await runtime.il_transport.close()
-    await runtime.bridge_transport.close()
+    await runtime.service.stop()
     if runtime.embedded_bridge:
         await runtime.embedded_bridge.stop()
     return True

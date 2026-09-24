@@ -35,3 +35,4 @@ DEFAULT_IL_PREFIX = "il"
 DEFAULT_IL_SOURCE = "tuya"
 DEFAULT_DEVICES_FILE = ".storage/rustuya_tuyadevices.json"     # not user-facing config -- HA's own storage area
 DEFAULT_BRIDGE_STATE_FILE = ".storage/rustuya_bridge_state.json"
+CONVERTERS_DIR = "rustuya_converters"       # <config>/rustuya_converters: user overrides and code converters, followed live

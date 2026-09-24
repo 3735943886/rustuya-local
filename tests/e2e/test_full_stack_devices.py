@@ -26,12 +26,9 @@ import fixtures  # noqa: E402
 from test_full_stack import Observer, wait  # noqa: E402
 from tuya2ildevice import Connected, Message, TuyaDriver, Value  # noqa: E402
 from tuya2ildevice.mqtt import encode_value  # noqa: E402
+from devices import fixture_record as record  # noqa: E402
 
 KEY = "thisisarealkey00"
-WIRE = {"Boolean": "Boolean", "Integer": "Integer", "Enum": "Enum", "String": "String", "Raw": "Raw", "Json": "Json",
-        "Bitmap": "Bitmap"}
-
-
 def pick(per_platform=4, cap=60):
     gold = json.loads((GOLDEN / "golden.json").read_text())
     chosen, seen = [], collections.Counter()
@@ -46,24 +43,6 @@ def pick(per_platform=4, cap=60):
         if len(chosen) >= cap:
             break
     return chosen
-
-
-def record(code, dev_id):
-    """The fixture as a device record a real deployment would have: dps numbered in status order, with a local_strategy."""
-    d = fixtures.load(code)
-    codes = list(d["status"])
-    dpmap = {str(i + 1): c for i, c in enumerate(codes)}
-    types = {}
-    for c in codes:
-        spec = d["status_range"].get(c) or d["function"].get(c)
-        types[c] = WIRE.get(spec["type"], "String") if spec else ("Boolean" if isinstance(d["status"][c], bool) else
-                   "Integer" if isinstance(d["status"][c], int) else "String")
-    d["local_strategy"] = {i: {"value_convert": "default", "status_code": c,
-                               "config_item": {"statusFormat": {c: "$"}, "valueType": types[c], "valueDesc": {},
-                                               "enumMappingMap": {}}} for i, c in dpmap.items()}
-    d["id"] = dev_id
-    dps = {i: d["status"][c] for i, c in dpmap.items()}
-    return d, dps
 
 
 def expected(rec, dps):

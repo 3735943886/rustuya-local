@@ -17,7 +17,12 @@ dependencies = ["tuya2ildevice[host]>=0.2.0,<0.3", "pyrustuyabridge>=0.3.0,<0.4"
 [project.scripts]
 rustuya-local = "rustuya_local.cli:main"
 
+# With rustuya-manager in the same environment, its plugin host finds this and runs the service under the manager
+[project.entry-points."rustuya_manager.plugins"]
+rustuya-local = "rustuya_local.manager_plugin:register"
+
 [project.optional-dependencies]
+discovery = ["il-ha"]         # Home Assistant MQTT discovery (`rustuya_local.discovery`) plans entities with il-ha's core
 test = ["pytest", "pytest-asyncio", "il-ha"]      # il-ha: the IL consumer the end-to-end tests read the result with
 test-ha = ["pytest-homeassistant-custom-component"]   # custom_components/rustuya's own tests
 fullstack = ["tuyamock"]      # the device emulator, for tests/e2e/test_full_stack*.py (pyrustuyabridge is now a base dep)
