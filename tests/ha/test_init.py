@@ -14,7 +14,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "e2e"))
-from devices import lamp  # noqa: E402
+from devices import lamp, status_reply  # noqa: E402
 
 from custom_components.rustuya.const import (  # noqa: E402
     CONF_ALLOW_HAZARDOUS,
@@ -32,14 +32,21 @@ class Watcher:
     """A plain paho client, standing in for whatever actually reads this integration's output (a real rustuya-bridge
     on one side, an IL consumer on the other) — the test only cares what lands on the wire."""
 
-    def __init__(self, port: int) -> None:
+    def __init__(self, port: int, registered: tuple[str, ...] = ()) -> None:
         self.last: dict[str, str] = {}
+        self.registered = list(registered)               # the devices the stand-in bridge "holds"
         self._c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="watcher")
-        self._c.on_message = lambda _c, _u, m: self.last.__setitem__(m.topic, m.payload.decode())
+        self._c.on_message = self._on_message
         self._c.connect("127.0.0.1", port, 30)
         self._c.loop_start()
         self._c.subscribe("il/#", 1)
         self._c.subscribe("rustuya/#", 1)
+
+    def _on_message(self, _c, _u, m) -> None:
+        payload = m.payload.decode()
+        self.last[m.topic] = payload
+        if m.topic == "rustuya/command" and payload and json.loads(payload).get("action") == "status":
+            self._c.publish("rustuya/response/bridge", status_reply(self.registered), qos=1)
 
     def publish(self, topic: str, payload: str, retain: bool = False) -> None:
         self._c.publish(topic, payload, qos=1, retain=retain).wait_for_publish(5)
@@ -65,7 +72,7 @@ async def test_setup_publishes_and_unload_goes_offline(hass, broker, tmp_path, s
         CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
     }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
     entry.add_to_hass(hass)
-    watcher = Watcher(broker)
+    watcher = Watcher(broker, registered=("lamp1",))
     try:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()

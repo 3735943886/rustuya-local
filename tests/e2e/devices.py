@@ -20,3 +20,9 @@ def lamp(dev_id="lamp1"):
             "function": f, "status_range": f, "status": {},
             "local_strategy": strat({"20": ("switch_led", "Boolean"), "22": ("bright_value_v2", "Integer"),
                                      "23": ("temp_value_v2", "Integer")})}
+
+
+def status_reply(ids, offset=0, has_more=False):
+    """What rustuya-bridge answers to `{"action": "status"}`: the devices it holds (a page of them)."""
+    return json.dumps({"action": "status", "status": "ok", "devices": {i: {"id": i} for i in ids}, "offset": offset,
+                       "returned": len(ids), "has_more": has_more, "device_count": len(ids)})

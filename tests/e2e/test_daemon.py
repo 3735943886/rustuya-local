@@ -5,9 +5,17 @@ import signal
 import subprocess
 import sys
 
-from devices import lamp
+from devices import lamp, status_reply
 
 from tuya2ildevice.host import MqttTransport
+
+
+async def answer_status(transport, root, ids):
+    """Stand in for rustuya-bridge's answer to the daemon's `status` command: the devices it holds."""
+    def on_command(m):
+        if json.loads(m.payload).get("action") == "status":
+            asyncio.ensure_future(transport.publish(f"{root}/response/bridge", status_reply(ids), 1, False))
+    await transport.subscribe(f"{root}/command", on_command)
 
 
 async def test_the_daemon_publishes_devices_and_goes_offline_on_sigterm(broker, tmp_path):
@@ -18,6 +26,7 @@ async def test_the_daemon_publishes_devices_and_goes_offline_on_sigterm(broker, 
     watcher = MqttTransport("127.0.0.1", broker, client_id="watcher")
     await watcher.connect()
     await watcher.subscribe("ild/#", lambda m: seen.__setitem__(m.topic, m.payload.decode()))
+    await answer_status(watcher, "rustuya", ["daemon1"])
     proc = subprocess.Popen([sys.executable, "-m", "rustuya_local", "run", "--config", str(cfg)],
                             stderr=subprocess.DEVNULL)
     try:
@@ -56,6 +65,7 @@ async def test_the_daemon_uses_the_bridges_templates_and_follows_the_device_file
     await t.subscribe("ilw/#", lambda m: seen.__setitem__(m.topic, m.payload.decode()))
     # the bridge's own layout: events under {root}/ev/{type}/{id}
     await t.publish("rb/bridge/config", json.dumps({"mqtt_root_topic": "rb", "mqtt_event_topic": "{root}/ev/{type}/{id}"}), 1, True)
+    await answer_status(t, "rb", ["w1", "w2"])                       # the bridge holds both, however the file changes
     proc = subprocess.Popen([sys.executable, "-m", "rustuya_local", "run", "--config", str(cfg)], stderr=subprocess.DEVNULL)
 
     async def until(cond, what):

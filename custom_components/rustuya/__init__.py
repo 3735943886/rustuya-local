@@ -38,6 +38,7 @@ _LOGGER = logging.getLogger(__name__)
 @dataclass
 class RuntimeData:
     runner: Any
+    bridge_client: Any
     bridge_transport: Any
     il_transport: Any
     embedded_bridge: Any | None
@@ -73,7 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         bridge_client = BridgeClient(bridge_transport, data[CONF_BRIDGE_ROOT])
 
         devices = await hass.async_add_executor_job(load_devices, data[CONF_DEVICES_PATH])
-        hub = Hub(devices, il=IlTopics(data.get(CONF_IL_PREFIX, "il"), data.get(CONF_IL_SOURCE, "tuya")),
+        hub = Hub([], il=IlTopics(data.get(CONF_IL_PREFIX, "il"), data.get(CONF_IL_SOURCE, "tuya")),
                  allow_hazardous=options.get(CONF_ALLOW_HAZARDOUS, False),
                  expose_unused=options.get(CONF_EXPOSE_UNUSED, False))
         will = hub.presence(False)
@@ -88,30 +89,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await runner.start()
         stack.push_async_callback(runner.stop)
         await bridge_client.start()
+        bridge_client.sync_devices(devices)      # IL follows the devices the bridge holds
 
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = RuntimeData(
-            runner=runner, bridge_transport=bridge_transport, il_transport=il_transport,
+            runner=runner, bridge_client=bridge_client, bridge_transport=bridge_transport, il_transport=il_transport,
             embedded_bridge=embedded_bridge,
         )
         entry.async_on_unload(entry.add_update_listener(_async_reload))
-        _LOGGER.info("driving %d device(s) via %s (bridge: %s)", len(devices), data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE])
+        _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s (bridge: %s)", len(devices),
+                     data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE])
 
         # everything above succeeded: async_unload_entry (RuntimeData) owns closing it now, not this stack
         stack.pop_all()
     return True
 
 
-async def async_refresh_devices(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, list[str]] | None:
-    """Make the running Hub drive exactly what tuyadevices.json holds now: new devices get their descriptor published,
-    dropped ones get every retained IL topic cleared (empty retained payloads), and no connection is restarted. A
-    reload would not do that last part — a fresh Hub has no memory of what the old one published."""
+async def async_refresh_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Hand the running bridge client the device file as it is now: devices in it that the bridge holds get their
+    descriptor published, ones that dropped out get every retained IL topic cleared (empty retained payloads), and no
+    connection is restarted. A reload would not do that last part — a fresh Hub has no memory of what the old one
+    published."""
     from tuya2ildevice.host import load_devices
 
     runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if runtime is None:
-        return None
+        return
     records = await hass.async_add_executor_job(load_devices, entry.data[CONF_DEVICES_PATH])
-    return runtime.runner.sync_devices(records)
+    runtime.bridge_client.sync_devices(records)
 
 
 async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:

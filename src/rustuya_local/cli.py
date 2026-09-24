@@ -30,7 +30,8 @@ async def run(config: Config) -> None:
     await bridge.connect()
     bridge_client = BridgeClient(bridge, config.root)
 
-    hub = Hub(config.devices, il=IlTopics(config.prefix, config.source), **config.hub_options)
+    # no devices yet: bridge_client hands the Hub the ones the bridge holds (device file and bridge registration)
+    hub = Hub([], il=IlTopics(config.prefix, config.source), **config.hub_options)
     will = hub.presence(False)                                           # M-12
     il = MqttTransport(config.il.host, config.il.port, client_id="rustuya-local-il", username=config.il.username,
                        password=config.il.password, will=(will.topic, will.payload, will.qos, will.retain))
@@ -39,11 +40,12 @@ async def run(config: Config) -> None:
     bridge_client.runner = runner
     await runner.start()
     await bridge_client.start()
+    bridge_client.sync_devices(config.devices)
     watcher = None
     if config.devices_path and config.watch_interval > 0:
-        watcher = DeviceWatcher(config.devices_path, runner, config.watch_interval)
+        watcher = DeviceWatcher(config.devices_path, bridge_client, config.watch_interval)
         watcher.start()
-    log.info("driving %d device(s) via %s", len(config.devices), config.root)
+    log.info("%d device(s) in the device file; IL follows the ones registered on %s", len(config.devices), config.root)
     await stop.wait()
     if watcher:
         await watcher.stop()
