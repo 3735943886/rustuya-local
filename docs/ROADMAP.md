@@ -11,8 +11,7 @@ rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아�
 - [x] **L** drop-in zip(0.0.7): 매니저(특히 Docker)는 카탈로그의 GitHub 릴리스 zip 을 풀어 최상위 패키지의 `register` 를 부르고
       pip 로 의존성을 설치하지 못한다. `rustuya_local.register` 노출, tuya2ildevice 를 `rustuya_local/_vendor/` 에 담은 재현 가능한 zip
       (`scripts/build_dropin.py`), 릴리스 에셋으로 첨부. paho-mqtt·pyrustuyabridge 는 매니저가 이미 가진다.
-- [ ] **M** 매니저 카탈로그: `data/plugins.json`·`plugin-sources.json` 의 rustuya-homeassistant 항목을 rustuya-local
-      (`rustuya_local-{version}-dropin.zip`, `min_api: 4`)로 교체.
+- [x] **M** 매니저 카탈로그에 rustuya-local 추가(rustuya-homeassistant 는 유지, `fef727d`). catalog-sync 봇이 이후 릴리스를 따라감.
 - [ ] **L** 새 venv 에 PyPI 만으로 설치해 `Service`·매니저 플러그인 import 를 CI 에서 확인하는 스모크 잡.
 - [ ] **L** HACS 검증 통과: 브랜드 에셋(아이콘) 추가. 0.0.5 부터 실패하던 것이다.
 - [ ] **R** 폐기 안내를 "rustuya-local + il-ha" 로 고친다(지금은 rustuya-local 의 discovery 로 옮기라고 안내함). 마지막 PyPI 릴리스 후
