@@ -96,7 +96,7 @@ jobs:
 
       - name: Install rustuya-local + test extras
         working-directory: rustuya-local
-        run: uv pip install --system -e ".[test,test-ha,fullstack]"
+        run: uv pip install --system -e ".[test,test-ha,fullstack,manager]"
 
       - name: pytest
         working-directory: rustuya-local

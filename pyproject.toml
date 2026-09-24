@@ -25,6 +25,7 @@ rustuya-local = "rustuya_local.manager_plugin:register"
 test = ["pytest", "pytest-asyncio", "il-ha"]      # il-ha: the IL consumer the end-to-end tests read the result with
 test-ha = ["pytest-homeassistant-custom-component"]   # custom_components/rustuya's own tests
 fullstack = ["tuyamock"]      # the device emulator, for tests/e2e/test_full_stack*.py (pyrustuyabridge is now a base dep)
+manager = ["rustuya-manager>=0.1.1"]      # tests/e2e/test_manager_plugin.py: the manager's real plugin host
 
 # Local sibling checkouts until the packages are on PyPI. tuya2ildevice is on PyPI now (see `dependencies` above);
 # the rest are not yet.
