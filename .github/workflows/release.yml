@@ -92,6 +92,13 @@ jobs:
       - name: Check distribution metadata
         run: twine check dist/*
 
+      - name: Build the rustuya-manager drop-in zip
+        # The manager's plugin catalog installs this asset (it cannot pip-install): rustuya_local with the tuya2ildevice
+        # the wheel resolves to vendored inside. Kept out of dist/ so it is not uploaded to PyPI.
+        run: |
+          python -m pip install dist/*.whl
+          python scripts/build_dropin.py --outdir dropin
+
       - name: Publish to ${{ steps.target.outputs.name }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
@@ -100,7 +107,9 @@ jobs:
       - name: Create or update the GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/*
+          files: |
+            dist/*
+            dropin/*
           draft: false
           prerelease: ${{ steps.target.outputs.prerelease }}
           generate_release_notes: true

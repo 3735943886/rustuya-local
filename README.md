@@ -55,8 +55,10 @@ See tuya2ildevice's README ("User overrides") for the format. A curated set ship
 
 ## rustuya-manager plugin
 
-Installed next to rustuya-manager (`pip install rustuya-local` in the manager's environment), it appears as a
-**Tuya (IL)** tab and runs the service under the manager: the manager's broker and bridge root, the manager's device
+Installed next to rustuya-manager, as a pip package (`pip install rustuya-local` in the manager's environment) or as
+the drop-in zip each release carries (`rustuya_local-<version>-dropin.zip`, tuya2ildevice vendored inside, built by
+`scripts/build_dropin.py`; unpack it into the manager's plugin directory, or install it from the manager's plugin
+catalog once listed there), it appears as a **Tuya (IL)** tab and runs the service under the manager: the manager's broker and bridge root, the manager's device
 list (followed). Its data dir (`rustuya-local/` next to the manager's plugins) holds an optional `settings.json`
 (`il`, `options`) and `custom_converters/`.
 

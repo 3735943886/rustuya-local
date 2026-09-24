@@ -2,16 +2,17 @@
 
 재설계(REDESIGN.md 9장) 1차는 끝났다: tuya2ildevice 0.3.0, rustuya-local 0.0.6 PyPI 배포, il-ha·rustuya-homeassistant(폐기 안내) 푸시.
 아래는 그 뒤에 남은 것을 마일스톤 순서로 정리한 것이다. 저장소 표기: **T** tuya2ildevice, **L** rustuya-local, **H** il-ha,
-**R** rustuya-homeassistant.
+**R** rustuya-homeassistant, **M** rustuya-manager.
 
 ## M1 — 배포 완결 · 목표 0.0.7
 
 rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아래 참고). HA 는 il-ha 로 본다.
 
-- [ ] **L** 매니저 카탈로그 설치 경로. 매니저(특히 Docker)는 GitHub 릴리스의 drop-in zip 을 풀어 최상위 패키지의 `register` 를 부르고,
-      pip 로 의존성을 설치하지 못한다. 필요한 것: `rustuya_local/__init__.py` 에 `register` 노출, tuya2ildevice·paho-mqtt 를 함께 담은
-      (vendored) 재현 가능한 zip 을 릴리스 워크플로에서 생성, 매니저 `data/plugins.json`·`plugin-sources.json` 의
-      rustuya-homeassistant 항목을 rustuya-local 로 교체.
+- [x] **L** drop-in zip(0.0.7): 매니저(특히 Docker)는 카탈로그의 GitHub 릴리스 zip 을 풀어 최상위 패키지의 `register` 를 부르고
+      pip 로 의존성을 설치하지 못한다. `rustuya_local.register` 노출, tuya2ildevice 를 `rustuya_local/_vendor/` 에 담은 재현 가능한 zip
+      (`scripts/build_dropin.py`), 릴리스 에셋으로 첨부. paho-mqtt·pyrustuyabridge 는 매니저가 이미 가진다.
+- [ ] **M** 매니저 카탈로그: `data/plugins.json`·`plugin-sources.json` 의 rustuya-homeassistant 항목을 rustuya-local
+      (`rustuya_local-{version}-dropin.zip`, `min_api: 4`)로 교체.
 - [ ] **L** 새 venv 에 PyPI 만으로 설치해 `Service`·매니저 플러그인 import 를 CI 에서 확인하는 스모크 잡.
 - [ ] **L** HACS 검증 통과: 브랜드 에셋(아이콘) 추가. 0.0.5 부터 실패하던 것이다.
 - [ ] **R** 폐기 안내를 "rustuya-local + il-ha" 로 고친다(지금은 rustuya-local 의 discovery 로 옮기라고 안내함). 마지막 PyPI 릴리스 후
