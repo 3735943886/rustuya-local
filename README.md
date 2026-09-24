@@ -62,6 +62,10 @@ catalog once listed there), it appears as a **Tuya (IL)** tab and runs the servi
 list (followed). Its data dir (`rustuya-local/` next to the manager's plugins) holds an optional `settings.json`
 (`il`, `options`) and `custom_converters/`.
 
+The drop-in zip freezes the tuya2ildevice it was built with: a tuya2ildevice fix reaches manager users with the next
+rustuya-local release (bump the patch version and tag; the manager's catalog follows the release). Installed both ways
+(pip and the plugin directory), the plugin runs once.
+
 ## Tests
 
 ```

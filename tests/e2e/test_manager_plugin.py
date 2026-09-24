@@ -71,3 +71,76 @@ def test_an_old_manager_is_refused(caplog):
         api_version = 3
     register(Old())
     assert "api_version >= 4" in caplog.text
+
+
+def _ctx(tmp_path):
+    state = State()
+    return plugins.PluginContext(plugins.PluginRegistry(), state=state, data_root=tmp_path,
+                                 bridge_client=BridgeClient("mqtt://127.0.0.1:1", "r", state))
+
+
+def test_installed_twice_it_registers_once(tmp_path, caplog):
+    import rustuya_local
+    from rustuya_local.manager_plugin import register
+    ctx = _ctx(tmp_path)
+    register(ctx)                      # the entry point
+    rustuya_local.register(ctx)        # the dropped-in package's top-level register
+    assert len(ctx._registry.services) == 1 and len(ctx._registry.pages) == 1
+    assert "installed twice" in caplog.text
+    other = _ctx(tmp_path / "other")
+    register(other)                    # another manager (context) is not a duplicate
+    assert len(other._registry.services) == 1
+
+
+DROPIN_CHECK = r"""
+import importlib.machinery, sys, tempfile
+from pathlib import Path
+plugin_dir = Path(sys.argv[1])
+vendor = plugin_dir / "rustuya_local" / "_vendor"
+
+class OnlyVendored:
+    # tuya2ildevice may be installed here; a manager's environment has none, so resolve it from the zip only
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0] != "tuya2ildevice" or path is not None:
+            return None
+        spec = importlib.machinery.PathFinder.find_spec(name, [str(vendor)])
+        if spec is None:
+            raise ImportError(f"{name} is not in the drop-in zip")
+        return spec
+
+sys.meta_path.insert(0, OnlyVendored())
+from rustuya_manager import plugins
+from rustuya_manager.mqtt import BridgeClient
+from rustuya_manager.state import State
+registers = plugins._discover_dir_plugins([str(plugin_dir)])
+state = State()
+ctx = plugins.PluginContext(plugins.PluginRegistry(), state=state, data_root=Path(tempfile.mkdtemp()),
+                            bridge_client=BridgeClient("mqtt://127.0.0.1:1", "r", state))
+for r in registers:
+    r(ctx)
+import rustuya_local, tuya2ildevice
+from rustuya_local.service import Service
+from tuya2ildevice.host import MqttTransport
+assert Path(rustuya_local.__file__).is_relative_to(plugin_dir), rustuya_local.__file__
+assert Path(tuya2ildevice.__file__).is_relative_to(vendor), tuya2ildevice.__file__
+print(len(registers), [p["id"] for p in ctx._registry.pages], len(ctx._registry.services))
+"""
+
+
+def test_the_drop_in_zip_loads_in_the_manager_with_its_vendored_tuya2ildevice(tmp_path):
+    import importlib.util
+    import subprocess
+    import sys
+    import zipfile
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location("build_dropin", root / "scripts" / "build_dropin.py")
+    build_dropin = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_dropin)
+    plugin_dir = tmp_path / "plugins"
+    zipfile.ZipFile(build_dropin.build(tmp_path)).extractall(plugin_dir)
+    out = subprocess.run([sys.executable, "-c", DROPIN_CHECK, str(plugin_dir)], capture_output=True, text=True,
+                         cwd=tmp_path, timeout=60)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.split() == ["1", "['rustuya-local']", "1"]

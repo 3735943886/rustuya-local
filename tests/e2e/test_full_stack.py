@@ -7,7 +7,6 @@ Synchronous on purpose: the bridge and the mock run in threads, the daemon in it
 Skipped when mosquitto, pyrustuyabridge or tuyamock is missing.
 """
 import json
-import os
 import signal
 import subprocess
 import sys

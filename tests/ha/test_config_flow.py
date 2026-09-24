@@ -3,7 +3,6 @@ those are exercised in test_init.py against real infrastructure instead)."""
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import patch
 
 import pytest

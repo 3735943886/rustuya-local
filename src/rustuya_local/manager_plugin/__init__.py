@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import weakref
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,10 @@ _LOGGER = logging.getLogger(__name__)
 
 NAME = "rustuya-local"
 MIN_API = 4
+
+# The manager loads pip-installed plugins by entry point and dropped-in ones by their top-level `register`, and does not
+# dedup the two: installed both ways, this is called twice with the same ctx (one module, whichever copy won sys.path)
+_REGISTERED: "weakref.WeakSet[Any]" = weakref.WeakSet()
 
 
 def load_settings(data_dir: Path, bridge_root: str, devices: list[dict]):
@@ -123,6 +128,10 @@ def register(ctx: Any) -> None:
     if getattr(ctx, "api_version", 0) < MIN_API:
         _LOGGER.warning("%s needs rustuya-manager plugin api_version >= %d; not loaded", NAME, MIN_API)
         return
+    if ctx in _REGISTERED:
+        _LOGGER.warning("%s is installed twice (pip and the plugin directory); running it once", NAME)
+        return
+    _REGISTERED.add(ctx)
     plugin = Plugin(ctx)
     ctx.add_service(plugin.run)
     ctx.watch_devices(plugin.on_devices)

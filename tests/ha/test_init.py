@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
-import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "e2e"))
