@@ -205,6 +205,20 @@ async def test_tuning_updates_options(hass, tmp_path):
     assert r["data"] == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False}
 
 
+async def test_a_session_still_open_elsewhere_aborts_with_a_hint(hass, tmp_path, monkeypatch):
+    from custom_components.rustuya import manager_session
+
+    async def busy(**kw):
+        raise manager_session.Busy
+
+    monkeypatch.setattr(manager_session, "available", lambda: True)
+    monkeypatch.setattr(manager_session, "open_manager", busy)
+    entry = _entry(hass, tmp_path)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "bridge_sync"})
+    assert r["type"] == "abort" and r["reason"] == "manager_busy"
+
+
 async def test_options_menu_hides_manager_steps_when_manager_is_unavailable(hass, tmp_path, monkeypatch):
     from custom_components.rustuya import manager_session
 

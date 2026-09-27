@@ -15,7 +15,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.data_entry_flow import AbortFlow, FlowResult
 from homeassistant.helpers import selector
 
 from . import bridge_sync, manager_session
@@ -73,6 +73,14 @@ def _broker_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     })
 
 
+
+async def _open(**kw: Any):
+    """A Manager session, or the flow aborts: another flow's session is still open (`manager_session.Busy`)."""
+    try:
+        return await manager_session.open_manager(**kw)
+    except manager_session.Busy as e:
+        raise AbortFlow("manager_busy") from e
+
 class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -128,7 +136,7 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _async_open_manager(self):
         if self._manager is None:
-            self._manager = await manager_session.open_manager(
+            self._manager = await _open(
                 broker=_broker_url(self._data), root=self._data[CONF_BRIDGE_ROOT],
                 devices_path=self._data[CONF_DEVICES_PATH],
                 username=self._data.get(CONF_BROKER_USERNAME) or None,
@@ -280,7 +288,7 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
     async def _async_manager(self):
         if self._manager is None:
             data = self.config_entry.data
-            self._manager = await manager_session.open_manager(
+            self._manager = await _open(
                 broker=_broker_url(data), root=data[CONF_BRIDGE_ROOT], devices_path=data[CONF_DEVICES_PATH],
                 username=data.get(CONF_BROKER_USERNAME) or None, password=data.get(CONF_BROKER_PASSWORD) or None,
             )

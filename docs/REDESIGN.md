@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.16). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.17). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)
@@ -261,3 +261,6 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
   (HA 전용이 아니다).
 - **2026-09-27 0.0.16**: HA 통합 설치 실패 수정. manifest 가 요구하던 rustuya-manager 0.2 가 PyPI 에 없었다(0.2.0.dev* 는 TestPyPI 만).
   rustuya-manager 0.2.0 정식 릴리스, 의존성 상한(`<0.4`, `<0.3`, `<0.1`) 제거.
+- **2026-09-27 0.0.17**: HA 에서 Tuya 로그인 창을 닫자마자 기기 동기화를 열면 두 설정 창의 Manager 가 같은 client id(`rustuya-config`)로
+  동시에 붙어 브로커가 서로를 끊는 재연결 반복이 났다. `manager_session` 이 세션을 한 번에 하나로 잠그고(다음 세션은 앞 세션이 닫힐 때까지
+  최대 15초 대기, 그 뒤엔 `manager_busy` 로 중단), 닫기도 15초로 제한해 락이 영영 잡히지 않게 했다.

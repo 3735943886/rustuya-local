@@ -89,7 +89,8 @@
       "publish_failed": "Could not send the command to the bridge."
     },
     "abort": {
-      "already_configured": "Already set up."
+      "already_configured": "Already set up.",
+      "manager_busy": "Another Tuya login or device sync window is still open. Close it and try again."
     }
   },
   "options": {
@@ -139,7 +140,8 @@
     },
     "abort": {
       "wizard_failed": "The Tuya Cloud login failed: {error}",
-      "no_devices": "There are no devices in the cloud list or on the bridge."
+      "no_devices": "There are no devices in the cloud list or on the bridge.",
+      "manager_busy": "Another Tuya login or device sync window is still open. Close it and try again."
     },
     "error": {
       "publish_failed": "Could not send the command to the bridge."
