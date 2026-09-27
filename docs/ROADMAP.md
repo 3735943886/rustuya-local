@@ -1,8 +1,8 @@
 # 남은 일 (2026-09-27 기준)
 
-재설계(REDESIGN.md 9장)는 끝났다. 현재 배포: tuya2ildevice 0.3.5, rustuya-local 0.0.14(PyPI, HACS, 매니저 카탈로그 drop-in).
-GitHub 저장소 이름: 이 저장소가 `rustuya-homeassistant`(2026-09-27, 옛 `rustuya-local` URL 은 리다이렉트), 옛 v1 저장소는
-`rustuya-homeassistant-v1`. PyPI 이름·import·CLI·매니저 플러그인 id 는 `rustuya-local` 그대로.
+재설계(REDESIGN.md 9장)는 끝났다. 현재 배포: tuya2ildevice 0.3.5, rustuya-local 0.0.15(PyPI, HACS, 매니저 카탈로그 drop-in).
+rustuya-homeassistant 는 폐기 안내만 푸시했다(아카이브 안 함). 2026-09-27 에 저장소 이름을 rustuya-homeassistant 로 바꿨다가 같은 날
+되돌렸다(HA 전용이 아니고 이름이 여러 개면 헷갈림): 저장소·PyPI·import·CLI·플러그인 id 모두 `rustuya-local`.
 아래는 그 뒤에 남은 것을 마일스톤 순서로 정리한 것이다. 저장소 표기: **T** tuya2ildevice, **L** rustuya-local, **H** il-ha,
 **R** rustuya-homeassistant, **M** rustuya-manager.
 
@@ -50,7 +50,7 @@ rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아�
 - [x] **T** 0.3.2: 생산자 인계(새 인스턴스 시작 후 옛 인스턴스 종료) 뒤 presence 가 offline 으로 남던 문제. Runner 가 자기 presence 를 구독해
       다른 쪽의 `offline` 에 `online` 으로 답한다. 이벤트 루프를 막지 않는 `preload()`.
 - [x] **T** 0.3.3: 스위치의 device class 를 core 의 outlet 이 아니라 Tuya 카테고리 목록으로 정한다.
-- [x] **T/L** 같은 IL prefix·source 에 생산자 둘 금지(tuya2ildevice 0.3.5, rustuya-local 0.0.14): 시작 전에 `producer_running` 이
+- [x] **T/L** 같은 IL prefix·source 에 생산자 둘 금지(tuya2ildevice 0.3.5, rustuya-local 0.0.15): 시작 전에 `producer_running` 이
       `<presence>/probe` 로 물어 살아 있는 Runner 가 `<presence>/alive` 로 답하면 `AnotherProducer` 로 거부. 데몬은 종료 코드 1, HA 는
       `ConfigEntryNotReady`(HA 가 재시도), 매니저 탭은 오류 표시 후 30초마다 재시도. 답이 없는 `online`(브로커와 함께 사라진 Last Will,
       0.3.5 이전 생산자)은 경고만 하고 시작. 인계 순서는 이제 "옛것을 멈추고 새것을 시작".
@@ -64,7 +64,7 @@ rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아�
       쓸 수 없는 설정은 재시도 대신 탭에 오류로 표시하고 기다림. `/api/rustuya-local/...`(`manager_plugin/api.py`).
 - [x] **T** v1 `.py` 컨버터 이식 가이드(tuya2ildevice `docs/porting-v1-converters.md`, 예제는 테스트가 문서에서 읽어 검증). 로더 메시지가 링크.
       자동 변환 도구는 만들지 않음: v1 은 비동기 핸들러·dp 번호·쓰기가 섞인 코드라 기계 변환이 성립하지 않고, 대표 사례(커튼)는 내장됨.
-- [x] **T/L** 오버라이드 팩 재도입(tuya2ildevice 0.3.5 `host.pack`, rustuya-local 0.0.14): tuya2ildevice `master` 의 `pack/` 을
+- [x] **T/L** 오버라이드 팩 재도입(tuya2ildevice 0.3.5 `host.pack`, rustuya-local 0.0.15): tuya2ildevice `master` 의 `pack/` 을
       시작 시와 하루마다 `custom_converters/` 로 복사(SHA-256 확인, `.tuya2ildevice_pack.json` 원장에 적힌 파일만 쓰고 지움, 사용자 파일·
       사용자가 고친 팩 파일은 건드리지 않음, `requires`/`until` 로 tuya2ildevice 버전 범위 지정). 기본 켜짐: 데몬 `"pack"`, HA 튜닝 옵션,
       매니저 탭 옵션(상태에 마지막 동기화 표시). 팩은 비어 있는 채로 시작.

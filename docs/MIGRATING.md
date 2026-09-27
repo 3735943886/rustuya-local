@@ -1,9 +1,7 @@
-# Moving from rustuya-homeassistant v1
+# Moving from rustuya-homeassistant
 
-rustuya-homeassistant v1 (`rustuya-ha`, now at
-[rustuya-homeassistant-v1](https://github.com/3735943886/rustuya-homeassistant-v1)) published Home Assistant MQTT
-discovery for your Tuya devices, as a CLI or a rustuya-manager plugin. It is retired. Its replacement is two pieces
-(this repository took over its name):
+rustuya-homeassistant (`rustuya-ha`) published Home Assistant MQTT discovery for your Tuya devices, as a CLI or a
+rustuya-manager plugin. It is retired. Its replacement is two pieces:
 
 - **rustuya-local** turns the devices on rustuya-bridge into IL devices (MQTT topics under a prefix such as `il/tuya`).
   Run it one way: the `rustuya` Home Assistant integration (HACS), the rustuya-manager plugin (catalog: *Tuya (IL)*),

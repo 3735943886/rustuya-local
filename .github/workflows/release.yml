@@ -16,7 +16,7 @@ name: Release
 # Same entry on each:
 #   Project name: rustuya-local
 #   Owner:        3735943886
-#   Repository:   rustuya-homeassistant   (renamed from rustuya-local on 2026-09-27)
+#   Repository:   rustuya-local
 #   Workflow:     release.yml
 #   Environment:  pypi
 

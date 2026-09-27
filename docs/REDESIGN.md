@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.14; 저장소 이름은 2026-09-27 부터 rustuya-homeassistant). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.15). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)
@@ -255,6 +255,7 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
 - **2026-09-24~27 이후 릴리스**(자세한 것은 ROADMAP.md): 0.0.7 매니저 drop-in zip·카탈로그 등록, 0.0.8 이중 설치 방지,
   0.0.9 tuya2ildevice 0.3.1(IL 값 범위·전원 prop 이름·`source`), 0.0.10 tuya2ildevice 0.3.2(생산자 인계 presence, HA blocking I/O 없음,
   `{warning}` 번역 값), 0.0.11 tuya2ildevice 0.3.3·브랜드 에셋(HACS 통과), 0.0.12 PyPI README.
-- **2026-09-27 0.0.13~0.0.14**: 0.0.13 매니저 탭의 설정·컨버터 편집, 이전 안내. 0.0.14(tuya2ildevice 0.3.5, 사용자 결정): 생산자 둘 금지
-  (`producer_running` probe, `AnotherProducer`), 오버라이드 팩 재도입(`host.pack`, tuya2ildevice `pack/`). GitHub 저장소 이름을
-  `rustuya-homeassistant` 로 바꿈(옛 v1 은 `rustuya-homeassistant-v1`). PyPI·import·CLI·플러그인 id 는 `rustuya-local` 그대로.
+- **2026-09-27 0.0.13~0.0.15**: 0.0.13 매니저 탭의 설정·컨버터 편집, 이전 안내. 0.0.15(tuya2ildevice 0.3.5, 사용자 결정): 생산자 둘 금지
+  (`producer_running` probe, `AnotherProducer`), 오버라이드 팩 재도입(`host.pack`, tuya2ildevice `pack/`). 0.0.14 는 태그만 있고 게시되지
+  않았다: 저장소 이름을 rustuya-homeassistant 로 바꿨다가 되돌리는 사이 PyPI 게시가 막혔다. 이름은 그대로 `rustuya-local`
+  (HA 전용이 아니다).

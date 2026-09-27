@@ -1,14 +1,9 @@
-# rustuya-homeassistant
+# rustuya-local
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
 Local control of Tuya devices through [rustuya-bridge](https://github.com/3735943886/rustuya-bridge), as IL
-([ildevice](https://github.com/3735943886/ildevice)) devices, and in Home Assistant. The Python package and command
-are **`rustuya-local`** (PyPI); the Home Assistant integration is **Rustuya** (`custom_components/rustuya`).
-
-It replaces rustuya-homeassistant v1 (MQTT discovery), now at
-[rustuya-homeassistant-v1](https://github.com/3735943886/rustuya-homeassistant-v1). This repository was called
-rustuya-local until 2026-09-27.
+([ildevice](https://github.com/3735943886/ildevice)) devices, and in Home Assistant. It replaces rustuya-homeassistant.
 
 ```
 rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il-ha (Home Assistant integration), or any IL consumer
@@ -39,7 +34,7 @@ topic templates are read from its retained `{root}/bridge/config`.
 
 ## Home Assistant
 
-Coming from rustuya-homeassistant v1: [docs/MIGRATING.md](docs/MIGRATING.md).
+Coming from rustuya-homeassistant: [docs/MIGRATING.md](docs/MIGRATING.md).
 
 Install il-ha, and run one IL producer per bridge: the daemon, the integration below, or the manager plugin. A second
 one with the same IL prefix and source refuses to start while the first runs (every device would show twice): the
@@ -57,7 +52,7 @@ config; integration: `<config>/rustuya_converters`; manager plugin: its data dir
 
 - `*.json`: tuya2ildevice override blocks by product or device id: rename a dp, define one the schema lacks, map the
   device's words to the standard ones (`remap.alias`), invert a direction (`remap.invert`), fix labels and classes,
-  turn on a code converter. rustuya-homeassistant v1's `custom_converters` JSON files load as they are.
+  turn on a code converter. rustuya-homeassistant's `custom_converters` JSON files load as they are.
 - `*.py`: code converters (`CONVERTERS = {"name": factory}`).
 
 See tuya2ildevice's README ("User overrides") for the format. A curated set ships in tuya2ildevice, and fixes published
