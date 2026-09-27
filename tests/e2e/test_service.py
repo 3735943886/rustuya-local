@@ -7,7 +7,7 @@ import pytest
 from devices import lamp, status_reply
 from tuya2ildevice.host import InProcessTransport
 
-from rustuya_local.service import Service, Settings
+from rustuya_local.service import AnotherProducer, Service, Settings
 
 CONVERTER_PY = """
 from tuya2ildevice import Converter
@@ -128,13 +128,56 @@ async def test_a_failed_start_releases_what_it_connected(tmp_path):
     await service.stop()                                          # nothing to stop: no error
 
 
-async def test_another_producer_online_is_warned_about(tmp_path, monkeypatch, caplog):
-    t = Transports()
-    await t.il.publish("il/_producer/tuya", "online", 1, True)
+async def test_a_second_producer_is_refused_and_a_stale_presence_is_not(tmp_path, monkeypatch, caplog):
     import rustuya_local.bridge_client as bc
     orig = bc.BridgeClient.start
     monkeypatch.setattr(bc.BridgeClient, "start", lambda self, timeout=0.05: orig(self, timeout))
-    service = _service(t, tmp_path)
+    t = Transports()
+    await t.il.publish("il/_producer/tuya", "online", 1, True)          # left by one whose Last Will never came
+    first = _service(t, tmp_path)
+    await first.start()
+    assert "no producer answers" in caplog.text
+
+    second = _service(t, tmp_path)
+    with pytest.raises(AnotherProducer):
+        await second.start()
+    assert second.runner is None and t.il.retained["il/_producer/tuya"].payload == "online"
+    other = Transports()
+    other.il = t.il                                                     # the same IL broker, another source: fine
+    third = Service(Settings(devices=[lamp("lamp1")], watch_interval=0, source="tuya2"),
+                    connect_bridge=other.connect_bridge, connect_il=other.connect_il)
+    await third.start()
+    await third.stop()
+    await first.stop()
+
+
+async def test_the_override_pack_is_synced_in_the_background(tmp_path, monkeypatch):
+    import hashlib
+
+    import rustuya_local.bridge_client as bc
+    orig = bc.BridgeClient.start
+    monkeypatch.setattr(bc.BridgeClient, "start", lambda self, timeout=0.05: orig(self, timeout))
+    served, conv = tmp_path / "served", tmp_path / "conv"
+    served.mkdir()
+    fix = json.dumps({"lamp1": {"label": "Packed"}})
+    (served / "00_pack_lamp.json").write_text(fix)
+    (served / "manifest.json").write_text(json.dumps({"version": 1, "files": [
+        {"name": "00_pack_lamp.json", "sha256": hashlib.sha256(fix.encode()).hexdigest()}]}))
+    t = Transports()
+    service = _service(t, tmp_path, overrides_path=conv, pack=True, pack_url=served.as_uri() + "/")
     await service.start()
-    assert "already online" in caplog.text
+    for _ in range(100):
+        if service.pack_status:
+            break
+        await __import__("asyncio").sleep(0.02)
+    assert service.pack_status["added"] == ["00_pack_lamp.json"] and (conv / "00_pack_lamp.json").is_file()
+    await service.stop()
+
+    service = _service(t, tmp_path, overrides_path=conv, pack=True, pack_url=(tmp_path / "gone").as_uri() + "/")
+    await service.start()                                               # no pack to be had: the service runs anyway
+    for _ in range(100):
+        if service.pack_status:
+            break
+        await __import__("asyncio").sleep(0.02)
+    assert "error" in service.pack_status and (conv / "00_pack_lamp.json").is_file()
     await service.stop()

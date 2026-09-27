@@ -12,6 +12,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     BRIDGE_EMBEDDED,
@@ -28,6 +29,7 @@ from .const import (
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
+    CONF_PACK,
     CONVERTERS_DIR,
     DOMAIN,
 )
@@ -54,7 +56,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.async_add_import_executor_job(_import_runtime)
     from tuya2ildevice.host import MqttTransport, load_devices
 
-    from rustuya_local.service import Service, Settings
+    from rustuya_local.service import AnotherProducer, Service, Settings
 
     from .bridge_supervisor import EmbeddedBridge
 
@@ -78,11 +80,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # the device file is not polled here: the config/options flow writes it and calls async_refresh_devices
         settings = Settings(root=data[CONF_BRIDGE_ROOT], prefix=data.get(CONF_IL_PREFIX, "il"),
                             source=data.get(CONF_IL_SOURCE, "tuya"), devices=devices,
-                            overrides_path=Path(hass.config.path(CONVERTERS_DIR)),
+                            overrides_path=Path(hass.config.path(CONVERTERS_DIR)), pack=options.get(CONF_PACK, True),
                             hub_options={"allow_hazardous": options.get(CONF_ALLOW_HAZARDOUS, False),
                                          "expose_unused": options.get(CONF_EXPOSE_UNUSED, False)})
         service = Service(settings, connect_bridge=lambda: connect("bridge"), connect_il=lambda will: connect("il", will))
-        await service.start()          # releases whatever it had connected if it fails
+        try:
+            await service.start()      # releases whatever it had connected if it fails
+        except AnotherProducer as e:   # retried by Home Assistant until the other one stops
+            raise ConfigEntryNotReady(str(e)) from e
     except BaseException:
         if embedded_bridge:
             await embedded_bridge.stop()

@@ -35,6 +35,7 @@ from .const import (
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
+    CONF_PACK,
     DEFAULT_BRIDGE_ROOT,
     DEFAULT_BRIDGE_STATE_FILE,
     DEFAULT_BROKER_PORT,
@@ -226,7 +227,7 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._data.update(user_input)
             return self.async_create_entry(title="Rustuya", data=self._data, options={
-                CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False,
+                CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True,
             })
         schema = vol.Schema({
             vol.Required(CONF_IL_PREFIX, default=DEFAULT_IL_PREFIX): str,
@@ -272,6 +273,7 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema({
             vol.Required(CONF_ALLOW_HAZARDOUS, default=current.get(CONF_ALLOW_HAZARDOUS, False)): bool,
             vol.Required(CONF_EXPOSE_UNUSED, default=current.get(CONF_EXPOSE_UNUSED, False)): bool,
+            vol.Required(CONF_PACK, default=current.get(CONF_PACK, True)): bool,
         })
         return self.async_show_form(step_id="tuning", data_schema=schema)
 

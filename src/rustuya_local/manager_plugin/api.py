@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Annotated, Any
 
 DEFAULTS: dict[str, Any] = {"il": {"prefix": "il", "source": "tuya"},
-                            "options": {"allow_hazardous": False, "expose_unused": False, "use_quirks": True}}
+                            "options": {"allow_hazardous": False, "expose_unused": False, "use_quirks": True,
+                                        "pack": True}}
 _LEVEL = re.compile(r"^[^/+#\s]+$")                  # one MQTT topic level: no separators, wildcards or spaces
 _FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.(json|py)$")
 

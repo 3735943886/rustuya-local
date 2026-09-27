@@ -10,6 +10,14 @@ only in how they connect the two transports and how long they keep the service; 
 `connect_bridge()` returns a connected `Transport` to the bridge's broker; `connect_il(will)` returns one to the IL
 broker with `will` (topic, payload, qos, retain) registered as its Last Will (M-12), or ignores it for a transport
 that has none (in-process). The service closes both on `stop()` (when they have an async `close()`).
+
+One producer per IL prefix and source: `start()` raises `AnotherProducer` while another one (the Home Assistant
+integration, the rustuya-manager plugin or a daemon) serves them, since every device would show twice. A presence left
+`online` that nobody answers for (a Last Will lost with the broker, or a producer on tuya2ildevice < 0.3.5) does not
+stop the start.
+
+With `pack` on, the override pack (tuya2ildevice's `pack/`) is copied into the overrides directory in the background at
+start and every `pack_interval` seconds; the directory watcher loads what it brings.
 """
 
 from __future__ import annotations
@@ -23,7 +31,13 @@ from pathlib import Path
 from typing import Any
 
 from tuya2ildevice import Hub, IlTopics, preload
-from tuya2ildevice.host import DeviceWatcher, OverrideWatcher, Runner, load_devices
+from tuya2ildevice.host import (
+    DeviceWatcher,
+    OverrideWatcher,
+    Runner,
+    load_devices,
+    producer_running,
+)
 from tuya2ildevice.host.transport import Transport
 
 from .bridge_client import BridgeClient
@@ -40,6 +54,10 @@ def _close_later(stack: contextlib.AsyncExitStack, transport: Transport) -> None
 Will = tuple[str, str, int, bool]
 
 
+class AnotherProducer(RuntimeError):
+    """Another producer serves this IL prefix and source; stop it first (or give this one another source)."""
+
+
 @dataclass
 class Settings:
     root: str = "rustuya"                      # the bridge's MQTT root
@@ -49,6 +67,9 @@ class Settings:
     devices_path: Path | None = None           # followed every `watch_interval` s when set (read at start if not)
     overrides_path: Path | None = None         # a custom_converters directory (or one .json), followed likewise
     watch_interval: float = 5.0
+    pack: bool = False                         # sync tuya2ildevice's override pack into `overrides_path` (a directory)
+    pack_interval: float = 86400.0
+    pack_url: str | None = None                # the pack's base URL; tuya2ildevice's `master` when None
     hub_options: dict[str, Any] = field(default_factory=dict)
     """`tuya2ildevice.Hub` keyword arguments: `allow_hazardous`, `expose_unused`, `use_quirks`, `overrides` (inline,
     merged over the directory's), `converters`, `converter_types`."""
@@ -68,6 +89,9 @@ class Service:
         self.device_watcher: DeviceWatcher | None = None
         self.override_watcher: OverrideWatcher | None = None
         self._stack: contextlib.AsyncExitStack | None = None
+        self.pack_status: dict[str, Any] | None = None
+        """The last pack sync: `{"at": epoch s, "error": str}` or `{"at", "added", "updated", "removed", "kept",
+        "failed"}`; None before the first."""
 
     async def start(self) -> None:
         s = self.settings
@@ -93,7 +117,7 @@ class Service:
             self.il = await self._connect_il((will.topic, will.payload, will.qos, will.retain))
             _close_later(stack, self.il)
 
-            await self._warn_if_another_producer(will.topic)
+            await self._refuse_if_another_producer(will.topic)
             self.runner = Runner(self.hub, self.il, on_bridge_command=self.bridge_client.send_command)
             self.bridge_client.runner = self.runner
             if self.override_watcher is not None:
@@ -110,25 +134,38 @@ class Service:
             if self.override_watcher is not None and s.watch_interval > 0:
                 self.override_watcher.watch()
                 stack.push_async_callback(self.override_watcher.stop)
+            if s.pack and s.overrides_path is not None and s.overrides_path.suffix != ".json":
+                task = asyncio.ensure_future(self._pack_loop(s.overrides_path))
+                stack.callback(task.cancel)
             self._stack = stack.pop_all()
         _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s", len(s.devices), s.root)
 
-    async def _warn_if_another_producer(self, presence_topic: str, wait: float = 0.5) -> None:
-        """Our presence topic already `online` means another producer with the same prefix and source is running
-        (this one's Last Will would have set it `offline`): the devices would be published twice."""
-        seen: list[str] = []
-        unsub = await self.il.subscribe(presence_topic, lambda m: seen.append(
-            m.payload.decode() if isinstance(m.payload, (bytes, bytearray)) else m.payload))
-        try:
-            for _ in range(int(wait / 0.05)):
-                if seen:
-                    break
-                await asyncio.sleep(0.05)
-        finally:
-            unsub()
-        if seen and seen[-1] == "online":
-            _LOGGER.warning("%s is already online: another producer (the Home Assistant integration, the "
-                            "rustuya-manager plugin or a daemon) serves the same IL prefix and source; run one", presence_topic)
+    async def _refuse_if_another_producer(self, presence_topic: str) -> None:
+        running = await producer_running(self.il, presence_topic)
+        if running:
+            raise AnotherProducer(f"another producer (the Home Assistant integration, the rustuya-manager plugin or a "
+                                  f"daemon) is running for {presence_topic}; stop it, or give this one another IL source")
+        if running is None:
+            _LOGGER.warning("%s says online but no producer answers (a stale Last Will, or one on tuya2ildevice before "
+                            "0.3.5): starting; if an older producer does run, stop it", presence_topic)
+
+    async def _pack_loop(self, directory: Path) -> None:
+        import time
+
+        from tuya2ildevice.host import pack
+
+        url = self.settings.pack_url or pack.BASE_URL
+        while True:
+            try:
+                result = await asyncio.to_thread(pack.sync, directory, base_url=url)
+                self.pack_status = {"at": time.time(), **result.as_dict()}
+            except pack.PackError as e:
+                _LOGGER.warning("override pack: %s", e)
+                self.pack_status = {"at": time.time(), "error": str(e)}
+            except Exception as e:
+                _LOGGER.exception("override pack")
+                self.pack_status = {"at": time.time(), "error": f"{type(e).__name__}: {e}"}
+            await asyncio.sleep(self.settings.pack_interval)
 
     async def stop(self) -> None:
         """Presence goes offline, pending bridge commands are sent, then both transports close. Idempotent."""

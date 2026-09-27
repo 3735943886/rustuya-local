@@ -1,7 +1,9 @@
-# Moving from rustuya-homeassistant
+# Moving from rustuya-homeassistant v1
 
-rustuya-homeassistant (`rustuya-ha`) published Home Assistant MQTT discovery for your Tuya devices, as a CLI or a
-rustuya-manager plugin. It is retired. Its replacement is two pieces:
+rustuya-homeassistant v1 (`rustuya-ha`, now at
+[rustuya-homeassistant-v1](https://github.com/3735943886/rustuya-homeassistant-v1)) published Home Assistant MQTT
+discovery for your Tuya devices, as a CLI or a rustuya-manager plugin. It is retired. Its replacement is two pieces
+(this repository took over its name):
 
 - **rustuya-local** turns the devices on rustuya-bridge into IL devices (MQTT topics under a prefix such as `il/tuya`).
   Run it one way: the `rustuya` Home Assistant integration (HACS), the rustuya-manager plugin (catalog: *Tuya (IL)*),
@@ -28,8 +30,7 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
    rustuya-ha clear '*' -y            # clear it (a backup is written first; `rustuya-ha restore --last` undoes it)
    ```
 
-   Then uninstall the rustuya-homeassistant manager plugin, or stop running `rustuya-ha`. Leaving both running shows
-   every device twice.
+   Then uninstall the old manager plugin (*Home Assistant Discovery*), or stop running `rustuya-ha`.
 
 2. **Install rustuya-local** one way (see the [README](../README.md#home-assistant)). Keep the same rustuya-bridge and
    device file (`tuyadevices.json`).
@@ -48,7 +49,8 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
 
    - `*.json` files work as they are: `dp_meta`, `model` and `discovery_overrides.cover` are converted on load; other
      `discovery_overrides` fields are reported and dropped.
-   - The curated pack (`00_default.json`, `00_curtain.py`) is built into tuya2ildevice: leave it out.
+   - The curated pack (`00_default.json`, `00_curtain.py`, `.rustuya_pack.json`) is built into tuya2ildevice: leave it
+     out. Newer fixes arrive as `00_pack_*` files by themselves.
    - A `*.py` file (`setup(api)`) is reported, not run. Port it to a `Converter`:
      [porting v1 converters](https://github.com/3735943886/tuya2ildevice/blob/master/docs/porting-v1-converters.md).
 

@@ -5,6 +5,7 @@
       "il":      {"host": "localhost", "port": 1883, "prefix": "il", "source": "tuya"},
       "devices": "tuyadevices.json",
       "custom_converters": "custom_converters",
+      "pack": true,
       "watch_interval": 5,
       "options": {"allow_hazardous": false, "expose_unused": false, "overrides": {}}
     }
@@ -12,7 +13,8 @@
 `devices` is a path (relative to the config file), which is followed as rustuya-manager rewrites it every
 `watch_interval` seconds (0 = read once), or the list itself. `custom_converters` is a directory of user overrides and
 code converters (see `tuya2ildevice.host.load_overrides`; rustuya-homeassistant v1 files work too), followed the same
-way; `options.overrides` is merged over it. Every key but `devices` has a default. The bridge's own topic templates are
+way; `options.overrides` is merged over it. `pack` (on by default) copies tuya2ildevice's override pack, fixes published
+between releases, into that directory daily. Every key but `devices` has a default. The bridge's own topic templates are
 read from its retained `{root}/bridge/config` at start.
 """
 
@@ -47,12 +49,13 @@ class Config:
     devices_path: Path | None = None
     overrides_path: Path | None = None
     watch_interval: float = 5.0
+    pack: bool = True
     hub_options: dict[str, Any] = field(default_factory=dict)
     """Keyword arguments for `tuya2ildevice.Hub`: `allow_hazardous`, `expose_unused`, `overrides`, `converters`."""
 
     @classmethod
     def from_dict(cls, data: dict, base: Path | None = None) -> Config:
-        unknown = set(data) - {"bridge", "il", "devices", "options", "watch_interval", "custom_converters"}
+        unknown = set(data) - {"bridge", "il", "devices", "options", "watch_interval", "custom_converters", "pack"}
         if unknown:
             raise ValueError(f"unknown config keys: {sorted(unknown)}")
         bridge, il = dict(data.get("bridge", {})), dict(data.get("il", {}))
@@ -79,13 +82,14 @@ class Config:
             devices_path=devices_path,
             overrides_path=overrides_path,
             watch_interval=float(data.get("watch_interval", 5)),
+            pack=bool(data.get("pack", True)),
             hub_options=options,
         )
 
     def settings(self) -> Settings:
         return Settings(root=self.root, prefix=self.prefix, source=self.source, devices=list(self.devices),
                         devices_path=self.devices_path, overrides_path=self.overrides_path,
-                        watch_interval=self.watch_interval, hub_options=dict(self.hub_options))
+                        watch_interval=self.watch_interval, pack=self.pack, hub_options=dict(self.hub_options))
 
     @classmethod
     def from_file(cls, path: str | Path) -> Config:

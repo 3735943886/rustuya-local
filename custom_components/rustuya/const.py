@@ -28,6 +28,7 @@ CONF_DEVICES_PATH = "devices_path"              # tuyadevices.json; the cloud wi
 # --- entry options (changed any time through the options flow) -------------------------
 CONF_ALLOW_HAZARDOUS = "allow_hazardous"
 CONF_EXPOSE_UNUSED = "expose_unused"
+CONF_PACK = "pack"                          # sync tuya2ildevice's override pack into CONVERTERS_DIR
 
 DEFAULT_BROKER_PORT = 1883
 DEFAULT_BRIDGE_ROOT = "rustuya"

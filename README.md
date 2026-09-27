@@ -1,9 +1,14 @@
-# rustuya-local
+# rustuya-homeassistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
 Local control of Tuya devices through [rustuya-bridge](https://github.com/3735943886/rustuya-bridge), as IL
-([ildevice](https://github.com/3735943886/ildevice)) devices, and in Home Assistant. It replaces rustuya-homeassistant.
+([ildevice](https://github.com/3735943886/ildevice)) devices, and in Home Assistant. The Python package and command
+are **`rustuya-local`** (PyPI); the Home Assistant integration is **Rustuya** (`custom_components/rustuya`).
+
+It replaces rustuya-homeassistant v1 (MQTT discovery), now at
+[rustuya-homeassistant-v1](https://github.com/3735943886/rustuya-homeassistant-v1). This repository was called
+rustuya-local until 2026-09-27.
 
 ```
 rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il-ha (Home Assistant integration), or any IL consumer
@@ -34,10 +39,12 @@ topic templates are read from its retained `{root}/bridge/config`.
 
 ## Home Assistant
 
-Coming from rustuya-homeassistant: [docs/MIGRATING.md](docs/MIGRATING.md).
+Coming from rustuya-homeassistant v1: [docs/MIGRATING.md](docs/MIGRATING.md).
 
-Install il-ha, and run one IL producer per bridge: the daemon, the integration below, or the manager plugin (two
-producers show every device twice; the service warns when another one is already online).
+Install il-ha, and run one IL producer per bridge: the daemon, the integration below, or the manager plugin. A second
+one with the same IL prefix and source refuses to start while the first runs (every device would show twice): the
+daemon exits, the integration is retried by Home Assistant, the plugin's tab shows it and retries. To move from one to
+another, stop the old one first.
 
 **The `rustuya` integration** (HACS: add this repository as a custom repository of type *Integration*, install
 **Rustuya**, restart, then *Add Integration* → **Rustuya**) is the service tied to a config entry, with the QR login
@@ -50,10 +57,14 @@ config; integration: `<config>/rustuya_converters`; manager plugin: its data dir
 
 - `*.json`: tuya2ildevice override blocks by product or device id: rename a dp, define one the schema lacks, map the
   device's words to the standard ones (`remap.alias`), invert a direction (`remap.invert`), fix labels and classes,
-  turn on a code converter. rustuya-homeassistant's `custom_converters` JSON files load as they are.
+  turn on a code converter. rustuya-homeassistant v1's `custom_converters` JSON files load as they are.
 - `*.py`: code converters (`CONVERTERS = {"name": factory}`).
 
-See tuya2ildevice's README ("User overrides") for the format. A curated set ships in tuya2ildevice.
+See tuya2ildevice's README ("User overrides") for the format. A curated set ships in tuya2ildevice, and fixes published
+between its releases (its [override pack](https://github.com/3735943886/tuya2ildevice/tree/master/pack)) are copied
+into the directory at start and daily, as `00_pack_*` files that your own files refine. Turn that off with `"pack":
+false` (daemon), the integration's *Tuning* options, or the plugin tab. The pack only replaces or removes the files it
+put there, and leaves a file alone once you edit it.
 
 ## rustuya-manager plugin
 

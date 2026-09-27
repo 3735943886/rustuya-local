@@ -29,7 +29,7 @@ async def test_the_plugin_runs_the_service_under_the_manager(broker, tmp_path):
     ctx = plugins.PluginContext(plugins.PluginRegistry(), state=state, data_root=tmp_path,
                                 bridge_client=BridgeClient(f"mqtt://127.0.0.1:{broker}", "rmp", state))
     (tmp_path / "rustuya-local").mkdir()
-    (tmp_path / "rustuya-local" / "settings.json").write_text(json.dumps({"il": {"prefix": "ilmp"}}))
+    (tmp_path / "rustuya-local" / "settings.json").write_text(json.dumps({"il": {"prefix": "ilmp"}, "options": {"pack": False}}))
     plugins.load_plugins(ctx)                                     # finds us through the entry point
     reg = ctx._registry
     assert [p["id"] for p in reg.pages] == ["rustuya-local"] and len(reg.services) == 1
@@ -170,11 +170,11 @@ async def test_a_settings_change_restarts_the_service_and_bad_settings_wait_for_
     try:
         await until(lambda: (state.get_plugin_data("rustuya-local") or {}).get("error"), "no settings error shown")
         assert not task.done()                                    # waits for a fix, no crash-and-retry
-        api.save_settings(data, {"il": {"prefix": "ilr1"}})
+        api.save_settings(data, {"il": {"prefix": "ilr1"}, "options": {"pack": False}})
         await plugin.restart()
         await until(lambda: seen.get("ilr1/_producer/tuya") == "online" and "ilr1/mp1" in seen, "not started")
 
-        api.save_settings(data, {"il": {"prefix": "ilr2"}})
+        api.save_settings(data, {"il": {"prefix": "ilr2"}, "options": {"pack": False}})
         await plugin.restart()
         await until(lambda: seen.get("ilr2/_producer/tuya") == "online" and "ilr2/mp1" in seen, "not restarted")
         assert seen["ilr1/_producer/tuya"] == "offline"           # the old service stopped
@@ -183,6 +183,54 @@ async def test_a_settings_change_restarts_the_service_and_bad_settings_wait_for_
         with pytest.raises(asyncio.CancelledError):
             await task
     for topic in list(seen):
+        await w.publish(topic, "", 1, True)
+    await asyncio.sleep(0.2)
+    await w.close()
+
+
+async def test_another_producer_is_shown_and_the_plugin_starts_once_it_is_gone(broker, tmp_path):
+    from tuya2ildevice import Hub, IlTopics
+    from tuya2ildevice.host import Runner
+
+    from rustuya_local.manager_plugin import api, register
+
+    other = Hub([lamp("mp1")], il=IlTopics("ilo", "tuya"))                # say, the Home Assistant integration
+    will = other.presence(False)
+    t = MqttTransport("127.0.0.1", broker, client_id="mo-other", will=(will.topic, will.payload, will.qos, will.retain))
+    await t.connect()
+    runner = Runner(other, t)
+    await runner.start()
+    await runner.drain()
+
+    state = State()
+    await state.set_cloud({"mp1": Device.from_dict(lamp("mp1"))})
+    ctx = plugins.PluginContext(plugins.PluginRegistry(), state=state, data_root=tmp_path,
+                                bridge_client=BridgeClient(f"mqtt://127.0.0.1:{broker}", "rmo", state))
+    data = tmp_path / "rustuya-local"
+    data.mkdir()
+    api.save_settings(data, {"il": {"prefix": "ilo"}, "options": {"pack": False}})
+    register(ctx)
+    run = ctx._registry.services[0]
+    plugin = run.__self__
+    w = MqttTransport("127.0.0.1", broker, client_id="mowatch")
+    await w.connect()
+    await answer_status(w, "rmo", ["mp1"])
+    task = asyncio.ensure_future(run())
+    try:
+        await until(lambda: "another producer" in ((state.get_plugin_data("rustuya-local") or {}).get("error") or ""),
+                    "the other producer is not shown")
+        assert not task.done() and plugin.service is None
+        await runner.stop()
+        await t.close()
+        await plugin.restart()                                    # or wait for the 30 s retry
+        await until(lambda: plugin.service is not None, "not started after the other one stopped")
+        await until(lambda: (state.get_plugin_data("rustuya-local") or {}).get("running"), "no status")
+        assert state.get_plugin_data("rustuya-local")["error"] is None
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    for topic in ("ilo/_producer/tuya", "ilo/mp1"):
         await w.publish(topic, "", 1, True)
     await asyncio.sleep(0.2)
     await w.close()

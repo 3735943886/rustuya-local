@@ -13,11 +13,15 @@ its documented contract (api_version >= 4). What it takes from the manager:
 `settings.json`, every key optional:
 
     {"il": {"prefix": "il", "source": "tuya"},
-     "options": {"allow_hazardous": false, "expose_unused": false, "use_quirks": true}}
+     "options": {"allow_hazardous": false, "expose_unused": false, "use_quirks": true, "pack": true}}
+
+`pack` copies tuya2ildevice's override pack (fixes published between releases) into `custom_converters/` daily.
 
 The tab shows what the service is doing (the plugin's state namespace) and edits the settings and the
 `custom_converters/` files through `/api/rustuya-local/...` (`api.py`). A settings change restarts the service in place;
-a settings file the service cannot use is shown on the tab and waited on, not retried.
+a settings file the service cannot use is shown on the tab and waited on, not retried. While another producer serves
+the same IL prefix and source (the Home Assistant integration, a daemon), the tab says so and the start is retried
+every 30 s.
 """
 
 from __future__ import annotations
@@ -52,8 +56,10 @@ def load_settings(data_dir: Path, bridge_root: str, devices: list[dict]):
         raise ValueError(f"{path}: {e}") from e
     conv = data_dir / "custom_converters"
     conv.mkdir(exist_ok=True)
+    options = dict(checked["options"])
+    pack = options.pop("pack")
     return Settings(root=bridge_root, prefix=checked["il"]["prefix"], source=checked["il"]["source"],
-                    devices=devices, overrides_path=conv, hub_options=dict(checked["options"]))
+                    devices=devices, overrides_path=conv, pack=pack, hub_options=options)
 
 
 def usable(records: dict[str, dict]) -> list[dict]:
@@ -87,7 +93,7 @@ class Plugin:
     async def run(self) -> None:
         """The supervised service: started by the manager after bootstrap, cancelled on shutdown. A start that fails
         (the broker is down) raises, for the manager's backoff; settings it cannot use wait for a fix instead."""
-        from ..service import Service
+        from ..service import AnotherProducer, Service
 
         data = self.ctx.data_dir(NAME)
         while True:
@@ -101,9 +107,18 @@ class Plugin:
                 await self._restart.wait()
                 continue
             bridge, il = self._connect("bridge"), self._connect("il")
-            self.service = Service(settings, connect_bridge=bridge, connect_il=il)
-            self.error = None
-            await self.service.start()
+            service = Service(settings, connect_bridge=bridge, connect_il=il)
+            try:
+                await service.start()
+            except AnotherProducer as e:
+                self.error = str(e)
+                await self.publish_status()
+                try:
+                    await asyncio.wait_for(self._restart.wait(), 30)
+                except TimeoutError:
+                    pass
+                continue
+            self.service, self.error = service, None
             try:
                 while not self._restart.is_set():
                     await self.publish_status()
@@ -133,7 +148,7 @@ class Plugin:
                             "kind": desc.get("kind"), "online": bool(drv.linked),
                             "props": sum(1 for p in desc["props"] if p != "available")})
         return {"running": True, "error": self.error, "bridge_root": s.settings.root, "il_prefix": s.settings.prefix,
-                "devices": devices}
+                "devices": devices, "pack": s.pack_status}
 
     async def publish_status(self) -> None:
         await self.namespace.set(self.status())

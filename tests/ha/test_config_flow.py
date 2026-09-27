@@ -16,6 +16,7 @@ from custom_components.rustuya.const import (
     CONF_DEVICES_PATH,
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
+    CONF_PACK,
     DOMAIN,
 )
 
@@ -91,7 +92,7 @@ async def test_skipping_onboarding_goes_straight_to_il_and_creates_the_entry(has
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"il_prefix": "il", "il_source": "tuya"})
     assert r["type"] == "create_entry"
     assert r["data"][CONF_DEVICES_PATH] == devices_path and r["data"][CONF_BRIDGE_ROOT] == "rustuya"
-    assert r["options"] == {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False}
+    assert r["options"] == {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True}
 
 
 async def test_embedded_mode_without_pyrustuyabridge_shows_an_error(hass, monkeypatch):
@@ -199,9 +200,9 @@ async def test_tuning_updates_options(hass, tmp_path):
     result = await hass.config_entries.options.async_init(entry.entry_id)
     r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tuning"})
     r = await hass.config_entries.options.async_configure(
-        r["flow_id"], {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True})
+        r["flow_id"], {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False})
     assert r["type"] == "create_entry"
-    assert r["data"] == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True}
+    assert r["data"] == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False}
 
 
 async def test_options_menu_hides_manager_steps_when_manager_is_unavailable(hass, tmp_path, monkeypatch):

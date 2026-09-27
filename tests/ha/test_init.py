@@ -23,6 +23,7 @@ from custom_components.rustuya.const import (
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
+    CONF_PACK,
     DOMAIN,
 )
 
@@ -69,7 +70,7 @@ async def test_setup_publishes_and_unload_goes_offline(hass, broker, tmp_path, s
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
         CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
-    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
     entry.add_to_hass(hass)
     watcher = Watcher(broker, registered=("lamp1",))
     try:
@@ -98,6 +99,39 @@ async def test_setup_publishes_and_unload_goes_offline(hass, broker, tmp_path, s
         watcher.close()
 
 
+async def test_setup_is_retried_while_another_producer_runs(hass, broker, tmp_path, socket_enabled):
+    from homeassistant.config_entries import ConfigEntryState
+    from tuya2ildevice import Hub, IlTopics
+    from tuya2ildevice.host import MqttTransport, Runner
+
+    other = Hub([lamp("lamp1")], il=IlTopics("il", "tuya"))            # a daemon, say, already serving il / tuya
+    will = other.presence(False)
+    t = MqttTransport("127.0.0.1", broker, client_id="other-producer", will=(will.topic, will.payload, will.qos,
+                                                                            will.retain))
+    await t.connect()
+    runner = Runner(other, t)
+    await runner.start()
+    await runner.drain()
+    devices_path = tmp_path / "tuyadevices.json"
+    devices_path.write_text(json.dumps([lamp("lamp1")]))
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
+        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
+        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
+    entry.add_to_hass(hass)
+    try:
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.state is ConfigEntryState.SETUP_RETRY
+        assert "another producer" in (entry.reason or "")
+    finally:
+        await runner.stop()
+        await t.publish("il/_producer/tuya", "", 1, True)
+        await t.publish("il/lamp1", "", 1, True)
+        await t.close()
+
+
 async def test_setup_fails_cleanly_when_the_broker_is_unreachable(hass, tmp_path, socket_enabled):
     devices_path = tmp_path / "tuyadevices.json"
     devices_path.write_text(json.dumps([lamp("lamp1")]))
@@ -105,7 +139,7 @@ async def test_setup_fails_cleanly_when_the_broker_is_unreachable(hass, tmp_path
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": 1, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
         CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
-    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
     entry.add_to_hass(hass)
     assert not await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -136,7 +170,7 @@ async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(ha
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
         CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
-    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
     entry.add_to_hass(hass)
     watcher = Watcher(broker, registered=("lamp1",))
     try:

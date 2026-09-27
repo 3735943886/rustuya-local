@@ -104,7 +104,8 @@
       "tuning": {
         "data": {
           "allow_hazardous": "Allow remote control of locks, alarms and garage doors",
-          "expose_unused": "Expose data points Home Assistant core would not classify"
+          "expose_unused": "Expose data points Home Assistant core would not classify",
+          "pack": "Download fixes for non-standard devices published between releases"
         }
       },
       "cloud_wizard": {

@@ -6,11 +6,12 @@ import argparse
 import asyncio
 import logging
 import signal
+import sys
 
 from tuya2ildevice.host import MqttTransport
 
 from .config import Config
-from .service import Service
+from .service import AnotherProducer, Service
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +56,11 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
-    asyncio.run(run(Config.from_file(args.config)))
+    try:
+        asyncio.run(run(Config.from_file(args.config)))
+    except AnotherProducer as e:
+        log.error("%s", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
