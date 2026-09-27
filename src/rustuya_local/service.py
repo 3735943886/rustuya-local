@@ -92,6 +92,8 @@ class Service:
         self.pack_status: dict[str, Any] | None = None
         """The last pack sync: `{"at": epoch s, "error": str}` or `{"at", "added", "updated", "removed", "kept",
         "failed"}`; None before the first."""
+        self._pack_now = asyncio.Event()
+        self._pack_running = False
 
     async def start(self) -> None:
         s = self.settings
@@ -137,6 +139,7 @@ class Service:
             if s.pack and s.overrides_path is not None and s.overrides_path.suffix != ".json":
                 task = asyncio.ensure_future(self._pack_loop(s.overrides_path))
                 stack.callback(task.cancel)
+                stack.callback(setattr, self, "_pack_running", False)
             self._stack = stack.pop_all()
         _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s", len(s.devices), s.root)
 
@@ -155,7 +158,9 @@ class Service:
         from tuya2ildevice.host import pack
 
         url = self.settings.pack_url or pack.BASE_URL
+        self._pack_running = True
         while True:
+            self._pack_now.clear()
             try:
                 result = await asyncio.to_thread(pack.sync, directory, base_url=url)
                 self.pack_status = {"at": time.time(), **result.as_dict()}
@@ -165,7 +170,16 @@ class Service:
             except Exception as e:
                 _LOGGER.exception("override pack")
                 self.pack_status = {"at": time.time(), "error": f"{type(e).__name__}: {e}"}
-            await asyncio.sleep(self.settings.pack_interval)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._pack_now.wait(), self.settings.pack_interval)
+
+    def sync_pack_now(self) -> bool:
+        """Run the pack sync now instead of at the end of its interval; False when the pack is off (nothing runs).
+        `pack_status` changes once it is done."""
+        if not self._pack_running:
+            return False
+        self._pack_now.set()
+        return True
 
     async def stop(self) -> None:
         """Presence goes offline, pending bridge commands are sent, then both transports close. Idempotent."""

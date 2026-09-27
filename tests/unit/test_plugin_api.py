@@ -39,6 +39,21 @@ def test_converter_files(tmp_path):
         api.delete_converter(d, "empty.py")
 
 
+def test_where_a_converter_file_comes_from(tmp_path):
+    import hashlib
+
+    d = tmp_path / "custom_converters"
+    api.save_converter(d, "00_pack_a.json", "{}")
+    api.save_converter(d, "00_pack_b.json", "{}")
+    api.save_converter(d, "10_mine.json", "{}")
+    sha = hashlib.sha256(b"{}").hexdigest()
+    (d / ".tuya2ildevice_pack.json").write_text(json.dumps({"version": 1, "files": {"00_pack_a.json": sha,
+                                                                                     "00_pack_b.json": sha}}))
+    api.save_converter(d, "00_pack_b.json", '{"x": {}}')              # the user edits a pack copy
+    assert {f["name"]: f["origin"] for f in api.list_converters(d)["files"]} == {
+        "00_pack_a.json": "pack", "00_pack_b.json": "pack_edited", "10_mine.json": "user"}
+
+
 def test_the_router(tmp_path):
     fastapi = pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
@@ -55,7 +70,7 @@ def test_the_router(tmp_path):
     assert c.put("/api/rustuya-local/settings", json={"il": {"prefix": "il/x"}}).status_code == 200 and restarts == [1]
     assert c.put("/api/rustuya-local/settings", json={"il": {"prefix": "#"}}).status_code == 400 and restarts == [1]
     assert c.put("/api/rustuya-local/converters/a.json", json={"content": "{}"}).json() == {"name": "a.json", "warnings": []}
-    assert c.get("/api/rustuya-local/converters").json()["files"] == [{"name": "a.json", "size": 2}]
+    assert c.get("/api/rustuya-local/converters").json()["files"] == [{"name": "a.json", "size": 2, "origin": "user"}]
     assert c.get("/api/rustuya-local/converters/a.json").json()["content"] == "{}"
     assert c.get("/api/rustuya-local/converters/zz.json").status_code == 404
     assert c.put("/api/rustuya-local/converters/a.txt", json={"content": ""}).status_code == 400

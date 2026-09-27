@@ -362,3 +362,29 @@ async def test_the_devices_step_gives_every_placeholder_its_description_names(ha
     assert r["step_id"] == "devices"
     assert named <= set(r["description_placeholders"] or {})
     assert bool(r["description_placeholders"]["warning"]) is not manager_installed
+
+
+async def test_the_panel_option_is_offered_in_advanced_mode_only(hass, tmp_path):
+    from custom_components.rustuya.const import CONF_PANEL
+
+    entry = _entry(hass, tmp_path)
+    hass.config_entries.async_update_entry(entry, options={CONF_PANEL: True})
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tuning"})
+    assert CONF_PANEL not in r["data_schema"].schema
+    r = await hass.config_entries.options.async_configure(
+        r["flow_id"], {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True})
+    assert r["data"][CONF_PANEL] is True                              # kept, though not on the form
+
+    result = await hass.config_entries.options.async_init(entry.entry_id, context={"show_advanced_options": True})
+    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tuning"})
+    assert CONF_PANEL in r["data_schema"].schema
+    r = await hass.config_entries.options.async_configure(
+        r["flow_id"], {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True, CONF_PANEL: False})
+    assert r["data"][CONF_PANEL] is False
+
+
+async def test_a_second_instance_is_refused(hass, tmp_path):
+    _entry(hass, tmp_path)
+    r = await _start(hass)
+    assert r["type"] == "abort" and r["reason"] == "single_instance_allowed"

@@ -101,6 +101,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = RuntimeData(service=service, embedded_bridge=embedded_bridge)
+    from . import panel
+
+    await panel.async_setup(hass, entry)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s (bridge: %s)", len(devices),
                  data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE])
@@ -161,6 +164,9 @@ async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    from . import panel
+
+    panel.async_remove(hass)
     runtime: RuntimeData = hass.data[DOMAIN].pop(entry.entry_id)
     await runtime.service.stop()
     if runtime.embedded_bridge:

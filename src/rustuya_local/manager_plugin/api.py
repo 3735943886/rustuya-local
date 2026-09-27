@@ -7,6 +7,7 @@ in-process, like the manager's own plugin directory: this is an admin surface.
 """
 # no `from __future__ import annotations`: FastAPI resolves the handlers' annotations, and `Body` is imported locally
 
+import hashlib
 import json
 import os
 import re
@@ -86,9 +87,22 @@ def check(directory: Path) -> list[str]:
     return list(load_overrides(directory).warnings) if directory.is_dir() else []
 
 
+def _origin(path: Path, ledger: dict[str, str]) -> str:
+    """`user`, `pack` (the override pack's copy, updated by its sync) or `pack_edited` (a pack copy the user has
+    changed: the next sync leaves it alone for good, so it is the user's from then on)."""
+    sha = ledger.get(path.name)
+    if sha is None:
+        return "user"
+    return "pack" if hashlib.sha256(path.read_bytes()).hexdigest() == sha else "pack_edited"
+
+
 def list_converters(directory: Path) -> dict[str, Any]:
+    from tuya2ildevice.host.pack import read_ledger
+
     files = sorted(p for p in directory.iterdir() if p.is_file() and _FILE.match(p.name)) if directory.is_dir() else []
-    return {"files": [{"name": p.name, "size": p.stat().st_size} for p in files], "warnings": check(directory)}
+    ledger = read_ledger(directory) if files else {}
+    return {"files": [{"name": p.name, "size": p.stat().st_size, "origin": _origin(p, ledger)} for p in files],
+            "warnings": check(directory)}
 
 
 def read_converter(directory: Path, name: str) -> dict[str, Any]:

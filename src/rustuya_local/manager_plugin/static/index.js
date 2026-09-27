@@ -100,6 +100,9 @@ async function settingsBox(ctx) {
 
 // ---- custom converters -----------------------------------------------------------------------------------------
 
+// f.origin from api.list_converters; a user's own file gets no tag
+const ORIGIN = { pack: "(pack)", pack_edited: "(pack, edited)" };
+
 async function convertersBox(ctx) {
   const box = el("div");
   const list = el("div", { class: "mb-2" });
@@ -119,11 +122,14 @@ async function convertersBox(ctx) {
       ctx.toast && ctx.toast(e.message, "error");
     }
   };
+  let origins = {};
   const refresh = async () => {
     try {
       const r = await ctx.api(`${API}/converters`);
+      origins = Object.fromEntries(r.files.map((f) => [f.name, f.origin]));
       list.replaceChildren(...(r.files.length
-        ? r.files.map((f) => el("button", { class: `${BTN} mr-2 mb-1`, onclick: () => open(f.name) }, f.name))
+        ? r.files.map((f) => el("button", { class: `${BTN} mr-2 mb-1`, onclick: () => open(f.name) },
+            f.name, ORIGIN[f.origin] ? el("span", { class: "ml-1 text-xs text-gray-500" }, ORIGIN[f.origin]) : ""))
         : [el("p", { class: "text-sm" }, "No files yet. Built-in fixes apply without any.")]));
       showWarnings(r.warnings);
     } catch (e) {
@@ -132,6 +138,8 @@ async function convertersBox(ctx) {
   };
   const save = async () => {
     const file = name.value.trim();
+    if (origins[file] === "pack" && ctx.confirm && !(await ctx.confirm({ title: `Edit ${file}?`,
+      body: "It comes from the override pack. Once edited it is yours: the pack no longer updates or removes it." }))) return;
     try {
       const r = await ctx.api(`${API}/converters/${encodeURIComponent(file)}`, { method: "PUT", body: { content: text.value } });
       showWarnings(r.warnings);

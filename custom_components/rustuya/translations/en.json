@@ -90,7 +90,8 @@
     },
     "abort": {
       "already_configured": "Already set up.",
-      "manager_busy": "Another Tuya login or device sync window is still open. Close it and try again."
+      "manager_busy": "Another Tuya login or device sync window is still open. Close it and try again.",
+      "single_instance_allowed": "Rustuya is already set up; it runs as a single instance."
     }
   },
   "options": {
@@ -106,7 +107,8 @@
         "data": {
           "allow_hazardous": "Allow remote control of locks, alarms and garage doors",
           "expose_unused": "Expose data points Home Assistant core would not classify",
-          "pack": "Download fixes for non-standard devices published between releases"
+          "pack": "Download fixes for non-standard devices published between releases",
+          "panel": "Show the Rustuya panel in the sidebar (edit custom converters)"
         }
       },
       "cloud_wizard": {

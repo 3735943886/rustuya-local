@@ -61,6 +61,10 @@ into the directory at start and daily, as `00_pack_*` files that your own files 
 false` (daemon), the integration's *Tuning* options, or the plugin tab. The pack only replaces or removes the files it
 put there, and leaves a file alone once you edit it.
 
+In Home Assistant the files can be edited from a sidebar panel: turn on *Show the Rustuya panel* in the integration's
+*Tuning* options (shown with *Advanced mode* on in your user profile). The panel is for administrators; it lists the
+files with the pack's marked, edits and deletes them, and runs the pack sync on demand.
+
 ## rustuya-manager plugin
 
 Installed next to rustuya-manager, as a pip package (`pip install rustuya-local` in the manager's environment) or as

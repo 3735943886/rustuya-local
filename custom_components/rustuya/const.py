@@ -29,6 +29,7 @@ CONF_DEVICES_PATH = "devices_path"              # tuyadevices.json; the cloud wi
 CONF_ALLOW_HAZARDOUS = "allow_hazardous"
 CONF_EXPOSE_UNUSED = "expose_unused"
 CONF_PACK = "pack"                          # sync tuya2ildevice's override pack into CONVERTERS_DIR
+CONF_PANEL = "panel"                        # the sidebar page for CONVERTERS_DIR (panel.py); offered in advanced mode
 
 DEFAULT_BROKER_PORT = 1883
 DEFAULT_BRIDGE_ROOT = "rustuya"

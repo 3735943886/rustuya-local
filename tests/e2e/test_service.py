@@ -171,7 +171,16 @@ async def test_the_override_pack_is_synced_in_the_background(tmp_path, monkeypat
             break
         await __import__("asyncio").sleep(0.02)
     assert service.pack_status["added"] == ["00_pack_lamp.json"] and (conv / "00_pack_lamp.json").is_file()
+    (conv / "00_pack_lamp.json").unlink()
+    first, service.pack_status = service.pack_status, None
+    assert service.sync_pack_now()                                      # not a day later: now
+    for _ in range(100):
+        if service.pack_status:
+            break
+        await __import__("asyncio").sleep(0.02)
+    assert service.pack_status["added"] == ["00_pack_lamp.json"] and service.pack_status["at"] >= first["at"]
     await service.stop()
+    assert not service.sync_pack_now()
 
     service = _service(t, tmp_path, overrides_path=conv, pack=True, pack_url=(tmp_path / "gone").as_uri() + "/")
     await service.start()                                               # no pack to be had: the service runs anyway
