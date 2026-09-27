@@ -186,3 +186,25 @@ async def test_a_request_whose_reply_is_lost_is_given_up(chain, monkeypatch):
     await reply(bridge, status_reply(["a"]))
     await settle(runner, bridge_client, bridge, il)
     assert advertised(il) == {"a"}
+
+
+async def test_commands_take_the_command_templates_form():
+    """r5c's templates: a one-DP write is the bare value on `.../set/<id>/<dp>` (pyrustuyabridge.render_command, checked
+    against the bridge's own parser), a multi-DP write stays one command, and nothing is left as a literal `{dp}`."""
+    from tuya2ildevice import BridgeCommand
+
+    bridge = InProcessTransport()
+    await bridge.publish("rustuya/bridge/config", json.dumps({
+        "mqtt_root_topic": "rustuya", "mqtt_command_topic": "{root}/command/{action}/{id}/{dp}",
+        "mqtt_event_topic": "{root}/event/{type}/{id}/{dp}", "mqtt_message_topic": "{root}/{level}/{id}"}), 0, True)
+    bridge_client = BridgeClient(bridge, "rustuya")
+    await bridge_client.start(timeout=1)
+    bridge_client.send_command(BridgeCommand("eb1", "set", {"1": False}))
+    bridge_client.send_command(BridgeCommand("eb1", "set", {"21": "colour", "24": "000003e803e8"}))
+    bridge_client.send_command(BridgeCommand("eb1", "get", None))
+    await bridge_client.drain()
+    sent = [(t, p) for t, p, *_ in bridge.published if t.startswith("rustuya/command")]
+    assert sent[0] == ("rustuya/command/set/eb1/1", "false")
+    assert sent[1][0] == "rustuya/command/set/eb1/-"
+    assert json.loads(sent[1][1]) == {"action": "set", "id": "eb1", "dps": {"21": "colour", "24": "000003e803e8"}}
+    assert sent[2][0] == "rustuya/command/get/eb1/-" and json.loads(sent[2][1]) == {"action": "get", "id": "eb1"}

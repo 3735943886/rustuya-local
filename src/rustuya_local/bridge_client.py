@@ -43,6 +43,17 @@ DEFAULT_PAYLOAD = "{value}"
 STATUS_CYCLE_TIMEOUT = 10.0      # a request whose pages stop coming is given up after this, so a lost reply cannot stall
 
 
+_warned_old = False
+
+
+def _warn_old_pyrustuyabridge() -> None:
+    global _warned_old
+    if not _warned_old:
+        _warned_old = True
+        _LOGGER.warning("pyrustuyabridge %s has no render_command (0.4.0.dev2+): bridge commands keep the old form, "
+                        "which misses a {dp} command topic template's single-DP form", getattr(pb, "__version__", "?"))
+
+
 @dataclass(frozen=True)
 class BridgeTemplates:
     root: str
@@ -104,8 +115,22 @@ class BridgeClient:
         if self._templates is None:
             _LOGGER.warning("dropping a bridge command for %s: no bridge config received yet", device_id)
             return
-        topic = pb.render_template(self._templates.command, {"action": action, "id": device_id})
-        await self.transport.publish(topic, json.dumps({"action": action, "id": device_id, **extra}), 1, False)
+        request = {"action": action, "id": device_id, **extra}
+        render_command = getattr(pb, "render_command", None)
+        if render_command is None:                          # pyrustuyabridge < 0.4.0.dev2, e.g. an older rustuya-manager
+            _warn_old_pyrustuyabridge()                     # hosting the drop-in plugin: the old form, `{dp}` left as is
+            topic = pb.render_template(self._templates.command, {"action": action, "id": device_id})
+            await self.transport.publish(topic, json.dumps(request), 1, False)
+            return
+        # the bridge's own renderer: e.g. a one-DP `set` on `{root}/command/{action}/{id}/{dp}` is the bare value on
+        # `.../set/<id>/<dp>`, checked against the bridge's parser
+        rendered = render_command(self._templates.command, request)
+        if rendered is None:
+            _LOGGER.warning("dropping a bridge %s for %s: the command topic %r cannot carry it", action, device_id,
+                            self._templates.command)
+            return
+        topic, payload = rendered
+        await self.transport.publish(topic, payload, 1, False)
 
     def _spawn(self, coro) -> None:
         task = asyncio.ensure_future(coro)

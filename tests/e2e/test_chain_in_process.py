@@ -63,7 +63,8 @@ async def test_device_appears_and_values_flow_from_the_bridge(chain):
 
     await bridge.publish("rustuya/error/lamp1", '{"errorCode":0,"errorMsg":"Connection Successful"}', 0, True)
     await settle(runner, bridge_client, bridge, il)
-    assert bridge.published[-1][:2] == ("rustuya/command", '{"action": "get", "id": "lamp1"}')   # asks for the state
+    topic, payload, *_ = bridge.published[-1]
+    assert (topic, json.loads(payload)) == ("rustuya/command", {"action": "get", "id": "lamp1"})   # asks for the state
 
     await bridge.publish("rustuya/event/state/lamp1", '{"20":true,"22":1000,"23":0}', 0, True)
     await settle(runner, bridge_client, bridge, il)
