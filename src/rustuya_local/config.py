@@ -12,7 +12,7 @@
 
 `devices` is a path (relative to the config file), which is followed as rustuya-manager rewrites it every
 `watch_interval` seconds (0 = read once), or the list itself. `custom_converters` is a directory of user overrides and
-code converters (see `tuya2ildevice.host.load_overrides`; rustuya-homeassistant v1 files work too), followed the same
+code converters (see `tuya2ildevice.host.load_overrides`), followed the same
 way; `options.overrides` is merged over it. `pack` (on by default) copies tuya2ildevice's override pack, fixes published
 between releases, into that directory daily. Every key but `devices` has a default. The bridge's own topic templates are
 read from its retained `{root}/bridge/config` at start.

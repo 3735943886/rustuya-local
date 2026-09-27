@@ -17,7 +17,7 @@ def test_one_package_with_tuya2ildevice_inside(tmp_path):
     names = zf.namelist()
     assert {n.split("/", 1)[0] for n in names} == {"rustuya_local"}          # the manager imports each top-level entry
     for needed in ("rustuya_local/__init__.py", "rustuya_local/manager_plugin/static/index.js",
-                   "rustuya_local/_vendor/tuya2ildevice/__init__.py", "rustuya_local/_vendor/tuya2ildevice/overrides.json"):
+                   "rustuya_local/_vendor/tuya2ildevice/__init__.py", "rustuya_local/_vendor/tuya2ildevice/tuya/quirks/quirks.json"):
         assert needed in names
     assert not any("__pycache__" in n or n.startswith("rustuya_local/_vendor/paho") for n in names)
 

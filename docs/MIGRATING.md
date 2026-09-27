@@ -45,12 +45,13 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
    | rustuya-manager plugin | `rustuya-local/custom_converters/` in the manager's plugin data directory |
    | daemon | `custom_converters` in its `config.json` |
 
-   - `*.json` files work as they are: `dp_meta`, `model` and `discovery_overrides.cover` are converted on load; other
-     `discovery_overrides` fields are reported and dropped.
-   - The curated pack (`00_default.json`, `00_curtain.py`, `.rustuya_pack.json`) is built into tuya2ildevice: leave it
-     out. Newer fixes arrive as `00_pack_*` files by themselves.
-   - A `*.py` file (`setup(api)`) is reported, not run. Port it to a `Converter`:
-     [porting v1 converters](https://github.com/3735943886/tuya2ildevice/blob/master/docs/porting-v1-converters.md).
+   - `*.json` files are written in tuya2ildevice's override format
+     ([User overrides](https://github.com/3735943886/tuya2ildevice#user-overrides)); the old ones are not read, so rewrite them.
+     A curtain's derived state is the `cover_motion` converter; a property the tables do not build is defined from its
+     dp in `props`.
+   - `*.py` files define `Converter`s ([Code converters](https://github.com/3735943886/tuya2ildevice#code-converters)).
+   - Leave the old pack (`00_default.json`, `00_curtain.py`, `.rustuya_pack.json`) out. Fixes arrive as `00_pack_*`
+     files by themselves.
 
    Changes to the directory are picked up while running, no restart needed.
 

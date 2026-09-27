@@ -1,5 +1,5 @@
 """`Service`, the assembly every shell runs, on in-memory brokers: devices the bridge holds reach IL, a user overrides
-directory (JSON, a v1 file and a code converter) is applied at start and followed, a failed start releases what it
+directory (JSON files and a code converter) is applied at start and followed, a failed start releases what it
 connected, and stop is idempotent."""
 import json
 
@@ -89,7 +89,7 @@ async def test_an_overrides_directory_is_applied_and_followed(tmp_path, monkeypa
     conv.mkdir()
     (conv / "glow.py").write_text(CONVERTER_PY)
     (conv / "10.json").write_text(json.dumps({"p": {"converters": {"glow": {"on": "bright"}}}}))
-    (conv / "20_v1.json").write_text(json.dumps({"lamp1": {"model": "Desk lamp"}}))       # rustuya-homeassistant v1
+    (conv / "20_model.json").write_text(json.dumps({"lamp1": {"device": {"model": "Desk lamp"}}}))
     t = Transports()
     await _answer_status(t.bridge, ["lamp1"])
     import rustuya_local.bridge_client as bc

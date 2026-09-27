@@ -26,17 +26,17 @@ def test_converter_files(tmp_path):
     assert r["warnings"] == []
     assert api.read_converter(d, "10_mine.json")["content"].startswith("{")
     assert [f["name"] for f in api.list_converters(d)["files"]] == ["10_mine.json"]
-    r = api.save_converter(d, "old.py", "def setup(api):\n    pass\n")       # a v1 plugin: saved, and reported
-    assert any("v1 plugin" in w for w in r["warnings"])
+    r = api.save_converter(d, "empty.py", "X = 1\n")                     # no CONVERTERS: saved, and reported
+    assert any("defines no CONVERTERS" in w for w in r["warnings"])
     for name in ("../x.json", ".hidden.json", "a.txt", "sub/a.json"):
         with pytest.raises(api.Invalid):
             api.save_converter(d, name, "{}")
     with pytest.raises(api.Invalid):
         api.save_converter(d, "bad.json", "{not json")
     assert not (d / "bad.json").exists()
-    api.delete_converter(d, "old.py")
+    api.delete_converter(d, "empty.py")
     with pytest.raises(FileNotFoundError):
-        api.delete_converter(d, "old.py")
+        api.delete_converter(d, "empty.py")
 
 
 def test_the_router(tmp_path):
