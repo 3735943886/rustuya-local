@@ -31,7 +31,13 @@ from .const import (
     CONF_IL_SOURCE,
     CONF_PACK,
     CONVERTERS_DIR,
+    CREDS_FILE,
+    DEFAULT_BRIDGE_STATE_FILE,
+    DEFAULT_DEVICES_FILE,
     DOMAIN,
+    LEGACY_BRIDGE_STATE_FILE,
+    LEGACY_DEVICES_FILE,
+    STORAGE_DIR,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -72,6 +78,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     embedded_bridge = None
     if data[CONF_BRIDGE_MODE] == BRIDGE_EMBEDDED:
+        await hass.async_add_executor_job(_ensure_parent, data[CONF_BRIDGE_STATE_FILE])
         embedded_bridge = EmbeddedBridge(broker, data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_STATE_FILE],
                                          data.get(CONF_BRIDGE_LOG_LEVEL, "warn"), username, password)
         await embedded_bridge.start()
@@ -97,6 +104,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s (bridge: %s)", len(devices),
                  data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE])
+    return True
+
+
+def _ensure_parent(path: str) -> None:
+    from pathlib import Path
+
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+
+def _move_file(old: str, new: str) -> None:
+    """Move `old` to `new` unless `new` is already there (then `old` is left for the user to look at)."""
+    import os
+
+    _ensure_parent(new)
+    if os.path.isfile(old) and not os.path.exists(new):
+        os.replace(old, new)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """1.1 -> 1.2: the device file and the embedded bridge's state file move from `.storage/rustuya_*.json` to
+    `.storage/rustuya/`, and with the device file the Tuya login rustuya-manager keeps beside it (`tuyacreds.json`,
+    which sat loose in `.storage/`). Only a path still at the old default moves; one the user chose stays where it is."""
+    if entry.version > 1:
+        return False                       # a downgrade from a future version: nothing here can read it
+    if entry.minor_version < 2:
+        data = dict(entry.data)
+        for key, old, new in ((CONF_DEVICES_PATH, LEGACY_DEVICES_FILE, DEFAULT_DEVICES_FILE),
+                              (CONF_BRIDGE_STATE_FILE, LEGACY_BRIDGE_STATE_FILE, DEFAULT_BRIDGE_STATE_FILE)):
+            if data.get(key) == hass.config.path(old):
+                await hass.async_add_executor_job(_move_file, data[key], hass.config.path(new))
+                data[key] = hass.config.path(new)
+                if key == CONF_DEVICES_PATH:
+                    await hass.async_add_executor_job(_move_file, hass.config.path(".storage", CREDS_FILE),
+                                                      hass.config.path(STORAGE_DIR, CREDS_FILE))
+        hass.config_entries.async_update_entry(entry, data=data, minor_version=2)
+        _LOGGER.info("migrated to entry version 1.2 (files under %s)", hass.config.path(STORAGE_DIR))
     return True
 
 

@@ -83,6 +83,7 @@ async def _open(**kw: Any):
 
 class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
+    MINOR_VERSION = 2       # 1.2: the default files moved under `.storage/rustuya/` (`async_migrate_entry`)
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}

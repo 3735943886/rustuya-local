@@ -34,6 +34,11 @@ DEFAULT_BROKER_PORT = 1883
 DEFAULT_BRIDGE_ROOT = "rustuya"
 DEFAULT_IL_PREFIX = "il"
 DEFAULT_IL_SOURCE = "tuya"
-DEFAULT_DEVICES_FILE = ".storage/rustuya_tuyadevices.json"     # not user-facing config -- HA's own storage area
-DEFAULT_BRIDGE_STATE_FILE = ".storage/rustuya_bridge_state.json"
+STORAGE_DIR = ".storage/rustuya"            # not user-facing config: our own subdirectory of HA's storage area, so
+                                            # these plain files stay apart from HA's own `Store` files
+DEFAULT_DEVICES_FILE = f"{STORAGE_DIR}/tuyadevices.json"
+DEFAULT_BRIDGE_STATE_FILE = f"{STORAGE_DIR}/bridge_state.json"
+CREDS_FILE = "tuyacreds.json"               # rustuya-manager keeps the Tuya login beside the device file
+LEGACY_DEVICES_FILE = ".storage/rustuya_tuyadevices.json"          # the defaults before entry version 1.2
+LEGACY_BRIDGE_STATE_FILE = ".storage/rustuya_bridge_state.json"
 CONVERTERS_DIR = "rustuya_converters"       # <config>/rustuya_converters: user overrides and code converters, followed live
