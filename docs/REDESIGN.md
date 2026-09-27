@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현됨(0.0.5 릴리스). 9절의 rustuya-homeassistant 흡수가 진행 중.** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.12). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)
@@ -252,3 +252,6 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
   `discovery`(데몬, 매니저 플러그인 `settings.json`)·`[discovery]` extra·관련 테스트 삭제. 이유: IL → HA 변환은 Tuya 와 무관하고
   il-ha core 에 의존하게 만들어 PyPI·매니저 drop-in 배포를 막았다. HA 는 il-ha 로 본다. 코드는 `c646922` 에 남아 있다. 남은 일은
   [ROADMAP.md](ROADMAP.md).
+- **2026-09-24~27 이후 릴리스**(자세한 것은 ROADMAP.md): 0.0.7 매니저 drop-in zip·카탈로그 등록, 0.0.8 이중 설치 방지,
+  0.0.9 tuya2ildevice 0.3.1(IL 값 범위·전원 prop 이름·`source`), 0.0.10 tuya2ildevice 0.3.2(생산자 인계 presence, HA blocking I/O 없음,
+  `{warning}` 번역 값), 0.0.11 tuya2ildevice 0.3.3·브랜드 에셋(HACS 통과), 0.0.12 PyPI README.

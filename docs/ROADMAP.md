@@ -1,10 +1,11 @@
-# 남은 일 (2026-09-24 기준)
+# 남은 일 (2026-09-27 기준)
 
-재설계(REDESIGN.md 9장) 1차는 끝났다: tuya2ildevice 0.3.0, rustuya-local 0.0.6 PyPI 배포, il-ha·rustuya-homeassistant(폐기 안내) 푸시.
+재설계(REDESIGN.md 9장)는 끝났다. 현재 배포: tuya2ildevice 0.3.3, rustuya-local 0.0.12(PyPI, HACS, 매니저 카탈로그 drop-in).
+rustuya-homeassistant 는 폐기 안내만 푸시했다(아카이브 안 함).
 아래는 그 뒤에 남은 것을 마일스톤 순서로 정리한 것이다. 저장소 표기: **T** tuya2ildevice, **L** rustuya-local, **H** il-ha,
 **R** rustuya-homeassistant, **M** rustuya-manager.
 
-## M1 — 배포 완결 · 목표 0.0.7
+## M1 — 배포
 
 rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아래 참고). HA 는 il-ha 로 본다.
 
@@ -14,21 +15,27 @@ rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아�
 - [x] **M** 매니저 카탈로그에 rustuya-local 추가(rustuya-homeassistant 는 유지, `fef727d`). catalog-sync 봇이 이후 릴리스를 따라감.
 - [x] **L** 0.0.8: pip·drop-in 이중 설치 시 한 번만 등록, drop-in zip 을 매니저 플러그인 호스트로 로드하는 CI 테스트(tuya2ildevice 를
       zip 에서만 찾게 강제), 린트 정리. 매니저 카탈로그의 rustuya-homeassistant 항목에 "retired" 표시.
-- [ ] **L** tuya2ildevice 수정은 drop-in 에 고정돼 있어 rustuya-local 재릴리스(패치 버전)로만 매니저 사용자에게 간다.
-- [ ] **L** 새 venv 에 PyPI 만으로 설치해 `Service`·매니저 플러그인 import 를 CI 에서 확인하는 스모크 잡.
-- [ ] **L** HACS 검증 통과: 브랜드 에셋(아이콘) 추가. 0.0.5 부터 실패하던 것이다.
-- [ ] **R** 폐기 안내를 "rustuya-local + il-ha" 로 고친다(지금은 rustuya-local 의 discovery 로 옮기라고 안내함). 마지막 PyPI 릴리스 후
-      아카이브는 사용자가 결정한다.
+- [x] **L** 절차로 정함: drop-in 은 tuya2ildevice 를 고정해 담으므로, tuya2ildevice 릴리스 뒤에는 rustuya-local 패치 릴리스를 낸다
+      (0.3.1→0.0.9, 0.3.2→0.0.10, 0.3.3→0.0.11). 카탈로그는 catalog-sync 봇이 따라간다.
+- [x] **L** CI `package` job(0.0.13): wheel 을 새 venv 에 설치해(의존성은 PyPI 만) import·CLI 확인. 릴리스 전에도 돈다.
+- [x] **L** HACS 검증 통과(0.0.11): `custom_components/rustuya/brand/`(아이콘: Rust 톱니바퀴 + Tuya t, 로고: Alfa Slab One 워드마크).
+- [x] **L** PyPI 에 README 가 없던 문제(0.0.12): pyproject `readme`, 릴리스는 `twine check --strict`.
+- [x] **R** 폐기 안내를 "rustuya-local + il-ha" 로 고침(`89731f7`).
+- [ ] **R** 폐기 안내를 담은 마지막 PyPI 릴리스(PyPI 최신은 아직 0.0.1rc24)와 GitHub 아카이브. 사용자 결정.
+- [x] **M** catalog-sync 자동 병합이 PR 의 체크가 나타날 때까지(최대 10분) 기다린다(`0c85d68`).
 
 ## M2 — 실환경 검증
 
 지금까지의 검증은 테스트 HA(`pytest-homeassistant-custom-component`)와 in-memory·로컬 브로커에서 한 것이다.
 
-- [ ] 실제 HA + 실기기 + il-ha 로 상태·명령·가용성(`_producer` LWT) 확인. HA·브로커·서비스 재시작 뒤도 본다.
-- [ ] 실제 rustuya-manager 에서 플러그인 확인: TLS 브로커, `watch_devices` 로 기기 추가·삭제, 탭 표시, 매니저 종료 시 offline.
+- [~] 실제 HA + 실기기 + il-ha: hk1(임베디드 브리지, 기기 1개)에서 상태·가용성 확인. 여기서 생산자 인계 시 presence 가 offline 으로
+      남는 버그를 찾아 고침(tuya2ildevice 0.3.2), 0.0.11 에서 blocking call·`MISSING_VALUE` 없음. 남은 것: 명령, 여러 기기·카테고리,
+      HA·브로커 재시작 뒤.
+- [ ] 실제 rustuya-manager 에서 플러그인 확인: 카탈로그 UI 로 drop-in 설치, TLS 브로커, `watch_devices` 로 기기 추가·삭제, 탭 표시,
+      매니저 종료 시 offline. (지금까지는 매니저의 플러그인 호스트 코드로만 검증.)
 - [ ] HA 통합(custom_components/rustuya)을 0.0.6 이상으로 업그레이드하는 경로와 `<config>/rustuya_converters` 핫리로드.
-- [ ] rustuya-homeassistant v1 사용자 이전: 기존 discovery 설정 제거 방법(HA MQTT 에서 retained config 삭제) 안내, il-ha 로 바꾼 뒤
-      엔티티 ID 가 달라지는 것에 대한 안내.
+- [x] rustuya-homeassistant v1 사용자 이전 안내: [MIGRATING.md](MIGRATING.md)(옛 discovery 지우기, 엔티티 ID 변경, 컨버터 디렉터리).
+      rustuya-homeassistant 폐기 안내에서 링크.
 - [ ] 내장 오버라이드 4제품(커튼 3종, 창문 개폐기 `5rta89nj`)을 실기기로 확인.
 
 ## M3 — 정확성 버그
@@ -39,16 +46,20 @@ rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아�
       - 디스크립터 `source` 가 Hub 의 `IlTopics.source` 를 따른다(프레젠스 토픽과 일치).
       - core 에 key 가 없는 fan·climate 전원 prop 이 `prop` 이 아니라 dp 이름(`switch`)이 된다. 26 픽스처의 IL 토픽이 바뀜
         (`il/<id>/prop` -> `il/<id>/switch`).
-- [ ] **L** 같은 프레젠스에 생산자가 둘이면 지금은 경고만 한다(HA 통합 + 플러그인 동시 실행). 시작을 거부하는 옵션을 둘지 정한다.
+- [x] **T** 0.3.2: 생산자 인계(새 인스턴스 시작 후 옛 인스턴스 종료) 뒤 presence 가 offline 으로 남던 문제. Runner 가 자기 presence 를 구독해
+      다른 쪽의 `offline` 에 `online` 으로 답한다. 이벤트 루프를 막지 않는 `preload()`.
+- [x] **T** 0.3.3: 스위치의 device class 를 core 의 outlet 이 아니라 Tuya 카테고리 목록으로 정한다.
+- [ ] **L** 같은 프레젠스에 생산자가 둘이면 경고만 한다(인계 중에는 정상). 둘이 계속 함께 도는 경우 시작을 거부할지 정한다.
 
 ## M4 — 기능 보강
 
-- [ ] **T** 이식하지 않은 SDK 값 변환 전략 18개를 우선순위대로 이식한다(`docs/analysis/SDK_CONVERT_INVESTIGATION.md`).
-      실제 기기에서 보이는 것부터 한다.
-- [ ] **L** 매니저 플러그인 설정 UI. 지금은 읽기 전용 탭이고 `settings.json` 은 손으로 편집한다. 탭에서 il prefix 와 옵션을 바꾸고
-      서비스를 재시작하게 한다.
-- [ ] **T** v1 `.py` 컨버터(`setup(api)`)는 지금 보고만 하고 로드하지 않는다. 이전 가이드를 쓰고, 가능하면 흔한 패턴을
-      `CONVERTERS` 로 바꾸는 도구를 만든다.
+- [x] **T** 0.3.4: SDK 값 변환 16개 추가(24개 중 22개), SDK 를 오라클로 무작위·경계 입력 대조(CI 에서도 실행). 정확한 역변환이 있는
+      것만 쓰기 허용, 나머지는 `unsupported` 로 거절.
+- [ ] **T** `db_v1_data`, `db_v1_tariff`: SDK 파서 자체가 실제 페이로드에서 틀림. 실기기 데이터가 생기면 이식.
+- [x] **L** 0.0.13 매니저 플러그인 탭: 설정(il prefix·source, 옵션) 편집 후 서비스 제자리 재시작, `custom_converters/` 파일 편집(로더 경고 표시),
+      쓸 수 없는 설정은 재시도 대신 탭에 오류로 표시하고 기다림. `/api/rustuya-local/...`(`manager_plugin/api.py`).
+- [x] **T** v1 `.py` 컨버터 이식 가이드(tuya2ildevice `docs/porting-v1-converters.md`, 예제는 테스트가 문서에서 읽어 검증). 로더 메시지가 링크.
+      자동 변환 도구는 만들지 않음: v1 은 비동기 핸들러·dp 번호·쓰기가 섞인 코드라 기계 변환이 성립하지 않고, 대표 사례(커튼)는 내장됨.
 - [ ] **L** `pack.py`(GitHub 에서 오버라이드 팩 동기화) 재도입 여부를 정한다. 1차에서 제외했다.
 
 ## 제거한 것
@@ -57,6 +68,12 @@ rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아�
   rustuya-local 이 il-ha 에 의존하게 만들었다. relay·mirror 때문에 서비스가 계속 떠 있어야 해서 il-ha 대비 이점도 없었다.
   코드(`discovery/` render·publisher·ops, CLI `discovery status|clear|restore`, 324 픽스처 패리티 테스트)는 커밋 `c646922` 에 있다.
   다시 필요하면 IL 소비자로서 il-ha 쪽 별도 도구로 되살린다.
+
+## REDESIGN.md 7절의 열린 결정
+
+- MQTT 클라이언트: paho 로 정해짐(tuya2ildevice `MqttTransport`).
+- 의존 관리: tuya2ildevice·pyrustuyabridge 는 PyPI. il-ha 는 테스트 의존으로만 남아 형제 체크아웃을 쓴다.
+- [ ] **H** il-ha 의 이름·번역 이식 여부: 아직 판단 안 함(il-ha 쪽 일).
 
 ## 참고
 

@@ -143,3 +143,46 @@ def test_the_drop_in_zip_loads_in_the_manager_with_its_vendored_tuya2ildevice(tm
                          cwd=tmp_path, timeout=60, check=False)
     assert out.returncode == 0, out.stderr
     assert out.stdout.split() == ["1", "['rustuya-local']", "1"]
+
+
+async def test_a_settings_change_restarts_the_service_and_bad_settings_wait_for_a_fix(broker, tmp_path):
+    from rustuya_local.manager_plugin import api
+
+    state = State()
+    await state.set_cloud({"mp1": Device.from_dict(lamp("mp1"))})
+    ctx = plugins.PluginContext(plugins.PluginRegistry(), state=state, data_root=tmp_path,
+                                bridge_client=BridgeClient(f"mqtt://127.0.0.1:{broker}", "rmr", state))
+    data = tmp_path / "rustuya-local"
+    data.mkdir()
+    (data / "settings.json").write_text(json.dumps({"il": {"prefix": "bad/+"}}))     # a wildcard: unusable
+    from rustuya_local.manager_plugin import register
+    register(ctx)
+    run = ctx._registry.services[0]
+    plugin = run.__self__
+
+    seen = {}
+    w = MqttTransport("127.0.0.1", broker, client_id="mrwatch")
+    await w.connect()
+    for f in ("ilr1/#", "ilr2/#"):
+        await w.subscribe(f, lambda m: seen.__setitem__(m.topic, m.payload.decode()))
+    await answer_status(w, "rmr", ["mp1"])
+    task = asyncio.ensure_future(run())
+    try:
+        await until(lambda: (state.get_plugin_data("rustuya-local") or {}).get("error"), "no settings error shown")
+        assert not task.done()                                    # waits for a fix, no crash-and-retry
+        api.save_settings(data, {"il": {"prefix": "ilr1"}})
+        await plugin.restart()
+        await until(lambda: seen.get("ilr1/_producer/tuya") == "online" and "ilr1/mp1" in seen, "not started")
+
+        api.save_settings(data, {"il": {"prefix": "ilr2"}})
+        await plugin.restart()
+        await until(lambda: seen.get("ilr2/_producer/tuya") == "online" and "ilr2/mp1" in seen, "not restarted")
+        assert seen["ilr1/_producer/tuya"] == "offline"           # the old service stopped
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    for topic in list(seen):
+        await w.publish(topic, "", 1, True)
+    await asyncio.sleep(0.2)
+    await w.close()

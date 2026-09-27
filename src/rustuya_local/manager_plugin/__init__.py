@@ -13,9 +13,11 @@ its documented contract (api_version >= 4). What it takes from the manager:
 `settings.json`, every key optional:
 
     {"il": {"prefix": "il", "source": "tuya"},
-     "options": {"allow_hazardous": false, "expose_unused": false}}
+     "options": {"allow_hazardous": false, "expose_unused": false, "use_quirks": true}}
 
-The tab shows what the service is doing, from the plugin's state namespace.
+The tab shows what the service is doing (the plugin's state namespace) and edits the settings and the
+`custom_converters/` files through `/api/rustuya-local/...` (`api.py`). A settings change restarts the service in place;
+a settings file the service cannot use is shown on the tab and waited on, not retried.
 """
 
 from __future__ import annotations
@@ -40,17 +42,18 @@ _REGISTERED: weakref.WeakSet[Any] = weakref.WeakSet()
 def load_settings(data_dir: Path, bridge_root: str, devices: list[dict]):
     """The service settings from the plugin's data dir (defaults when `settings.json` is missing)."""
     from ..service import Settings
+    from .api import validate_settings
 
     path = data_dir / "settings.json"
     raw: dict[str, Any] = json.loads(path.read_text()) if path.is_file() else {}
-    unknown = set(raw) - {"il", "options"}
-    if unknown:
-        raise ValueError(f"{path}: unknown keys {sorted(unknown)}")
-    il = raw.get("il") or {}
+    try:
+        checked = validate_settings(raw)
+    except ValueError as e:
+        raise ValueError(f"{path}: {e}") from e
     conv = data_dir / "custom_converters"
     conv.mkdir(exist_ok=True)
-    return Settings(root=bridge_root, prefix=il.get("prefix", "il"), source=il.get("source", "tuya"),
-                    devices=devices, overrides_path=conv, hub_options=dict(raw.get("options") or {}))
+    return Settings(root=bridge_root, prefix=checked["il"]["prefix"], source=checked["il"]["source"],
+                    devices=devices, overrides_path=conv, hub_options=dict(checked["options"]))
 
 
 def usable(records: dict[str, dict]) -> list[dict]:
@@ -64,6 +67,11 @@ class Plugin:
         self.namespace = ctx.state_namespace(NAME)
         self.service = None
         self.error: str | None = None
+        self._restart = asyncio.Event()
+
+    async def restart(self) -> None:
+        """Apply changed settings: the running service stops and starts again with them."""
+        self._restart.set()
 
     def _connect(self, kind: str):
         bc = self.ctx.bridge_client
@@ -77,29 +85,36 @@ class Plugin:
         return connect
 
     async def run(self) -> None:
-        """The supervised service: started by the manager after bootstrap, cancelled on shutdown."""
+        """The supervised service: started by the manager after bootstrap, cancelled on shutdown. A start that fails
+        (the broker is down) raises, for the manager's backoff; settings it cannot use wait for a fix instead."""
         from ..service import Service
 
         data = self.ctx.data_dir(NAME)
-        try:
-            settings = await asyncio.to_thread(load_settings, data, self.ctx.bridge_client.root,
-                                               usable(self.ctx.devices()))
-        except (OSError, ValueError, TypeError) as e:
-            self.error = f"settings: {e}"
-            await self.publish_status()
-            raise
-        bridge, il = self._connect("bridge"), self._connect("il")
-        self.service = Service(settings, connect_bridge=bridge, connect_il=il)
-        self.error = None
-        await self.service.start()
-        try:
-            while True:
+        while True:
+            self._restart.clear()
+            try:
+                settings = await asyncio.to_thread(load_settings, data, self.ctx.bridge_client.root,
+                                                   usable(self.ctx.devices()))
+            except (OSError, ValueError, TypeError) as e:
+                self.error = f"settings: {e}"
                 await self.publish_status()
-                await asyncio.sleep(5)
-        finally:
-            service, self.service = self.service, None
-            await service.stop()
-            await self.publish_status()
+                await self._restart.wait()
+                continue
+            bridge, il = self._connect("bridge"), self._connect("il")
+            self.service = Service(settings, connect_bridge=bridge, connect_il=il)
+            self.error = None
+            await self.service.start()
+            try:
+                while not self._restart.is_set():
+                    await self.publish_status()
+                    try:
+                        await asyncio.wait_for(self._restart.wait(), 5)
+                    except TimeoutError:
+                        pass
+            finally:
+                service, self.service = self.service, None
+                await service.stop()
+                await self.publish_status()
 
     async def on_devices(self, records: dict[str, dict]) -> None:
         if self.service is not None:
@@ -135,4 +150,9 @@ def register(ctx: Any) -> None:
     plugin = Plugin(ctx)
     ctx.add_service(plugin.run)
     ctx.watch_devices(plugin.on_devices)
+    try:
+        from .api import router
+        ctx.add_api_router(router(ctx.data_dir(NAME), plugin.restart))
+    except ImportError:                                   # a manager without its web extra: no tab to edit from
+        _LOGGER.info("%s: FastAPI is not installed; the tab shows status only", NAME)
     ctx.add_page(NAME, "Tuya (IL)", static_dir=str(Path(__file__).parent / "static"))

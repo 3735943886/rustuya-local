@@ -34,6 +34,8 @@ topic templates are read from its retained `{root}/bridge/config`.
 
 ## Home Assistant
 
+Coming from rustuya-homeassistant: [docs/MIGRATING.md](docs/MIGRATING.md).
+
 Install il-ha, and run one IL producer per bridge: the daemon, the integration below, or the manager plugin (two
 producers show every device twice; the service warns when another one is already online).
 
@@ -59,8 +61,9 @@ Installed next to rustuya-manager, as a pip package (`pip install rustuya-local`
 the drop-in zip each release carries (`rustuya_local-<version>-dropin.zip`, tuya2ildevice vendored inside, built by
 `scripts/build_dropin.py`; unpack it into the manager's plugin directory, or install it from the manager's plugin
 catalog once listed there), it appears as a **Tuya (IL)** tab and runs the service under the manager: the manager's broker and bridge root, the manager's device
-list (followed). Its data dir (`rustuya-local/` next to the manager's plugins) holds an optional `settings.json`
-(`il`, `options`) and `custom_converters/`.
+list (followed). Its data dir (`rustuya-local/` next to the manager's plugins) holds `settings.json` (`il`,
+`options`) and `custom_converters/`, and the tab edits both: saved settings restart the service in place, saved
+converter files are picked up while it runs. A settings file it cannot use is shown on the tab until it is fixed.
 
 The drop-in zip freezes the tuya2ildevice it was built with: a tuya2ildevice fix reaches manager users with the next
 rustuya-local release (bump the patch version and tag; the manager's catalog follows the release). Installed both ways
