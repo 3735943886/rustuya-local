@@ -1,5 +1,6 @@
-// The Rustuya sidebar panel (panel.py): the files of <config>/rustuya_converters and the override pack, a simpler
-// cut of the rustuya-manager plugin tab (src/rustuya_local/manager_plugin/static/index.js) on the same file API.
+// The Rustuya sidebar panel (panel.py): the bridge's devices against the cloud list (a simpler cut of rustuya-manager's
+// device view: the same categories, order, filters and gateway/sub-device tree), then the files of
+// <config>/rustuya_converters and the override pack (the rustuya-manager plugin tab's file API).
 //
 // Home Assistant sets `hass`, `narrow` and `panel` on the element; every call goes through hass.callApi, which carries
 // the user's token. The views are for administrators only (converters run code in Home Assistant's process).
@@ -33,6 +34,7 @@ const STYLE = `
   input, textarea { font: inherit; color: var(--primary-text-color); background: var(--card-background-color);
                     border: 1px solid var(--divider-color); border-radius: 6px; padding: 6px 8px; box-sizing: border-box; }
   input { flex: 1; min-width: 160px; }
+  input[type=checkbox] { flex: none; min-width: 0; margin: 2px 0 0; }
   textarea { width: 100%; min-height: 420px; margin-top: 8px; resize: vertical; tab-size: 2;
              font-family: var(--code-font-family, ui-monospace, monospace); font-size: 13px; }
   button { font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 6px; cursor: pointer;
@@ -40,6 +42,54 @@ const STYLE = `
   button.primary { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
   button:disabled { opacity: .5; cursor: default; }
   .note { margin-top: 8px; }
+  /* bridge devices: rustuya-manager's category colors (sky / rose / amber / emerald) */
+  .cat-missing { --cat: #0ea5e9; } .cat-orphan { --cat: #f43f5e; } .cat-mismatch { --cat: #f59e0b; } .cat-synced { --cat: #10b981; }
+  .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .head h2 { margin: 0; }
+  .head .end { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 8px; }
+  .chip { padding: 3px 10px; font-size: 13px; border-radius: 999px; border: 1px solid var(--cat, var(--divider-color));
+          background: transparent; color: var(--primary-text-color); }
+  .chip.on { background: var(--cat, var(--primary-text-color)); color: #fff; }
+  .chip.all.on { background: var(--primary-text-color); color: var(--card-background-color); }
+  .chip.zero:not(.on) { opacity: .5; }
+  .chip .n { margin-left: 4px; font-variant-numeric: tabular-nums; }
+  select { font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--divider-color);
+           background: var(--card-background-color); color: var(--primary-text-color); }
+  .syncbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .syncbar button, .act { border-color: var(--cat, var(--divider-color));
+                          background: color-mix(in srgb, var(--cat, transparent) 12%, var(--card-background-color)); }
+  .syncbar .all { margin-left: auto; background: var(--primary-text-color); color: var(--card-background-color);
+                  border-color: var(--primary-text-color); }
+  .devices { display: flex; flex-direction: column; gap: 6px; }
+  .dev { border: 1px solid var(--divider-color); border-left: 4px solid var(--cat); border-radius: 8px; padding: 8px 10px;
+         background: color-mix(in srgb, var(--cat) 8%, var(--card-background-color)); cursor: pointer; }
+  .dev.cat-synced { background: var(--card-background-color); }
+  .dev.child { margin-left: 24px; }
+  .dev .top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .dev .name { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .dev .tree { color: var(--secondary-text-color); }
+  .dev .acts { margin-left: auto; display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+  .dev .acts button { padding: 2px 8px; font-size: 12px; }
+  .dev .id { font-family: var(--code-font-family, ui-monospace, monospace); font-size: 11px; color: var(--secondary-text-color);
+             word-break: break-all; }
+  .pill { font-size: 11px; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--cat); white-space: nowrap; }
+  .fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px 12px; margin-top: 6px; font-size: 12px; }
+  :host([narrow]) .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fields .wide { grid-column: span 2; }
+  .fields b { font-weight: 400; color: var(--secondary-text-color); margin-right: 4px; }
+  .fields span { font-family: var(--code-font-family, ui-monospace, monospace); word-break: break-all; }
+  .reasons { margin-top: 6px; font-size: 12px; padding: 4px 8px; border-radius: 6px; word-break: break-all;
+             border: 1px solid var(--cat); background: color-mix(in srgb, var(--cat) 12%, var(--card-background-color)); }
+  .placeholder { border: 2px dashed #0ea5e9; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  dialog { border: 1px solid var(--divider-color); border-radius: 12px; padding: 16px; width: min(560px, calc(100vw - 32px));
+           background: var(--card-background-color); color: var(--primary-text-color); }
+  dialog::backdrop { background: rgba(0, 0, 0, .4); }
+  dialog h3 { margin: 0 0 8px; font-size: 16px; font-weight: 500; }
+  dialog .group { margin: 10px 0 4px; font-size: 13px; font-weight: 500; }
+  dialog label { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 3px 0; word-break: break-all; }
+  dialog .plan { max-height: 55vh; overflow: auto; }
+  dialog .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 `;
 
 function el(tag, attrs = {}, ...children) {
@@ -57,6 +107,245 @@ function el(tag, attrs = {}, ...children) {
 // hass.callApi rejects with {error, body} (the view's json_message in body.message)
 const message = (e) => (e && e.body && e.body.message) || (e && (e.message || e.error)) || String(e);
 
+
+// ---- bridge devices ------------------------------------------------------------------------------------------------
+
+const CATEGORIES = ["missing", "orphan", "mismatch", "synced"];     // rustuya-manager's order and filter tabs
+const RANK = { missing: 0, orphan: 1, mismatch: 2, synced: 3 };
+const PLAN_ORDER = ["mismatch", "missing", "orphan"];               // the manager's sync dialog groups
+const PLAN = {
+  mismatch: { title: "Update on the bridge", verb: "update", button: "Update mismatch" },
+  missing: { title: "Add to the bridge", verb: "add", button: "Add missing" },
+  orphan: { title: "Remove from the bridge", verb: "remove", button: "Remove orphan" },
+};
+
+function stored(key, fallback) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key));
+    return v == null ? fallback : v;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function store(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) { /* private window or blocked storage: the default next time */ }
+}
+
+class BridgeSection {
+  constructor(panel) {
+    this.panel = panel;
+    this.devices = null;                                  // null until the first load
+    const f = stored("rustuya.filters", CATEGORIES);
+    this.filters = new Set(Array.isArray(f) ? f.filter((c) => CATEGORIES.includes(c)) : CATEGORIES);
+    this.sort = ["id", "name", "category"].includes(stored("rustuya.sort", "id")) ? stored("rustuya.sort", "id") : "id";
+    this.expanded = new Set();
+    this.busy = false;
+
+    this.status = el("div", { class: "muted" });
+    this.chips = el("div", { class: "chips" });
+    this.syncbar = el("div", { class: "syncbar" });
+    this.list = el("div", { class: "devices" });
+    this.refreshBtn = el("button", { onclick: () => this.load() }, "Refresh");
+    const sort = el("select", { title: "Sort devices", onchange: (e) => { this.sort = e.target.value; store("rustuya.sort", this.sort); this.paint(); } },
+      ...["id", "name", "category"].map((k) => el("option", { value: k, selected: k === this.sort }, `sort by ${k}`)));
+    this.dialog = el("dialog");
+    this.root = el("div", { class: "card" },
+      el("div", { class: "head" }, el("h2", {}, "Bridge devices"), el("div", { class: "end" }, sort, this.refreshBtn)),
+      el("div", { class: "muted" }, "The cloud device list against what rustuya-bridge holds."),
+      this.chips, this.syncbar, this.status, this.list, this.dialog);
+  }
+
+  async load(selection) {
+    if (this.busy) return;
+    this.busy = true;
+    this.refreshBtn.disabled = true;
+    this.status.className = "muted";
+    this.status.textContent = selection ? "Sending to the bridge…" : "Reading the bridge…";
+    try {
+      const r = selection ? await this.panel._api("POST", "bridge", selection) : await this.panel._api("GET", "bridge");
+      this.devices = r.devices;
+      this.status.textContent = r.cloud_loaded ? "" : "No cloud device list yet: log in to Tuya Cloud from the integration's options.";
+      if (selection) this.panel._toast(r.sent ? `Sent ${r.sent} command${r.sent === 1 ? "" : "s"} to the bridge` : "Nothing to send");
+    } catch (e) {
+      this.status.className = "error";
+      this.status.textContent = message(e);
+    } finally {
+      this.busy = false;
+      this.refreshBtn.disabled = false;
+    }
+    this.paint();
+  }
+
+  count(cat) {
+    return (this.devices || []).filter((d) => d.category === cat).length;
+  }
+
+  paint() {
+    const all = CATEGORIES.every((c) => this.filters.has(c));
+    const chip = (key, label, n, on) => el("button", {
+      class: `chip ${key === "all" ? "all" : `cat-${key}`}${on ? " on" : ""}${n ? "" : " zero"}`,
+      onclick: () => this.toggle(key),
+    }, label, el("span", { class: "n" }, n || ""));
+    this.chips.replaceChildren(
+      chip("all", "all", (this.devices || []).length, all),
+      ...CATEGORIES.map((c) => chip(c, c, this.count(c), this.filters.has(c))));
+
+    const pending = PLAN_ORDER.filter((c) => this.count(c));
+    this.syncbar.replaceChildren(...(pending.length ? [
+      ...["missing", "orphan", "mismatch"].filter((c) => this.count(c)).map((c) =>
+        el("button", { class: `cat-${c}`, onclick: () => this.openPlan(c) }, PLAN[c].button)),
+      el("button", { class: "all", onclick: () => this.openPlan("all") }, "Apply all")] : []));
+
+    if (!this.devices) {
+      this.list.replaceChildren();
+      return;
+    }
+    const entries = this.tree();
+    if (!entries.length) {
+      this.list.replaceChildren(el("div", { class: "muted" },
+        !this.filters.size ? "No category is selected." : this.devices.length ? "No device in the selected categories."
+          : "No devices in the cloud list or on the bridge."));
+      return;
+    }
+    const nodes = [];
+    for (const e of entries) {
+      nodes.push(e.device ? this.card(e.device, false) : this.placeholder(e.id));
+      for (const k of e.kids) nodes.push(this.card(k, true));
+    }
+    this.list.replaceChildren(...nodes);
+  }
+
+  toggle(key) {
+    if (key === "all") {
+      this.filters = CATEGORIES.every((c) => this.filters.has(c)) ? new Set() : new Set(CATEGORIES);
+    } else if (this.filters.has(key)) {
+      this.filters.delete(key);
+    } else {
+      this.filters.add(key);
+    }
+    store("rustuya.filters", [...this.filters]);
+    this.paint();
+  }
+
+  // Gateways and WiFi devices at the top level with their sub-devices under them; a sub-device whose gateway is in
+  // neither list hangs under a placeholder. An entry shows when it or one of its sub-devices passes the filters; a
+  // shown gateway shows all its sub-devices, for context (as in rustuya-manager).
+  tree() {
+    const byId = new Map(this.devices.map((d) => [d.id, d]));
+    const side = (d) => d.cloud || d.bridge;
+    const kids = new Map();
+    const top = [];
+    for (const d of this.devices) {
+      const s = side(d);
+      if (s.type === "SubDevice" && s.parent_id) {
+        if (!kids.has(s.parent_id)) kids.set(s.parent_id, []);
+        kids.get(s.parent_id).push(d);
+      } else {
+        top.push(d);
+      }
+    }
+    const entries = top.map((d) => ({ id: d.id, device: d, kids: kids.get(d.id) || [] }));
+    for (const d of top) kids.delete(d.id);
+    for (const [id, list] of kids) if (!byId.has(id)) entries.push({ id, device: null, kids: list });
+    const value = (d) => this.sort === "name" ? (side(d).name || "").toLowerCase()
+      : this.sort === "category" ? RANK[d.category] : d.id;
+    const cmp = (a, b) => {
+      const va = a.device ? value(a.device) : this.sort === "category" ? RANK.missing : a.id;
+      const vb = b.device ? value(b.device) : this.sort === "category" ? RANK.missing : b.id;
+      return va < vb ? -1 : va > vb ? 1 : 0;
+    };
+    const out = [];
+    for (const e of entries) {
+      const shown = e.device ? this.filters.has(e.device.category) : this.filters.has("missing");
+      const passing = e.kids.filter((k) => this.filters.has(k.category));
+      if (shown || passing.length) out.push({ ...e, kids: shown ? e.kids : passing });
+    }
+    out.sort(cmp);
+    for (const e of out) e.kids.sort((a, b) => cmp({ device: a, id: a.id }, { device: b, id: b.id }));
+    return out;
+  }
+
+  placeholder(id) {
+    return el("div", { class: "placeholder" },
+      el("div", { class: "row" }, el("span", { class: "id" }, id), el("span", { class: "pill cat-missing" }, "missing gateway")),
+      el("div", { class: "muted" }, "Sub-devices below name this gateway, which is in neither the cloud list nor the bridge."));
+  }
+
+  card(d, child) {
+    const s = d.cloud || d.bridge;
+    const name = s.name && s.name !== "N/A" ? s.name : d.id;
+    const acts = el("span", { class: "acts" }, el("span", { class: `pill cat-${d.category}` }, d.category));
+    const act = (label, cat, fn) => el("button", { class: `act cat-${cat}`, onclick: (e) => { e.stopPropagation(); fn(); } }, label);
+    if (d.category === "missing") acts.append(act("Add", "missing", () => this.one("add", d)));
+    if (d.category === "mismatch") acts.append(act("Update", "mismatch", () => this.one("update", d)));
+    if (d.category !== "missing") acts.append(act("Remove", "orphan", () => this.one("remove", d)));
+    const card = el("div", { class: `dev cat-${d.category}${child ? " child" : ""}`, title: `${d.category} · ${s.type}`,
+      onclick: () => { this.expanded.has(d.id) ? this.expanded.delete(d.id) : this.expanded.add(d.id); this.paint(); } },
+      el("div", { class: "top" }, child ? el("span", { class: "tree" }, "└") : "", el("span", { class: "name" }, name), acts),
+      name !== d.id ? el("div", { class: "id" }, d.id) : "");
+    if (!this.expanded.has(d.id)) return card;
+    // the bridge's value is what it runs with; the cloud's where the bridge does not have the device
+    const b = d.bridge || {}, c = d.cloud || {};
+    const pick = (k) => (b[k] && b[k] !== "Auto" ? b[k] : c[k] || b[k]) || "—";
+    const field = (label, value, wide) => el("div", { class: wide ? "wide" : "" }, el("b", {}, label), el("span", {}, value));
+    card.append(el("div", { class: "fields" }, ...(s.type === "SubDevice"
+      ? [field("CID", s.cid || "—", true), field("PARENT", s.parent_id || "—", true)]
+      : [field("IP", pick("ip")), field("VER", pick("version")), field("KEY", s.key || "—", true)])));
+    if (d.reasons.length) card.append(el("div", { class: "reasons" }, ...d.reasons.flatMap((r, i) => i ? [el("br"), r] : [r])));
+    return card;
+  }
+
+  async one(verb, d) {
+    const s = d.cloud || d.bridge;
+    const who = s.name && s.name !== "N/A" ? `${s.name} (${d.id})` : d.id;
+    if (verb === "remove" && !confirm(`Remove ${who} from the bridge?`)) return;
+    await this.load({ [verb]: [d.id] });
+  }
+
+  openPlan(scope) {
+    const groups = PLAN_ORDER.filter((c) => scope === "all" || scope === c)
+      .map((c) => [c, this.devices.filter((d) => d.category === c)]).filter(([, list]) => list.length);
+    const boxes = [];
+    const body = [];
+    for (const [c, list] of groups) {
+      const all = el("input", { type: "checkbox", checked: true });
+      const mine = list.map((d) => {
+        const box = el("input", { type: "checkbox", checked: true });
+        box.dataset.verb = PLAN[c].verb;
+        box.dataset.id = d.id;
+        boxes.push(box);
+        const s = d.cloud || d.bridge;
+        return el("label", {}, box, el("span", {}, `${s.name && s.name !== "N/A" ? s.name : d.id}`,
+          el("span", { class: "id" }, ` ${d.id}`), d.reasons.length ? el("div", { class: "muted" }, d.reasons.join("; ")) : ""));
+      });
+      all.addEventListener("change", () => { for (const b of mine) b.firstChild.checked = all.checked; update(); });
+      body.push(el("label", { class: `group cat-${c}` }, all, el("span", { class: "pill" }, PLAN[c].title)), ...mine);
+    }
+    const apply = el("button", { class: "primary" });
+    const update = () => {
+      const n = boxes.filter((b) => b.checked).length;
+      apply.textContent = n ? `Apply ${n}` : "Apply";
+      apply.disabled = !n;
+    };
+    for (const b of boxes) b.addEventListener("change", update);
+    apply.addEventListener("click", async () => {
+      const sel = { add: [], update: [], remove: [] };
+      for (const b of boxes) if (b.checked) sel[b.dataset.verb].push(b.dataset.id);
+      this.dialog.close();
+      await this.load(sel);
+    });
+    update();
+    this.dialog.replaceChildren(
+      el("h3", {}, scope === "all" ? "Sync with the bridge" : PLAN[scope].title),
+      el("div", { class: "plan" }, ...body),
+      el("div", { class: "foot" }, el("button", { onclick: () => this.dialog.close() }, "Cancel"), apply));
+    this.dialog.showModal();
+  }
+}
+
 class RustuyaPanel extends HTMLElement {
   constructor() {
     super();
@@ -72,6 +361,7 @@ class RustuyaPanel extends HTMLElement {
       this._built = true;
       this._build();
       this._refresh();
+      this._bridge.load();
     }
   }
 
@@ -93,6 +383,7 @@ class RustuyaPanel extends HTMLElement {
     this._menu.hass = this._hass;
     this._menu.narrow = this.hasAttribute("narrow");
 
+    this._bridge = new BridgeSection(this);
     this._pack = el("div", { class: "muted" }, "…");
     this._syncBtn = el("button", { onclick: () => this._syncPack() }, "Sync now");
     this._list = el("ul", { class: "files" });
@@ -114,6 +405,7 @@ class RustuyaPanel extends HTMLElement {
       el("style", {}, STYLE),
       el("div", { class: "toolbar" }, this._menu, el("span", {}, "Rustuya")),
       el("div", { class: "content" },
+        this._bridge.root,
         el("div", { class: "card" },
           el("h2", {}, "Override pack"),
           el("div", { class: "muted" },

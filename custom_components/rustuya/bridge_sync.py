@@ -101,3 +101,43 @@ async def apply(manager: Any, diff: Any, user_input: dict[str, Any]) -> int:
 
 async def _register(manager: Any, dev: Any) -> None:
     await manager.publish_command("add", target_id=dev.id, target_name=dev.name, extra=add_extra(dev) or None)
+
+
+# ---- the panel's device list (panel.py's BridgeView) ---------------------------------------------------------------
+
+CATEGORIES = ("missing", "orphan", "mismatch", "synced")      # rustuya-manager's order: presence wrong, then fields
+
+
+def _fields(dev: Any) -> dict[str, Any]:
+    return {"name": dev.name, "type": dev.type, "cid": dev.cid, "parent_id": dev.parent_id, "key": dev.key,
+            "ip": dev.ip, "version": dev.version}
+
+
+def listing(diff: Any, bridge: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Every device of the diff as the panel draws it: `category`, the mismatch `reasons`, and the `cloud` and
+    `bridge` side of it (None where that side has none). `bridge` is the manager's bridge-side devices by id, for the
+    bridge's own values of a synced or mismatched device; without it those show the cloud's."""
+    bridge = bridge or {}
+    out: list[dict[str, Any]] = []
+
+    def row(dev: Any, category: str, cloud: Any, on_bridge: Any, reasons: list[str] | None = None) -> None:
+        out.append({"id": dev.id, "category": category, "reasons": reasons or [],
+                    "cloud": _fields(cloud) if cloud is not None else None,
+                    "bridge": _fields(on_bridge) if on_bridge is not None else None})
+
+    for dev in diff.missing:
+        row(dev, "missing", dev, None)
+    for dev in diff.orphaned:
+        row(dev, "orphan", None, dev)
+    for dev, reasons in diff.mismatched:
+        row(dev, "mismatch", dev, bridge.get(dev.id, dev), reasons)
+    for dev in diff.synced:
+        row(dev, "synced", dev, bridge.get(dev.id, dev))
+    return out
+
+
+def parents_first(ids: list[str], diff: Any) -> list[str]:
+    """`ids` with gateways and WiFi devices ahead of sub-devices, so a gateway is on the bridge before its children."""
+    subs = {d.id for d in diff.missing if d.type == "SubDevice"} | {d.id for d, _ in diff.mismatched
+                                                                     if d.type == "SubDevice"}
+    return sorted(ids, key=lambda i: i in subs)

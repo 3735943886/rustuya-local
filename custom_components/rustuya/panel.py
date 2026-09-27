@@ -1,4 +1,5 @@
-"""The advanced panel: a sidebar page for `<config>/rustuya_converters`, turned on by the `panel` option.
+"""The advanced panel: a sidebar page for `<config>/rustuya_converters` and the bridge's device list against the cloud
+list, turned on by the `panel` option.
 
 The panel is registered while the entry is loaded with the option on, and removed on unload (an options change reloads
 the entry, so it follows the option). The API views and the static path cannot be unregistered in Home Assistant, so
@@ -9,6 +10,7 @@ every view is for administrators only.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from http import HTTPStatus
 from pathlib import Path
@@ -21,7 +23,18 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
-from .const import CONF_PACK, CONF_PANEL, CONVERTERS_DIR, DOMAIN
+from .const import (
+    CONF_BRIDGE_ROOT,
+    CONF_BROKER_HOST,
+    CONF_BROKER_PASSWORD,
+    CONF_BROKER_PORT,
+    CONF_BROKER_USERNAME,
+    CONF_DEVICES_PATH,
+    CONF_PACK,
+    CONF_PANEL,
+    CONVERTERS_DIR,
+    DOMAIN,
+)
 
 PANEL_URL = "rustuya"
 STATIC_URL = "/rustuya_static"
@@ -35,7 +48,7 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
         hass.data[_VIEWS_KEY] = True
         await hass.http.async_register_static_paths(
             [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)])
-        for view in (ConvertersView, ConverterView, PackView):
+        for view in (ConvertersView, ConverterView, PackView, BridgeView):
             hass.http.register_view(view())
     if entry.options.get(CONF_PANEL, False) and PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
         version = (await async_get_integration(hass, DOMAIN)).version     # a new release is not served from cache
@@ -138,3 +151,69 @@ class PackView(_View):
         if isinstance(found, web.Response):
             return found
         return self.json({"started": found[1].service.sync_pack_now()})
+
+
+class BridgeView(_View):
+    """The cloud list against what the bridge holds, through a rustuya-manager session like the options flow's
+    `bridge_sync` step (and sharing its lock: one session at a time). GET: every device with its category. POST
+    `{"add": [...], "update": [...], "remove": [...]}`: those commands (only for ids the diff has in that category),
+    then the list again."""
+
+    url = "/api/rustuya/bridge"
+    name = "api:rustuya:bridge"
+    SETTLE = 1.5            # seconds for the bridge's replies to land before the list is read again after a POST
+
+    async def get(self, request: web.Request) -> web.Response:
+        return await self._session(request, None)
+
+    async def post(self, request: web.Request) -> web.Response:
+        from . import bridge_sync
+
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict) or not all(
+                isinstance(body.get(k, []), list) and all(isinstance(i, str) for i in body.get(k, []))
+                for k in (bridge_sync.ADD, bridge_sync.UPDATE, bridge_sync.REMOVE)):
+            return self.json_message('the body is {"add": [ids], "update": [ids], "remove": [ids]}',
+                                     HTTPStatus.BAD_REQUEST)
+        return await self._session(request, body)
+
+    async def _session(self, request: web.Request, selection: dict[str, list[str]] | None) -> web.Response:
+        from . import bridge_sync, manager_session
+
+        found = self._loaded(request)
+        if isinstance(found, web.Response):
+            return found
+        if not manager_session.available():
+            return self.json_message("rustuya-manager is not installed", HTTPStatus.NOT_IMPLEMENTED)
+        data = found[0].data
+        try:
+            manager = await manager_session.open_manager(
+                broker=f"mqtt://{data[CONF_BROKER_HOST]}:{data[CONF_BROKER_PORT]}", root=data[CONF_BRIDGE_ROOT],
+                devices_path=data[CONF_DEVICES_PATH], username=data.get(CONF_BROKER_USERNAME) or None,
+                password=data.get(CONF_BROKER_PASSWORD) or None)
+        except manager_session.Busy:
+            return self.json_message("a Tuya login or device sync window is open; close it and try again",
+                                     HTTPStatus.CONFLICT)
+        except Exception as e:  # noqa: BLE001 -- broker down, bridge not answering: any of it is a 502
+            return self.json_message(f"cannot reach the bridge: {e}", HTTPStatus.BAD_GATEWAY)
+        try:
+            diff = await manager.sync()
+            sent = 0
+            if selection is not None:
+                selection = {**selection, bridge_sync.ADD: bridge_sync.parents_first(
+                    selection.get(bridge_sync.ADD, []), diff)}
+                sent = await bridge_sync.apply(manager, diff, selection)
+                if sent:
+                    await asyncio.sleep(self.SETTLE)
+                    diff = await manager.sync()
+            state = getattr(manager, "state", None)
+            bridge = getattr(state, "bridge", None) if state is not None else None
+            return self.json({"devices": bridge_sync.listing(diff, bridge), "sent": sent,
+                              "cloud_loaded": bool(getattr(state, "cloud", True))})
+        except RuntimeError as e:                                  # a publish failed
+            return self.json_message(f"could not send the command to the bridge: {e}", HTTPStatus.BAD_GATEWAY)
+        finally:
+            await manager_session.close_manager(manager)
