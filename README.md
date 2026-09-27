@@ -3,7 +3,7 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
 Local control of Tuya devices through [rustuya-bridge](https://github.com/3735943886/rustuya-bridge), as IL
-([ildevice](../ildevice)) devices, and in Home Assistant. It replaces rustuya-homeassistant.
+([ildevice](https://github.com/3735943886/ildevice)) devices, and in Home Assistant. It replaces rustuya-homeassistant.
 
 ```
 rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il-ha (Home Assistant integration), or any IL consumer
@@ -11,12 +11,12 @@ rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il
                          BridgeClient + tuya2ildevice.Hub
 ```
 
-- **tuya2ildevice** (sibling repo) is the only place that interprets Tuya: Home Assistant core's `tuya` behaviour, the
+- **[tuya2ildevice](https://github.com/3735943886/tuya2ildevice)** is the only place that interprets Tuya: Home Assistant core's `tuya` behaviour, the
   user overrides for non-standard devices, and the host parts (runner, transports, file watchers).
 - **rustuya-local** is one `Service` (`src/rustuya_local/service.py`) and three thin shells that run it:
   the `rustuya-local run` daemon, the `custom_components/rustuya` Home Assistant integration, and a rustuya-manager
   plugin. It only produces IL and knows nothing of Home Assistant entities.
-- **il-ha** (sibling repo) turns IL descriptors into Home Assistant entities.
+- **[il-ha](https://github.com/3735943886/ildevice-homeassistant)** turns IL descriptors into Home Assistant entities.
 
 ## Daemon
 
@@ -27,7 +27,7 @@ rustuya-local run --config config.json
 
 `config.json` (see `src/rustuya_local/config.py`): the bridge and IL brokers, the IL prefix, the device list, a
 `custom_converters` directory, and options for the Hub (`allow_hazardous`, `expose_unused`, `overrides`).
-The device list is the `tuyadevices.json` that [rustuya-manager](../rustuya-manager) keeps (its QR-login wizard writes
+The device list is the `tuyadevices.json` that [rustuya-manager](https://github.com/3735943886/rustuya-manager) keeps (its QR-login wizard writes
 it, with each device's cloud `category`/`function`/`status_range`/`local_strategy`); rustuya-local follows it as it
 changes and never writes it. IL carries only the devices that are also registered on the bridge. The bridge's own
 topic templates are read from its retained `{root}/bridge/config`.
@@ -90,4 +90,4 @@ Everything here needs the sibling repos and, for the last two groups, `mosquitto
 
 Planning, progress and open decisions: `docs/REDESIGN.md`.
 
-Licence: `LICENSE` (MIT). Third-party notices: `THIRD_PARTY_NOTICES.md`.
+Licence: `LICENSE` (MIT).

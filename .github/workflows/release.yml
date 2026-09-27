@@ -90,7 +90,7 @@ jobs:
         run: python -m build --sdist --wheel
 
       - name: Check distribution metadata
-        run: twine check dist/*
+        run: twine check --strict dist/*      # --strict: a missing README (long description) fails the release
 
       - name: Build the rustuya-manager drop-in zip
         # The manager's plugin catalog installs this asset (it cannot pip-install): rustuya_local with the tuya2ildevice
