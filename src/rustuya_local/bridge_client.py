@@ -13,6 +13,11 @@ It also tracks which devices the bridge actually holds (its `status` reply, kept
 `clear` acks and by `bridge/config` republishes), so that `sync_devices(records)` can hand the Hub only the devices
 that are both in the device file and registered on the bridge: removing a device from the bridge takes it out of IL
 (retained topics cleared) and adding it puts it back, instead of IL advertising the whole cloud list regardless.
+
+`status` replies go to every client on the response topic, whoever asked, and a large fleet comes in pages. Only the
+pages of this client's own request are taken, one request at a time: another client's pages (rustuya-manager, the
+Home Assistant config flow) used to be read as this client's, and a repeated last page then committed as the whole
+list (61 devices read as the 11 of the last page), taking the rest out of IL.
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ DEFAULT_EVENT = "{root}/event/{type}/{id}"
 DEFAULT_MESSAGE = "{root}/{level}/{id}"
 DEFAULT_COMMAND = "{root}/command"
 DEFAULT_PAYLOAD = "{value}"
+STATUS_CYCLE_TIMEOUT = 10.0      # a request whose pages stop coming is given up after this, so a lost reply cannot stall
 
 
 @dataclass(frozen=True)
@@ -63,6 +69,8 @@ class BridgeClient:
         self._records: dict[str, dict] | None = None      # every device in the device file, by id
         self._registered: set[str] | None = None          # what the bridge holds; None until its first `status`
         self._status_accum: dict[str, Any] | None = None
+        self._status_since: float | None = None            # this client's open `status` request: when it went out
+        self._status_rerun = False                          # asked for again while one was open: once more when it ends
         self._devices_updated_at: Any = None
         # the latest thing heard per device, replayed when a device becomes driven after it was already heard
         self._last_conn: dict[str, Connected | Disconnected] = {}
@@ -164,9 +172,14 @@ class BridgeClient:
         self._reconcile()
 
     def _request_status(self) -> None:
-        if self._templates is not None and self._records is not None:
-            self._status_accum = None
-            self._spawn(self._publish("status", "bridge", {}))
+        if self._templates is None or self._records is None:
+            return
+        now = asyncio.get_running_loop().time()
+        if self._status_since is not None and now - self._status_since < STATUS_CYCLE_TIMEOUT:
+            self._status_rerun = True                       # one request at a time; its pages would be mixed up
+            return
+        self._status_since, self._status_rerun, self._status_accum = now, False, None
+        self._spawn(self._publish("status", "bridge", {}))
 
     def _reconcile(self) -> None:
         if self.runner is None or self._records is None or self._registered is None:
@@ -245,8 +258,14 @@ class BridgeClient:
                 self._reconcile()
 
     def _on_status_page(self, parsed: dict) -> None:
-        """`status` is paged: a page with `has_more` is followed by asking for the next offset."""
+        """`status` is paged: a page with `has_more` is followed by asking for the next offset. Pages that arrive while
+        this client has no request open answer someone else's, and are left alone."""
         offset = parsed.get("offset", 0)
+        now = asyncio.get_running_loop().time()
+        if self._status_since is None or now - self._status_since >= STATUS_CYCLE_TIMEOUT:
+            _LOGGER.debug("status page (offset %s) of another client's request; ignored", offset)
+            return
+        self._status_since = now                            # pages are coming: the request is alive
         returned = parsed.get("returned", len(parsed["devices"]))
         if offset == 0 or self._status_accum is None:
             self._status_accum = {}
@@ -254,8 +273,13 @@ class BridgeClient:
         if parsed.get("has_more") and returned > 0:
             self._spawn(self._publish("status", "bridge", {"offset": offset + returned}))
             return
+        before = self._registered
         self._registered = set(self._status_accum)
-        self._status_accum = None
+        self._status_accum, self._status_since = None, None
+        if before != self._registered:
+            _LOGGER.info("the bridge holds %d device(s)", len(self._registered))
+        if self._status_rerun:
+            self._request_status()
         for device_id in [d for d in self._last_conn if d not in self._registered]:
             self._forget(device_id)
         self._reconcile()

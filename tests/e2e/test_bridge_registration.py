@@ -121,3 +121,68 @@ async def test_a_retained_reply_is_an_old_one_and_is_ignored():
     await settle(runner, bridge_client, bridge, il)
     assert advertised(il) == {"a"}
     await runner.stop()
+
+
+def status_requests(bridge):
+    return [json.loads(p) for t, p, *_ in bridge.published
+            if t.startswith("rustuya/command") and json.loads(p).get("action") == "status"]
+
+
+async def test_another_clients_status_pages_are_left_alone(chain):
+    """What r5c showed: 61 devices, pages of 50 + 11. When another client (the config flow's Manager) asked, this one
+    took its first page as its own, asked for the second page too, and the second copy of that last page was then
+    committed as the whole list: 61 devices read as 11, and 50 taken out of IL."""
+    bridge, il, runner, bridge_client = chain
+    ids = [f"d{i:02d}" for i in range(61)]
+    bridge_client.sync_devices([lamp(i) for i in ids])
+    await reply(bridge, status_reply(ids[:50], offset=0, has_more=True))        # its own request, answered
+    await settle(runner, bridge_client, bridge, il)
+    await reply(bridge, status_reply(ids[50:], offset=50))
+    await settle(runner, bridge_client, bridge, il)
+    assert len(advertised(il)) == 61
+    asked = len(status_requests(bridge))
+
+    # another client's request: its pages, and its last page twice (it and the other client each asked for it)
+    await reply(bridge, status_reply(ids[:50], offset=0, has_more=True))
+    await reply(bridge, status_reply(ids[50:], offset=50))
+    await reply(bridge, status_reply(ids[50:], offset=50))
+    await settle(runner, bridge_client, bridge, il)
+    assert len(advertised(il)) == 61
+    assert len(status_requests(bridge)) == asked                                # asked for no page of it
+
+
+async def test_one_status_request_at_a_time_and_once_more_if_asked_meanwhile(chain):
+    bridge, il, runner, bridge_client = chain
+    bridge_client.sync_devices([lamp("a"), lamp("b")])
+    await settle(runner, bridge_client, bridge, il)
+    assert len(status_requests(bridge)) == 1
+    bridge_client._request_status()                     # e.g. the bridge announces a registry change meanwhile
+    bridge_client._request_status()
+    await settle(runner, bridge_client, bridge, il)
+    assert len(status_requests(bridge)) == 1            # not a second request whose pages would mix with the first's
+
+    await reply(bridge, status_reply(["a"]))
+    await settle(runner, bridge_client, bridge, il)
+    assert len(status_requests(bridge)) == 2            # once more, for the change asked about meanwhile
+    await reply(bridge, status_reply(["a", "b"]))
+    await settle(runner, bridge_client, bridge, il)
+    assert advertised(il) == {"a", "b"} and len(status_requests(bridge)) == 2
+
+
+async def test_a_request_whose_reply_is_lost_is_given_up(chain, monkeypatch):
+    import rustuya_local.bridge_client as bc
+
+    bridge, il, runner, bridge_client = chain
+    monkeypatch.setattr(bc, "STATUS_CYCLE_TIMEOUT", 0.05)
+    bridge_client.sync_devices([lamp("a")])             # asks; the reply never comes
+    await settle(runner, bridge_client, bridge, il)
+    await __import__("asyncio").sleep(0.1)
+    await reply(bridge, status_reply(["a"]))            # a late page is not taken for it
+    await settle(runner, bridge_client, bridge, il)
+    assert advertised(il) == set()
+    bridge_client._request_status()                     # a new request goes out instead of waiting forever
+    await settle(runner, bridge_client, bridge, il)
+    assert len(status_requests(bridge)) == 2
+    await reply(bridge, status_reply(["a"]))
+    await settle(runner, bridge_client, bridge, il)
+    assert advertised(il) == {"a"}
