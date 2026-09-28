@@ -152,10 +152,10 @@ async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(ha
                                                                                monkeypatch):
     """tuya2ildevice reads its data files on first use (quirks, platform tables): the service preloads them in a
     worker thread, so Home Assistant sees no blocking call when the first device's driver is made."""
-    from tuya2ildevice.tuya import quirks, runtime
+    from tuya2ildevice.tuya import quirks, runtime, standard
 
-    monkeypatch.setattr(quirks, "_QUIRKS", None)               # as in a fresh Home Assistant process
-    monkeypatch.setattr(runtime, "_TABLE_CACHE", {})
+    for loader in (quirks.load_quirks, runtime.load_table, standard.categories, standard._rules):
+        loader.cache_clear()                                    # as in a fresh Home Assistant process
     import pathlib
     import threading
 
