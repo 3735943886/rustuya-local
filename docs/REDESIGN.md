@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.30). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.31). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)
@@ -302,3 +302,6 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
   패널의 Bridge devices 카드에서도 가져오기(`/api/rustuya/cloud`, 세션은 폴링이 끊기거나 10분이 지나면 닫힘, 완료는 세션을 닫고
   기기 파일을 entry 에 넘긴 뒤 보고). Configure 의 Show the Rustuya panel 은 바로 켜고 링크(켜진 뒤엔 Open/Hide). 패널의
   Save and restart 는 바뀐 게 있을 때만 활성, Hide panel 은 저장 안 한 변경을 경고.
+- **2026-09-28 0.0.31**: 패널의 Save and restart 는 재시작이 끝난 뒤 응답하고 페이지는 곧바로 새로 고침(재시작 전 상태가 보이거나
+  재시작이 패널을 닫던 race). 재시작해도 패널은 사이드바에 남음(옵션 끔·비활성화·삭제 때만 제거), 패널 옵션만 바뀌면 재시작 없이
+  추가/제거. Hide panel 은 저장 안 한 변경이 있을 때만 확인. Configure 문구 "Add/Remove the Rustuya panel to/from the sidebar".
