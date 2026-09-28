@@ -31,10 +31,15 @@ CONF_EXPOSE_UNUSED = "expose_unused"
 CONF_PACK = "pack"                          # sync tuya2ildevice's override pack into CONVERTERS_DIR
 CONF_PANEL = "panel"                        # the sidebar page (panel.py); Configure adds / removes it
 
+DEFAULT_OPTIONS = {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True}
+
+DEFAULT_BROKER_HOST = "localhost"
 DEFAULT_BROKER_PORT = 1883
 DEFAULT_BRIDGE_ROOT = "rustuya"
 DEFAULT_IL_PREFIX = "il"
 DEFAULT_IL_SOURCE = "tuya"
+BRIDGE_LOG_LEVELS = ("error", "warn", "info", "debug")
+DEFAULT_BRIDGE_LOG_LEVEL = "warn"
 STORAGE_DIR = ".storage/rustuya"            # not user-facing config: our own subdirectory of HA's storage area, so
                                             # these plain files stay apart from HA's own `Store` files
 DEFAULT_DEVICES_FILE = f"{STORAGE_DIR}/tuyadevices.json"

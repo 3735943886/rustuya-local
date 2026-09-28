@@ -19,6 +19,8 @@ from typing import Annotated, Any
 DEFAULTS: dict[str, Any] = {"il": {"prefix": "il", "source": "tuya"},
                             "options": {"allow_hazardous": False, "expose_unused": False, "use_quirks": True,
                                         "pack": True}}
+SETTINGS_FILE = "settings.json"
+CONVERTERS_DIR = "custom_converters"
 _LEVEL = re.compile(r"^[^/+#\s]+$")                  # one MQTT topic level: no separators, wildcards or spaces
 _FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.(json|py)$")
 
@@ -40,18 +42,26 @@ def _write_atomic(path: Path, text: str) -> None:
 
 # ---- settings ---------------------------------------------------------------------------------------------------
 
+def read_raw_settings(data_dir: Path) -> Any:
+    """The settings file as it is (`{}` without one)."""
+    path = data_dir / SETTINGS_FILE
+    return json.loads(path.read_text()) if path.is_file() else {}
+
+
+def _over_defaults(raw: dict[str, Any]) -> dict[str, Any]:
+    return {section: {**defaults, **(raw.get(section) or {})} for section, defaults in DEFAULTS.items()}
+
+
 def read_settings(data_dir: Path) -> dict[str, Any]:
     """The settings as the service uses them: the file's values over the defaults."""
-    path = data_dir / "settings.json"
-    raw = json.loads(path.read_text()) if path.is_file() else {}
-    return {"il": {**DEFAULTS["il"], **(raw.get("il") or {})},
-            "options": {**DEFAULTS["options"], **(raw.get("options") or {})}}
+    return _over_defaults(read_raw_settings(data_dir))
 
 
 def validate_settings(body: Any) -> dict[str, Any]:
-    if not isinstance(body, dict) or set(body) - {"il", "options"}:
+    if not isinstance(body, dict) or set(body) - set(DEFAULTS):
         raise Invalid("settings take `il` and `options`")
-    il = {**DEFAULTS["il"], **(body.get("il") or {})}
+    merged = _over_defaults(body)
+    il, options = merged["il"], merged["options"]
     if set(il) - {"prefix", "source"}:
         raise Invalid("`il` takes `prefix` and `source`")
     prefix, source = il["prefix"], il["source"]
@@ -59,7 +69,6 @@ def validate_settings(body: Any) -> dict[str, Any]:
         raise Invalid("`il.prefix` is one or more topic levels (`il`, `il/tuya`), without wildcards or spaces")
     if not isinstance(source, str) or not _LEVEL.match(source):
         raise Invalid("`il.source` is one topic level, without wildcards or spaces")
-    options = {**DEFAULTS["options"], **(body.get("options") or {})}
     if set(options) - set(DEFAULTS["options"]) or not all(isinstance(v, bool) for v in options.values()):
         raise Invalid(f"`options` takes the booleans {sorted(DEFAULTS['options'])}")
     return {"il": il, "options": options}
@@ -68,7 +77,7 @@ def validate_settings(body: Any) -> dict[str, Any]:
 def save_settings(data_dir: Path, body: Any) -> dict[str, Any]:
     settings = validate_settings(body)
     data_dir.mkdir(parents=True, exist_ok=True)
-    _write_atomic(data_dir / "settings.json", json.dumps(settings, indent=2) + "\n")
+    _write_atomic(data_dir / SETTINGS_FILE, json.dumps(settings, indent=2) + "\n")
     return settings
 
 
@@ -143,7 +152,7 @@ def router(data_dir: Path, on_settings: Callable[[], Awaitable[None]]):
     from fastapi import APIRouter, Body, HTTPException
 
     r = APIRouter(prefix="/api/rustuya-local")
-    conv = data_dir / "custom_converters"
+    conv = data_dir / CONVERTERS_DIR
 
     async def call(fn, *args):
         try:

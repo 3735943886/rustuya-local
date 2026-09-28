@@ -6,6 +6,8 @@
 // the user's token. The views are for administrators only (converters run code in Home Assistant's process).
 
 const ORIGIN = { pack: "origin_pack", pack_edited: "origin_pack_edited" };      // I18N keys
+const PACK_CHANGES = ["added", "updated", "removed", "kept"];                    // a pack sync's lists, in this order
+const CONVERTER_FILE = /\.(json|py)$/;
 
 const STYLE = `
   :host { display: block; min-height: 100vh; background: var(--primary-background-color); color: var(--primary-text-color);
@@ -56,8 +58,6 @@ const STYLE = `
   .setting > .muted { grid-column: 2; font-size: 12px; }
   :host([narrow]) .setting { grid-template-columns: 1fr; }
   :host([narrow]) .setting > .muted { grid-column: 1; }
-  select { font: inherit; color: var(--primary-text-color); background: var(--card-background-color);
-           border: 1px solid var(--divider-color); border-radius: 6px; padding: 6px 8px; }
   /* bridge devices: rustuya-manager's category colors (sky / rose / amber / emerald) */
   .cat-missing { --cat: #0ea5e9; } .cat-orphan { --cat: #f43f5e; } .cat-mismatch { --cat: #f59e0b; } .cat-synced { --cat: #10b981; }
   .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -292,13 +292,13 @@ function t(key, vars = {}) {
 // ---- bridge devices ------------------------------------------------------------------------------------------------
 
 const CATEGORIES = ["missing", "orphan", "mismatch", "synced"];     // rustuya-manager's order and filter tabs
-const RANK = { missing: 0, orphan: 1, mismatch: 2, synced: 3 };
+const RANK = Object.fromEntries(CATEGORIES.map((c, i) => [c, i]));
+const VERB = { mismatch: "update", missing: "add", orphan: "remove" };   // title / button: t(`plan_${category}_title` / `_button`)
 const PLAN_ORDER = ["mismatch", "missing", "orphan"];               // the manager's sync dialog groups
-const PLAN = {
-  mismatch: { verb: "update" },          // title / button: t(`plan_${category}_title` / `_button`)
-  missing: { verb: "add" },
-  orphan: { verb: "remove" },
-};
+const SORTS = ["id", "name", "category"];                           // label: t(`sort_${key}`)
+
+const side = (d) => d.cloud || d.bridge;                            // the cloud's record, else the bridge's
+const nameOf = (d) => (side(d).name && side(d).name !== "N/A" ? side(d).name : null);
 
 function stored(key, fallback) {
   try {
@@ -419,7 +419,8 @@ class BridgeSection {
     this.unsub = null;
     const f = stored("rustuya.filters", CATEGORIES);
     this.filters = new Set(Array.isArray(f) ? f.filter((c) => CATEGORIES.includes(c)) : CATEGORIES);
-    this.sort = ["id", "name", "category"].includes(stored("rustuya.sort", "id")) ? stored("rustuya.sort", "id") : "id";
+    const sort = stored("rustuya.sort", "id");
+    this.sort = SORTS.includes(sort) ? sort : "id";
     this.expanded = new Set();
     this.busy = false;
 
@@ -430,12 +431,12 @@ class BridgeSection {
     this.refreshBtn = el("button", { onclick: () => this.load() }, t("refresh"));
     this.cloud = new CloudFetchBox(panel, () => this.load());
     this.fetchBtn = el("button", { title: t("fetch_title"), onclick: () => this.cloud.open() }, t("fetch_button"));
-    const sort = el("select", { title: t("sort_title"), onchange: (e) => { this.sort = e.target.value; store("rustuya.sort", this.sort); this.paint(); } },
-      ...["id", "name", "category"].map((k) => el("option", { value: k, selected: k === this.sort }, t(`sort_${k}`))));
+    const sortSelect = el("select", { title: t("sort_title"), onchange: (e) => { this.sort = e.target.value; store("rustuya.sort", this.sort); this.paint(); } },
+      ...SORTS.map((k) => el("option", { value: k, selected: k === this.sort }, t(`sort_${k}`))));
     this.dialog = el("dialog");
     this.root = el("div", { class: "card" },
       el("div", { class: "head" }, el("h2", {}, t("bridge_title")),
-        el("div", { class: "end" }, sort, this.fetchBtn, this.refreshBtn)),
+        el("div", { class: "end" }, sortSelect, this.fetchBtn, this.refreshBtn)),
       el("div", { class: "muted" }, t("bridge_intro")),
       this.cloud.root,
       this.chips, this.syncbar, this.status, this.list, this.dialog);
@@ -516,7 +517,7 @@ class BridgeSection {
 
     const pending = PLAN_ORDER.filter((c) => this.count(c));
     this.syncbar.replaceChildren(...(pending.length ? [
-      ...["missing", "orphan", "mismatch"].filter((c) => this.count(c)).map((c) =>
+      ...CATEGORIES.filter((c) => c in VERB && this.count(c)).map((c) =>
         el("button", { class: `cat-${c}`, onclick: () => this.openPlan(c) }, t(`plan_${c}_button`))),
       el("button", { class: "all", onclick: () => this.openPlan("all") }, t("apply_all"))] : []));
 
@@ -555,7 +556,6 @@ class BridgeSection {
   // shown gateway shows all its sub-devices, for context (as in rustuya-manager).
   tree() {
     const byId = new Map(this.devices.map((d) => [d.id, d]));
-    const side = (d) => d.cloud || d.bridge;
     const kids = new Map();
     const top = [];
     for (const d of this.devices) {
@@ -572,10 +572,11 @@ class BridgeSection {
     for (const [id, list] of kids) if (!byId.has(id)) entries.push({ id, device: null, kids: list });
     const value = (d) => this.sort === "name" ? (side(d).name || "").toLowerCase()
       : this.sort === "category" ? RANK[d.category] : d.id;
+    // a placeholder (a missing gateway) sorts as a missing device, by its id
+    const key = (e) => (e.device ? value(e.device) : this.sort === "category" ? RANK.missing : e.id);
     const cmp = (a, b) => {
-      const va = a.device ? value(a.device) : this.sort === "category" ? RANK.missing : a.id;
-      const vb = b.device ? value(b.device) : this.sort === "category" ? RANK.missing : b.id;
-      return va < vb ? -1 : va > vb ? 1 : 0;
+      const ka = key(a), kb = key(b);
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
     };
     const out = [];
     for (const e of entries) {
@@ -595,8 +596,8 @@ class BridgeSection {
   }
 
   card(d, child) {
-    const s = d.cloud || d.bridge;
-    const name = s.name && s.name !== "N/A" ? s.name : d.id;
+    const s = side(d);
+    const name = nameOf(d) || d.id;
     // the bridge's word on the connection (live while the panel is open, else the service's); none for a missing one
     const ln = d.category === "missing" ? null : this.link(d.id);
     const live = ln ? (ln.online ? "online" : "offline") : null;
@@ -629,8 +630,7 @@ class BridgeSection {
   }
 
   async one(verb, d) {
-    const s = d.cloud || d.bridge;
-    const who = s.name && s.name !== "N/A" ? `${s.name} (${d.id})` : d.id;
+    const who = nameOf(d) ? `${nameOf(d)} (${d.id})` : d.id;
     if (verb === "remove" && !confirm(t("confirm_remove_device", { who }))) return;
     await this.load({ [verb]: [d.id] });
   }
@@ -644,11 +644,10 @@ class BridgeSection {
       const all = el("input", { type: "checkbox", checked: true });
       const mine = list.map((d) => {
         const box = el("input", { type: "checkbox", checked: true });
-        box.dataset.verb = PLAN[c].verb;
+        box.dataset.verb = VERB[c];
         box.dataset.id = d.id;
         boxes.push(box);
-        const s = d.cloud || d.bridge;
-        return el("label", {}, box, el("span", {}, `${s.name && s.name !== "N/A" ? s.name : d.id}`,
+        return el("label", {}, box, el("span", {}, nameOf(d) || d.id,
           el("span", { class: "id" }, ` ${d.id}`), d.reasons.length ? el("div", { class: "muted" }, d.reasons.join("; ")) : ""));
       });
       all.addEventListener("change", () => { for (const b of mine) b.firstChild.checked = all.checked; update(); });
@@ -662,7 +661,7 @@ class BridgeSection {
     };
     for (const b of boxes) b.addEventListener("change", update);
     apply.addEventListener("click", async () => {
-      const sel = { add: [], update: [], remove: [] };
+      const sel = Object.fromEntries(Object.values(VERB).map((v) => [v, []]));
       for (const b of boxes) if (b.checked) sel[b.dataset.verb].push(b.dataset.id);
       this.dialog.close();
       await this.load(sel);
@@ -676,88 +675,20 @@ class BridgeSection {
   }
 }
 
-// ---- settings: what setup leaves at its defaults (SettingsView) ---------------------------------------------------
+// ---- options and settings: cards of fields saved together, each save restarting the integration -----------------
 
-const SETTINGS = ["bridge_root", "il_prefix", "il_source", "devices_path", "bridge_state_file", "bridge_log_level"];
-// label and hint: t(`set_${key}`), t(`set_${key}_hint`)
-
-// ---- options: the entry's options other than the panel itself (OptionsView) ------------------------------------
-
-const OPTIONS = ["allow_hazardous", "expose_unused", "pack"];      // label and hint: t(`opt_${key}`), t(`opt_${key}_hint`)
-
-class OptionsSection {
-  constructor(panel) {
+class SavedSection {
+  // `name`: the API path and the prefix of its text (t(`${name}_title`, `_intro`, `_unreadable`))
+  constructor(panel, name) {
     this.panel = panel;
-    this.boxes = {};
+    this.name = name;
+    this.inputs = {};
+    this.current = {};
     this.body = el("div", { class: "settings" }, el("div", { class: "muted" }, "…"));
     this.save = el("button", { class: "primary", onclick: () => this.submit() }, t("save_restart"));
     this.root = el("div", { class: "card" },
-      el("h2", {}, t("options_title")),
-      el("div", { class: "muted" }, t("options_intro")),
-      this.body,
-      el("div", { class: "row note" }, this.save));
-  }
-
-  async load() {
-    try {
-      this.current = await this.panel._api("GET", "options");
-    } catch (e) {
-      this.body.replaceChildren(el("div", { class: "error" }, t("options_unreadable", { error: message(e) })));
-      this.save.disabled = true;
-      return;
-    }
-    this.body.replaceChildren(...OPTIONS.map((k) => {
-      const box = el("input", { type: "checkbox", onchange: () => this.updateSave() });
-      box.checked = !!this.current[k];
-      this.boxes[k] = box;
-      return el("label", { class: "check" }, box,
-        el("span", {}, el("div", {}, t(`opt_${k}`)), el("div", { class: "muted" }, t(`opt_${k}_hint`))));
-    }));
-    this.updateSave();
-  }
-
-  changed() {
-    return Object.fromEntries(Object.entries(this.boxes)
-      .map(([k, box]) => [k, box.checked]).filter(([k, v]) => v !== this.current[k]));
-  }
-
-  dirty() {
-    return Object.keys(this.changed()).length > 0;
-  }
-
-  updateSave() {
-    this.save.disabled = !this.dirty();                   // only when there is something to save
-  }
-
-  async submit() {
-    const changed = this.changed();
-    if (!Object.keys(changed).length) {
-      this.panel._toast(t("nothing_changed"));
-      return;
-    }
-    this.save.disabled = true;
-    this.panel._toast(t("saving_restarting"));
-    try {
-      await this.panel._api("PUT", "options", changed);     // answered once the restart is over
-    } catch (e) {
-      this.panel._toast(t("not_saved", { error: message(e) }));
-      this.updateSave();
-      return;
-    }
-    this.current = { ...this.current, ...changed };      // saved: nothing left to warn about
-    location.reload();                                    // onto the restarted integration
-  }
-}
-
-class SettingsSection {
-  constructor(panel) {
-    this.panel = panel;
-    this.fields = {};
-    this.body = el("div", { class: "settings" }, el("div", { class: "muted" }, "…"));
-    this.save = el("button", { class: "primary", onclick: () => this.submit() }, t("save_restart"));
-    this.root = el("div", { class: "card" },
-      el("h2", {}, t("settings_title")),
-      el("div", { class: "muted" }, t("settings_intro")),
+      el("h2", {}, t(`${name}_title`)),
+      el("div", { class: "muted" }, t(`${name}_intro`)),
       this.body,
       el("div", { class: "row note" }, this.save));
   }
@@ -765,30 +696,20 @@ class SettingsSection {
   async load() {
     let r;
     try {
-      r = await this.panel._api("GET", "settings");
+      r = await this.panel._api("GET", this.name);
     } catch (e) {
-      this.body.replaceChildren(el("div", { class: "error" }, t("settings_unreadable", { error: message(e) })));
+      this.body.replaceChildren(el("div", { class: "error" }, t(`${this.name}_unreadable`, { error: message(e) })));
       this.save.disabled = true;
       return;
     }
-    this.current = r.settings;
-    this.fields = {};
-    this.body.replaceChildren(...SETTINGS.filter((k) => k in r.settings).map((k) => {
-      const input = k === "bridge_log_level"
-        ? el("select", { onchange: () => this.updateSave() },
-          ...["error", "warn", "info", "debug"].map((v) => el("option", { value: v }, v)))
-        : el("input", { spellcheck: "false", oninput: () => this.updateSave() });
-      input.value = r.settings[k];
-      this.fields[k] = input;
-      return el("label", { class: "setting" }, el("span", {}, t(`set_${k}`)), input,
-        el("span", { class: "muted" }, t(`set_${k}_hint`)));
-    }));
+    this.inputs = {};
+    this.body.replaceChildren(...this.render(r));
     this.updateSave();
   }
 
   changed() {
-    return Object.fromEntries(Object.entries(this.fields)
-      .map(([k, input]) => [k, input.value.trim()]).filter(([k, v]) => v !== this.current[k]));
+    return Object.fromEntries(Object.entries(this.inputs)
+      .map(([k, input]) => [k, this.value(input)]).filter(([k, v]) => v !== this.current[k]));
   }
 
   dirty() {
@@ -799,18 +720,22 @@ class SettingsSection {
     this.save.disabled = !this.dirty();                   // only when there is something to save
   }
 
+  confirmSave() {
+    return true;
+  }
+
   async submit() {
     const changed = this.changed();
     if (!Object.keys(changed).length) {
       this.panel._toast(t("nothing_changed"));
       return;
     }
-    if (!confirm(t("confirm_settings", { names: Object.keys(changed).map((k) => t(`set_${k}`)).join(", ") }))) return;
+    if (!this.confirmSave(changed)) return;
     this.save.disabled = true;
     this.panel._toast(t("saving_restarting"));
     try {
-      const r = await this.panel._api("PUT", "settings", changed);     // answered once the restart is over
-      if (!r.restarting) {
+      const r = await this.panel._api("PUT", this.name, changed);     // answered once the restart is over
+      if (r && r.restarting === false) {
         this.panel._toast(t("nothing_changed"));
         this.updateSave();
         return;
@@ -822,6 +747,61 @@ class SettingsSection {
     }
     this.current = { ...this.current, ...changed };      // saved: nothing left to warn about
     location.reload();                                    // onto the restarted integration
+  }
+}
+
+// the entry's options other than the panel itself (OptionsView); label and hint: t(`opt_${key}`), t(`opt_${key}_hint`)
+const OPTIONS = ["allow_hazardous", "expose_unused", "pack"];
+
+class OptionsSection extends SavedSection {
+  constructor(panel) {
+    super(panel, "options");
+  }
+
+  render(r) {
+    this.current = r;
+    return OPTIONS.map((k) => {
+      const box = el("input", { type: "checkbox", onchange: () => this.updateSave() });
+      box.checked = !!r[k];
+      this.inputs[k] = box;
+      return el("label", { class: "check" }, box,
+        el("span", {}, el("div", {}, t(`opt_${k}`)), el("div", { class: "muted" }, t(`opt_${k}_hint`))));
+    });
+  }
+
+  value(box) {
+    return box.checked;
+  }
+}
+
+// what setup leaves at its defaults (SettingsView); label and hint: t(`set_${key}`), t(`set_${key}_hint`)
+const SETTINGS = ["bridge_root", "il_prefix", "il_source", "devices_path", "bridge_state_file", "bridge_log_level"];
+
+class SettingsSection extends SavedSection {
+  constructor(panel) {
+    super(panel, "settings");
+  }
+
+  render(r) {
+    this.current = r.settings;
+    return SETTINGS.filter((k) => k in r.settings).map((k) => {
+      const input = k === "bridge_log_level"
+        ? el("select", { onchange: () => this.updateSave() },
+          ...(r.log_levels || []).map((v) => el("option", { value: v }, v)))
+        : el("input", { spellcheck: "false", oninput: () => this.updateSave() });
+      input.value = r.settings[k];
+      this.inputs[k] = input;
+      return el("label", { class: "setting" }, el("span", {}, t(`set_${k}`)), input,
+        el("span", { class: "muted" }, t(`set_${k}_hint`)));
+    });
+  }
+
+  value(input) {
+    return input.value.trim();
+  }
+
+  confirmSave(changed) {
+    return confirm(t("confirm_settings", { names: Object.keys(changed).map((k) => t(`set_${k}`)).join(", ") }));
   }
 }
 
@@ -870,6 +850,14 @@ class RustuyaPanel extends HTMLElement {
 
   _api(method, path, body) {
     return this._hass.callApi(method, `rustuya/${path}`, body);
+  }
+
+  _converter(method, name, body) {
+    return this._api(method, `converters/${encodeURIComponent(name)}`, body);
+  }
+
+  _paintWarnings(warnings) {
+    this._warnings.replaceChildren(...(warnings || []).map((w) => el("div", {}, w)));
   }
 
   _build() {
@@ -974,14 +962,14 @@ class RustuyaPanel extends HTMLElement {
     const saved = [], failed = [];
     for (const file of files) {
       const name = file.name;
-      if (!/\.(json|py)$/.test(name)) {
+      if (!CONVERTER_FILE.test(name)) {
         failed.push(t("only_converters", { name }));
         continue;
       }
       const f = this._files.find((x) => x.name === name);
       if (f && !confirm(f.origin === "pack" ? t("confirm_replace_pack", { name }) : t("confirm_replace", { name }))) continue;
       try {
-        await this._api("PUT", `converters/${encodeURIComponent(name)}`, { content: await file.text() });
+        await this._converter("PUT", name, { content: await file.text() });
         saved.push(name);
       } catch (e) {
         failed.push(`${name} (${message(e)})`);
@@ -1024,7 +1012,7 @@ class RustuyaPanel extends HTMLElement {
     }
     this._files = r.files;
     this._paintList();
-    this._warnings.replaceChildren(...(r.warnings || []).map((w) => el("div", {}, w)));
+    this._paintWarnings(r.warnings);
     this._paintPack(r.pack);
     return r;
   }
@@ -1041,29 +1029,19 @@ class RustuyaPanel extends HTMLElement {
 
   _paintPack(pack) {
     this._syncBtn.disabled = this._syncing || !pack || !pack.enabled;
-    if (this._syncing) {
-      this._pack.textContent = t("pack_syncing");
-      this._pack.className = "muted";
-      return;
-    }
-    if (!pack || !pack.enabled) {
-      this._pack.textContent = t("pack_off");
-      this._pack.className = "muted";
-      return;
-    }
+    const show = (text, cls = "muted") => {
+      this._pack.textContent = text;
+      this._pack.className = cls;
+    };
+    if (this._syncing) return show(t("pack_syncing"));
+    if (!pack || !pack.enabled) return show(t("pack_off"));
     const p = pack.status;
-    if (!p) {
-      this._pack.textContent = t("pack_never");
-      this._pack.className = "muted";
-      return;
-    }
+    if (!p) return show(t("pack_never"));
     const when = new Date(p.at * 1000).toLocaleString(LANG);
-    const changes = ["added", "updated", "removed", "kept"].filter((k) => p[k] && p[k].length)
-      .map((k) => `${t(`pack_${k}`)} ${p[k].join(", ")}`);
+    if (p.error) return show(t("pack_error", { error: p.error, when }), "warn");
+    const changes = PACK_CHANGES.filter((k) => p[k] && p[k].length).map((k) => `${t(`pack_${k}`)} ${p[k].join(", ")}`);
     const failed = (p.failed || []).length ? t("pack_failed", { list: p.failed.join("; ") }) : "";
-    this._pack.textContent = p.error ? t("pack_error", { error: p.error, when })
-      : `${t("pack_synced", { when })}${changes.length ? `: ${changes.join("; ")}` : ""}${failed}`;
-    this._pack.className = p.error || failed ? "warn" : "muted";
+    show(`${t("pack_synced", { when })}${changes.length ? `: ${changes.join("; ")}` : ""}${failed}`, failed ? "warn" : "muted");
   }
 
   _originNote(name) {
@@ -1074,7 +1052,7 @@ class RustuyaPanel extends HTMLElement {
 
   async _open(name) {
     try {
-      const r = await this._api("GET", `converters/${encodeURIComponent(name)}`);
+      const r = await this._converter("GET", name);
       this._selected = r.name;
       this._name.value = r.name;
       this._text.value = r.content;
@@ -1101,14 +1079,13 @@ class RustuyaPanel extends HTMLElement {
       return;
     }
     const f = this._files.find((x) => x.name === name);
-    if (f && f.origin === "pack" &&
-        !confirm(t("confirm_edit_pack", { name }))) return;
+    if (f && f.origin === "pack" && !confirm(t("confirm_edit_pack", { name }))) return;
     if (f && name !== this._selected && !confirm(t("confirm_replace", { name }))) return;
     try {
-      const r = await this._api("PUT", `converters/${encodeURIComponent(name)}`, { content: this._text.value });
+      const r = await this._converter("PUT", name, { content: this._text.value });
       this._selected = name;
       await this._refresh();
-      this._warnings.replaceChildren(...(r.warnings || []).map((w) => el("div", {}, w)));
+      this._paintWarnings(r.warnings);
       this._originNote(name);
       this._toast(t("saved", { name }));
     } catch (e) {
@@ -1121,7 +1098,7 @@ class RustuyaPanel extends HTMLElement {
     if (!name || !this._files.some((x) => x.name === name)) return;
     if (!confirm(t("confirm_delete", { name }))) return;
     try {
-      await this._api("DELETE", `converters/${encodeURIComponent(name)}`);
+      await this._converter("DELETE", name);
       this._new();
       await this._refresh();
       this._toast(t("deleted", { name }));

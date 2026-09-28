@@ -11,6 +11,7 @@ import logging
 import os
 import secrets
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
@@ -19,6 +20,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
+from . import broker
 from .const import (
     BRIDGE_EMBEDDED,
     CONF_ALLOW_HAZARDOUS,
@@ -26,10 +28,6 @@ from .const import (
     CONF_BRIDGE_MODE,
     CONF_BRIDGE_ROOT,
     CONF_BRIDGE_STATE_FILE,
-    CONF_BROKER_HOST,
-    CONF_BROKER_PASSWORD,
-    CONF_BROKER_PORT,
-    CONF_BROKER_USERNAME,
     CONF_DEVICES_PATH,
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
@@ -38,8 +36,12 @@ from .const import (
     CONF_PANEL,
     CONVERTERS_DIR,
     CREDS_FILE,
+    DEFAULT_BRIDGE_LOG_LEVEL,
     DEFAULT_BRIDGE_STATE_FILE,
     DEFAULT_DEVICES_FILE,
+    DEFAULT_IL_PREFIX,
+    DEFAULT_IL_SOURCE,
+    DEFAULT_OPTIONS,
     DOMAIN,
     LEGACY_BRIDGE_STATE_FILE,
     LEGACY_DEVICES_FILE,
@@ -77,13 +79,6 @@ def mark_restart(hass: HomeAssistant, entry: ConfigEntry) -> None:
     runtime: RuntimeData | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if runtime is not None:
         runtime.restarting = True
-
-
-def _import_runtime() -> None:
-    """Importing tuya2ildevice reads its data files; run in Home Assistant's import executor, not the event loop."""
-    import tuya2ildevice.host  # noqa: F401
-
-    import rustuya_local.service  # noqa: F401
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -126,39 +121,32 @@ def _tuya_id(hass: HomeAssistant, service: Any, device_id: str) -> str:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    from pathlib import Path
-
-    await hass.async_add_import_executor_job(_import_runtime)
-    from tuya2ildevice.host import MqttTransport
-
+    await broker.import_runtime(hass)
     from rustuya_local.service import AnotherProducer, Service, Settings
 
     from .bridge_supervisor import EmbeddedBridge
 
-    data, options = entry.data, entry.options
-    broker = f"mqtt://{data[CONF_BROKER_HOST]}:{data[CONF_BROKER_PORT]}"
-    username, password = data.get(CONF_BROKER_USERNAME) or None, data.get(CONF_BROKER_PASSWORD) or None
+    data, options = entry.data, {**DEFAULT_OPTIONS, **entry.options}
 
     async def connect(kind: str, will=None):
-        t = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT], client_id=f"rustuya-{kind}-{entry.entry_id[:8]}",
-                          username=username, password=password, will=will)
+        t = broker.transport(data, f"rustuya-{kind}-{entry.entry_id[:8]}", will)
         await t.connect()
         return t
 
     embedded_bridge = None
     if data[CONF_BRIDGE_MODE] == BRIDGE_EMBEDDED:
         await hass.async_add_executor_job(_ensure_parent, data[CONF_BRIDGE_STATE_FILE])
-        embedded_bridge = EmbeddedBridge(broker, data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_STATE_FILE],
-                                         data.get(CONF_BRIDGE_LOG_LEVEL, "warn"), username, password)
+        embedded_bridge = EmbeddedBridge(broker.url(data), data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_STATE_FILE],
+                                         data.get(CONF_BRIDGE_LOG_LEVEL, DEFAULT_BRIDGE_LOG_LEVEL),
+                                         *broker.credentials(data))
         await embedded_bridge.start()
     try:
         devices = await hass.async_add_executor_job(_load_devices_or_none, data[CONF_DEVICES_PATH])
         # the device file is not polled here: the config/options flow writes it and calls async_refresh_devices
-        settings = Settings(root=data[CONF_BRIDGE_ROOT], prefix=data.get(CONF_IL_PREFIX, "il"),
-                            source=data.get(CONF_IL_SOURCE, "tuya"), devices=devices,
-                            overrides_path=Path(hass.config.path(CONVERTERS_DIR)), pack=options.get(CONF_PACK, True),
-                            hub_options={"allow_hazardous": options.get(CONF_ALLOW_HAZARDOUS, False),
-                                         "expose_unused": options.get(CONF_EXPOSE_UNUSED, False)})
+        settings = Settings(root=data[CONF_BRIDGE_ROOT], prefix=data.get(CONF_IL_PREFIX, DEFAULT_IL_PREFIX),
+                            source=data.get(CONF_IL_SOURCE, DEFAULT_IL_SOURCE), devices=devices,
+                            overrides_path=Path(hass.config.path(CONVERTERS_DIR)), pack=options[CONF_PACK],
+                            hub_options={key: options[key] for key in (CONF_ALLOW_HAZARDOUS, CONF_EXPOSE_UNUSED)})
         service = Service(settings, connect_bridge=lambda: connect("bridge"), connect_il=lambda will: connect("il", will))
         try:
             # releases whatever it had connected if it fails
@@ -171,7 +159,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = RuntimeData(service=service, embedded_bridge=embedded_bridge,
-                                                                   options=dict(options))
+                                                                   options=dict(entry.options))
     from . import panel
 
     await panel.async_setup(hass, entry)
@@ -193,15 +181,11 @@ def _load_devices_or_none(path: str) -> list[dict]:
 
 
 def _ensure_parent(path: str) -> None:
-    from pathlib import Path
-
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
 
 def _move_file(old: str, new: str) -> None:
     """Move `old` to `new` unless `new` is already there (then `old` is left for the user to look at)."""
-    import os
-
     _ensure_parent(new)
     if os.path.isfile(old) and not os.path.exists(new):
         os.replace(old, new)
@@ -304,16 +288,11 @@ async def async_clear_retained(hass: HomeAssistant, data: dict[str, Any], *, il:
     presence (`il`), and the whole bridge root (`bridge`, only for a bridge this entry owned). Used on delete, and when
     the panel's Settings move the IL prefix / source or the embedded bridge's root away (the old topics would stay). A
     broker that cannot be reached, or a producer / bridge still running there, leaves them and says so in the log."""
-    await hass.async_add_import_executor_job(_import_runtime)
-    from tuya2ildevice.host import MqttTransport
-
+    await broker.import_runtime(hass)
     from rustuya_local.service import AnotherProducer, purge_il, purge_retained
 
-    prefix, source = data.get(CONF_IL_PREFIX, "il"), data.get(CONF_IL_SOURCE, "tuya")
-    transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
-                              client_id=f"rustuya-clear-{secrets.token_hex(4)}",
-                              username=data.get(CONF_BROKER_USERNAME) or None,
-                              password=data.get(CONF_BROKER_PASSWORD) or None)
+    prefix, source = data.get(CONF_IL_PREFIX, DEFAULT_IL_PREFIX), data.get(CONF_IL_SOURCE, DEFAULT_IL_SOURCE)
+    transport = broker.transport(data, f"rustuya-clear-{secrets.token_hex(4)}")
     try:
         await transport.connect()
         if il:

@@ -300,7 +300,8 @@ async def test_settings_show_what_setup_left_at_its_defaults(hass, loaded, hass_
     r = await c.get("/api/rustuya/settings")
     assert r.status == 200
     assert await r.json() == {"mode": "external", "settings": {
-        "bridge_root": "rustuya", "il_prefix": "il", "il_source": "tuya", "devices_path": entry.data["devices_path"]}}
+        "bridge_root": "rustuya", "il_prefix": "il", "il_source": "tuya", "devices_path": entry.data["devices_path"]},
+        "log_levels": ["error", "warn", "info", "debug"]}
     hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "embedded",
                                                         "bridge_state_file": "/s.json", "bridge_log_level": "warn"})
     settings = (await (await c.get("/api/rustuya/settings")).json())["settings"]

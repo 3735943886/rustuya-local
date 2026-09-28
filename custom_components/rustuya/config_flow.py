@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib.util
 import logging
-import os
 import secrets
 from typing import Any
 
@@ -24,11 +24,10 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import AbortFlow, FlowResult
 from homeassistant.helpers import selector
 
-from . import bridge_sync, manager_session
+from . import bridge_sync, broker, manager_session
 from .const import (
     BRIDGE_EMBEDDED,
     BRIDGE_EXTERNAL,
-    CONF_ALLOW_HAZARDOUS,
     CONF_BRIDGE_LOG_LEVEL,
     CONF_BRIDGE_MODE,
     CONF_BRIDGE_ROOT,
@@ -38,26 +37,25 @@ from .const import (
     CONF_BROKER_PORT,
     CONF_BROKER_USERNAME,
     CONF_DEVICES_PATH,
-    CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
-    CONF_PACK,
     CONF_PANEL,
+    DEFAULT_BRIDGE_LOG_LEVEL,
     DEFAULT_BRIDGE_ROOT,
     DEFAULT_BRIDGE_STATE_FILE,
+    DEFAULT_BROKER_HOST,
     DEFAULT_BROKER_PORT,
     DEFAULT_DEVICES_FILE,
     DEFAULT_IL_PREFIX,
     DEFAULT_IL_SOURCE,
+    DEFAULT_OPTIONS,
     DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
 PROBE_TIMEOUT = 5.0      # seconds each for the broker to accept us and the bridge's retained config to arrive
-
-
-def _broker_url(data: dict[str, Any]) -> str:
-    return f"mqtt://{data[CONF_BROKER_HOST]}:{data[CONF_BROKER_PORT]}"
+TICK = 0.1               # seconds between looks at the login's state while its progress shows
+TICKS = 50               # looks before the progress step is redrawn anyway
 
 
 def _qr_schema(qr_url: str) -> vol.Schema:
@@ -73,7 +71,7 @@ def _qr_schema(qr_url: str) -> vol.Schema:
 def _broker_schema(defaults: dict[str, Any] | None = None, *, root: bool = False) -> vol.Schema:
     d = defaults or {}
     fields = {
-        vol.Required(CONF_BROKER_HOST, default=d.get(CONF_BROKER_HOST, "localhost")): str,
+        vol.Required(CONF_BROKER_HOST, default=d.get(CONF_BROKER_HOST, DEFAULT_BROKER_HOST)): str,
         vol.Required(CONF_BROKER_PORT, default=d.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT)): int,
         vol.Optional(CONF_BROKER_USERNAME, default=d.get(CONF_BROKER_USERNAME, "")): str,
         vol.Optional(CONF_BROKER_PASSWORD, default=d.get(CONF_BROKER_PASSWORD, "")): str,
@@ -84,40 +82,26 @@ def _broker_schema(defaults: dict[str, Any] | None = None, *, root: bool = False
     return vol.Schema(fields)
 
 
-def _prefix_ok(prefix: str) -> bool:
-    """An IL prefix is an MQTT topic: no wildcards, no empty levels."""
-    return bool(prefix) and not any(c in prefix for c in "+#\0") and "" not in prefix.split("/")
-
-
-def _import_transport() -> None:
-    """Importing tuya2ildevice reads its data files; run in Home Assistant's import executor, not the event loop."""
-    import tuya2ildevice.host  # noqa: F401
-
-
 async def _probe_bridge(hass, data: dict[str, Any]) -> str | None:
     """Is an external rustuya-bridge actually running on this broker and root? A running bridge keeps its retained
     `{root}/bridge/config` published (and clears it when it goes away), so that arriving is the sign. `None` when it
     is there, otherwise the error key: `cannot_connect` (the broker is unreachable or refuses the credentials) or
     `bridge_not_found` (the broker answers but no bridge is on that root)."""
-    await hass.async_add_import_executor_job(_import_transport)
-    from tuya2ildevice.host import MqttTransport
+    await broker.import_runtime(hass)
+    from rustuya_local.bridge_client import payload_text
 
-    transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
-                              client_id=f"rustuya-probe-{secrets.token_hex(4)}",
-                              username=data.get(CONF_BROKER_USERNAME) or None,
-                              password=data.get(CONF_BROKER_PASSWORD) or None)
+    transport = broker.transport(data, f"rustuya-probe-{secrets.token_hex(4)}")
     try:
         await transport.connect(timeout=PROBE_TIMEOUT)
     except Exception as e:  # noqa: BLE001 -- refused, unresolvable, timed out: all mean the broker is not usable
-        _LOGGER.debug("the broker at %s did not accept a connection: %r", _broker_url(data), e)
+        _LOGGER.debug("the broker at %s did not accept a connection: %r", broker.url(data), e)
         with contextlib.suppress(Exception):
             await transport.close()
         return "cannot_connect"
     seen = asyncio.Event()
 
     def on_config(msg: Any) -> None:
-        payload = msg.payload.decode("utf-8", "replace") if isinstance(msg.payload, bytes) else msg.payload
-        if payload.strip():                         # an empty retained config is a bridge that went offline
+        if payload_text(msg.payload).strip():          # an empty retained config is a bridge that went offline
             seen.set()
 
     try:
@@ -136,33 +120,104 @@ async def _open(hass, data: dict[str, Any], *, bridge_running: bool):
     (`manager_session.Busy`). With the embedded bridge and no entry running it (`bridge_running` false: setup, or an
     entry that failed to start), the session runs the bridge itself on the same state file, so a device registered
     here reaches a bridge and is there when the entry's own bridge starts."""
-    # the device file's directory: the Tuya login (`tuyacreds.json`) is saved beside it by a library that does not
-    # create it, and fails (only logging it) when it is missing — then every login asks again
-    dirs = [os.path.dirname(data[CONF_DEVICES_PATH])]
-    kw: dict[str, Any] = {}
-    if data.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED and not bridge_running:
-        state_file = data.get(CONF_BRIDGE_STATE_FILE) or hass.config.path(DEFAULT_BRIDGE_STATE_FILE)
-        dirs.append(os.path.dirname(state_file))
-        kw = {"bridge_state": state_file, "bridge_log_level": data.get(CONF_BRIDGE_LOG_LEVEL, "warn")}
-    await hass.async_add_executor_job(lambda: [os.makedirs(d, exist_ok=True) for d in dirs if d])
     try:
-        return await manager_session.open_manager(
-            broker=_broker_url(data), root=data[CONF_BRIDGE_ROOT], devices_path=data[CONF_DEVICES_PATH],
-            username=data.get(CONF_BROKER_USERNAME) or None, password=data.get(CONF_BROKER_PASSWORD) or None, **kw)
+        return await manager_session.open_for_entry(hass, data, run_bridge=not bridge_running)
     except manager_session.Busy as e:
         raise AbortFlow("manager_busy") from e
 
-class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+
+class _ManagerSteps:
+    """What the config flow (setup) and the options flow share of the steps on a Manager session: the Tuya Cloud
+    login's user-code form, its QR step and progress, and the device sync form. Each flow opens its session in
+    `_async_manager()` and names the step the sync form is shown on."""
+
+    _manager: Any = None
+    _scan_shown = False
+    _sync_shown = False
+
+    async def _async_manager(self) -> Any:
+        raise NotImplementedError
+
+    async def _async_close(self) -> None:
+        if self._manager is not None:
+            await manager_session.close_manager(self._manager)
+            self._manager = None
+
+    def _new_login(self) -> None:
+        """A new login: the steps after it take a submit only once they have shown their form again."""
+        self._scan_shown = self._sync_shown = False
+
+    async def _async_login_form(self, step_id: str, user_input: dict[str, Any] | None) -> FlowResult:
+        """The login's user-code form (the saved code filled in), or once submitted the login started."""
+        manager = await self._async_manager()
+        if user_input is not None:
+            self._new_login()
+            await manager.wizard.start(user_input.get("user_code") or None, scan=False)
+            return await self.async_step_cloud_wizard_progress()
+        saved_code = await manager.wizard.read_saved_user_code()
+        return self.async_show_form(step_id=step_id,
+                                    data_schema=vol.Schema({vol.Optional("user_code", default=saved_code or ""): str}))
+
+    def _login_running(self, session: Any) -> FlowResult:
+        """A login neither done nor failed: its QR to scan once there is one, its progress until then."""
+        if session.qr_url:
+            return self.async_show_progress_done(next_step_id="cloud_wizard_scan")
+        return self.async_show_progress(step_id="cloud_wizard_progress", progress_action="cloud_wizard_working",
+                                        description_placeholders={"message": session.message},
+                                        progress_task=self.hass.async_create_task(self._async_wizard_tick()))
+
+    async def async_step_cloud_wizard_scan(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """`async_show_progress` only takes plain description text -- no selector, so a QR needs an actual form
+        step; go back through `cloud_wizard_progress` on submit (`scanned` carries no real data) to reuse its
+        state check instead of duplicating it here."""
+        if user_input is not None and self._scan_shown:       # a submit of the QR form, not a forwarded input
+            return await self.async_step_cloud_wizard_progress()
+        self._scan_shown = True
+        return self.async_show_form(step_id="cloud_wizard_scan",
+                                    data_schema=_qr_schema(self._manager.wizard.session.qr_url))
+
+    async def _async_wizard_tick(self) -> None:
+        """`async_show_progress` needs a task to await; the wizard already runs in the background
+        (`WizardManager._run`), so this just waits for its state to change (or a short cap) so the
+        frontend's re-poll of `cloud_wizard_progress` promptly redraws instead of only on its own timer."""
+        from rustuya_manager.wizard import WizardState
+
+        session = self._manager.wizard.session
+        start_state = session.state
+        for _ in range(TICKS):
+            if session.state != start_state or session.state in (WizardState.DONE, WizardState.ERROR):
+                return
+            await asyncio.sleep(TICK)
+
+    def _sync_form(self, step_id: str, diff: Any, error: str | None = None) -> FlowResult:
+        self._sync_shown = True
+        return self.async_show_form(step_id=step_id, data_schema=bridge_sync.schema(diff),
+                                    errors={"base": "publish_failed"} if error is not None else None,
+                                    description_placeholders={**bridge_sync.placeholders(diff), "error": error or ""})
+
+    def _sync_submitted(self, user_input: dict[str, Any] | None) -> bool:
+        """A submission of the sync form, not the input a `progress_done` hands on (the QR step's empty submit, which
+        is no selection)."""
+        return user_input is not None and self._sync_shown
+
+    async def _async_send_selection(self, step_id: str, diff: Any, user_input: dict[str, Any]) -> FlowResult | None:
+        """The selection sent to the bridge and the session closed: None. The form again, with the error, when a
+        publish failed."""
+        try:
+            await bridge_sync.apply(self._manager, diff, user_input)
+        except RuntimeError as e:
+            return self._sync_form(step_id, diff, str(e))
+        await self._async_close()
+        return None
+
+
+class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
     MINOR_VERSION = 2       # 1.2: the default files moved under `.storage/rustuya/` (`async_migrate_entry`)
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
-        self._manager: Any = None
-        self._wizard_task: asyncio.Task | None = None
         self._in_login = False
-        self._sync_shown = False
-        self._scan_shown = False
         self._error_shown = False
 
     # ---- bridge mode ---------------------------------------------------------------
@@ -177,25 +232,26 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_IL_PREFIX: DEFAULT_IL_PREFIX, CONF_IL_SOURCE: DEFAULT_IL_SOURCE}
         if mode == BRIDGE_EMBEDDED:
             data.update({CONF_BRIDGE_STATE_FILE: self.hass.config.path(DEFAULT_BRIDGE_STATE_FILE),
-                         CONF_BRIDGE_LOG_LEVEL: "warn"})
+                         CONF_BRIDGE_LOG_LEVEL: DEFAULT_BRIDGE_LOG_LEVEL})
         return data
 
     async def async_step_external(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
         ask_root = False
-        if user_input is not None and not _prefix_ok(user_input[CONF_IL_PREFIX].strip()):
-            errors[CONF_IL_PREFIX] = "invalid_prefix"
-            ask_root = CONF_BRIDGE_ROOT in user_input
-        elif user_input is not None:
+        if user_input is not None:
             user_input = {**user_input, CONF_IL_PREFIX: user_input[CONF_IL_PREFIX].strip()}
-            data = {**self._defaults(BRIDGE_EXTERNAL), **user_input}
-            error = await _probe_bridge(self.hass, data)
-            if error is None:
-                self._data.update(data)
-                return await self.async_step_onboard()
-            errors["base"] = error
-            # not on the default root: it may run on another one, so the form asks for it from now on
-            ask_root = error == "bridge_not_found" or CONF_BRIDGE_ROOT in user_input
+            if not broker.topic_ok(user_input[CONF_IL_PREFIX]):
+                errors[CONF_IL_PREFIX] = "invalid_prefix"
+                ask_root = CONF_BRIDGE_ROOT in user_input
+            else:
+                data = {**self._defaults(BRIDGE_EXTERNAL), **user_input}
+                error = await _probe_bridge(self.hass, data)
+                if error is None:
+                    self._data.update(data)
+                    return await self.async_step_onboard()
+                errors["base"] = error
+                # not on the default root: it may run on another one, so the form asks for it from now on
+                ask_root = error == "bridge_not_found" or CONF_BRIDGE_ROOT in user_input
         # what was typed stays on the form after an error, rather than falling back to the defaults
         return self.async_show_form(step_id="external", data_schema=_broker_schema(user_input, root=ask_root),
                                     errors=errors)
@@ -203,14 +259,13 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_embedded(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            import importlib.util
-            if not _prefix_ok(user_input[CONF_IL_PREFIX].strip()):
+            user_input = {**user_input, CONF_IL_PREFIX: user_input[CONF_IL_PREFIX].strip()}
+            if not broker.topic_ok(user_input[CONF_IL_PREFIX]):
                 errors[CONF_IL_PREFIX] = "invalid_prefix"
             elif importlib.util.find_spec("pyrustuyabridge") is None:
                 errors["base"] = "pyrustuyabridge_missing"
             else:
-                self._data.update({**self._defaults(BRIDGE_EMBEDDED), **user_input,
-                                   CONF_IL_PREFIX: user_input[CONF_IL_PREFIX].strip()})
+                self._data.update({**self._defaults(BRIDGE_EMBEDDED), **user_input})
                 return await self.async_step_onboard()
         return self.async_show_form(step_id="embedded", data_schema=_broker_schema(user_input), errors=errors)
 
@@ -225,29 +280,19 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     # ---- Tuya Cloud QR login wizard (rustuya_manager.Manager.wizard) ----------------
 
-    async def _async_open_manager(self):
+    async def _async_manager(self) -> Any:
         if self._manager is None:
             self._manager = await _open(self.hass, self._data, bridge_running=False)
         return self._manager
 
-    async def _async_close_manager(self) -> None:
-        if self._manager is not None:
-            await manager_session.close_manager(self._manager)
-            self._manager = None
+    def _new_login(self) -> None:
+        super()._new_login()
+        self._error_shown = False
 
     async def async_step_cloud_wizard_start(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        manager = await self._async_open_manager()
+        await self._async_manager()
         self._in_login = True           # from here, closing the window finishes the setup without the login
-        if user_input is not None:
-            # a new login: the steps after it take a submit only once they have shown their form again
-            self._scan_shown = self._sync_shown = self._error_shown = False
-            await manager.wizard.start(user_input.get("user_code") or None, scan=False)
-            return await self.async_step_cloud_wizard_progress()
-        saved_code = await manager.wizard.read_saved_user_code()
-        return self.async_show_form(
-            step_id="cloud_wizard_start",
-            data_schema=vol.Schema({vol.Optional("user_code", default=saved_code or ""): str}),
-        )
+        return await self._async_login_form("cloud_wizard_start", user_input)
 
     async def async_step_cloud_wizard_progress(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         from rustuya_manager.wizard import WizardState
@@ -257,35 +302,7 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_show_progress_done(next_step_id="sync_devices")
         if session.state == WizardState.ERROR:
             return self.async_show_progress_done(next_step_id="cloud_wizard_error")
-        if session.qr_url:
-            return self.async_show_progress_done(next_step_id="cloud_wizard_scan")
-        return self.async_show_progress(
-            step_id="cloud_wizard_progress", progress_action="cloud_wizard_working",
-            description_placeholders={"message": session.message},
-            progress_task=self.hass.async_create_task(self._async_wait_wizard_tick()),
-        )
-
-    async def async_step_cloud_wizard_scan(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """`async_show_progress` only takes plain description text -- no selector, so a QR needs an actual form
-        step; go back through `cloud_wizard_progress` on submit (`scanned` carries no real data) to reuse its
-        state check instead of duplicating it here."""
-        if user_input is not None and self._scan_shown:       # a submit of the QR form, not a forwarded input
-            return await self.async_step_cloud_wizard_progress()
-        self._scan_shown = True
-        return self.async_show_form(step_id="cloud_wizard_scan", data_schema=_qr_schema(self._manager.wizard.session.qr_url))
-
-    async def _async_wait_wizard_tick(self) -> None:
-        """`async_show_progress` needs a task to await; the wizard already runs in the background
-        (`WizardManager._run`), so this just waits for its state to change (or a short cap) so the
-        frontend's re-poll of `cloud_wizard_progress` promptly redraws instead of only on its own timer."""
-        from rustuya_manager.wizard import WizardState
-
-        session = self._manager.wizard.session
-        start_state = session.state
-        for _ in range(50):
-            if session.state != start_state or session.state in (WizardState.DONE, WizardState.ERROR):
-                return
-            await asyncio.sleep(0.1)
+        return self._login_running(session)
 
     async def async_step_cloud_wizard_error(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         session = self._manager.wizard.session
@@ -294,7 +311,7 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None and self._error_shown:
             if user_input["retry"]:
                 return await self.async_step_cloud_wizard_start()
-            await self._async_close_manager()
+            await self._async_close()
             return await self.async_step_finish()
         self._error_shown = True
         return self.async_show_form(
@@ -305,33 +322,19 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # ---- register missing devices on the bridge (Manager.sync / add_device) ---------
 
     async def async_step_sync_devices(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        manager = self._manager
-        diff = await manager.sync()
-        # only a submission of this form: Home Assistant hands a step reached through `progress_done` the input that
-        # got there (the QR step's empty submit), which is no selection
-        if user_input is not None and self._sync_shown:
-            try:
-                await bridge_sync.apply(manager, diff, user_input)
-            except RuntimeError as e:
-                return self.async_show_form(
-                    step_id="sync_devices", data_schema=bridge_sync.schema(diff), errors={"base": "publish_failed"},
-                    description_placeholders={**bridge_sync.placeholders(diff), "error": str(e)})
-            await self._async_close_manager()
-            return await self.async_step_finish()
+        diff = await self._manager.sync()
+        if self._sync_submitted(user_input):
+            return await self._async_send_selection("sync_devices", diff, user_input) or await self.async_step_finish()
         if not bridge_sync.has_changes(diff):
-            await self._async_close_manager()
+            await self._async_close()
             return await self.async_step_finish()
-        self._sync_shown = True
-        return self.async_show_form(step_id="sync_devices", data_schema=bridge_sync.schema(diff),
-                                    description_placeholders={**bridge_sync.placeholders(diff), "error": ""})
+        return self._sync_form("sync_devices", diff)
 
     # ---- finish --------------------------------------------------------------------
 
     async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         self._in_login = False
-        return self.async_create_entry(title="Rustuya", data=self._data, options={
-            CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True,
-        })
+        return self.async_create_entry(title="Rustuya", data=self._data, options=dict(DEFAULT_OPTIONS))
 
     async def async_step_import(self, data: dict[str, Any]) -> FlowResult:
         """The setup a closed login window left: the broker and the rest were all given, only the login is skipped."""
@@ -350,7 +353,7 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         async def close_then_finish() -> None:
             # the session first (with the embedded bridge it runs one): the entry's own bridge must not start while it
             # is still up, on the same root and state file
-            await self._async_close_manager()
+            await self._async_close()
             if finish:
                 await self.hass.config_entries.flow.async_init(
                     DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=dict(self._data))
@@ -364,8 +367,7 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return RustuyaOptionsFlow(config_entry)
 
 
-
-class RustuyaOptionsFlow(config_entries.OptionsFlow):
+class RustuyaOptionsFlow(_ManagerSteps, config_entries.OptionsFlow):
     """Maintenance after setup: tuning, and the same Manager-backed onboarding steps to add or remove devices
     later without re-adding the integration."""
 
@@ -373,10 +375,7 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
         # `self.config_entry` is a read-only property on `OptionsFlow` in current Home Assistant (not settable, and
         # not available until after __init__); `config_entry` is accepted here only to match the signature
         # `async_get_options_flow` is called with, unused otherwise.
-        self._manager: Any = None
         self._logged_in = False     # a login wrote a new device file: hand it to the entry however this flow ends
-        self._sync_shown = False
-        self._scan_shown = False
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         # the panel's own Hide panel removes it; here only adding it, or its link once added
@@ -405,7 +404,7 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
     async def async_step_panel_open(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         return self._panel_link("panel_open")
 
-    async def _async_manager(self):
+    async def _async_manager(self) -> Any:
         if self._manager is None:
             entry = self.config_entry
             self._manager = await _open(self.hass, dict(entry.data),
@@ -413,14 +412,7 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
         return self._manager
 
     async def async_step_cloud_wizard(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        manager = await self._async_manager()
-        if user_input is not None:
-            self._scan_shown = self._sync_shown = False
-            await manager.wizard.start(user_input.get("user_code") or None, scan=False)
-            return await self.async_step_cloud_wizard_progress()
-        saved_code = await manager.wizard.read_saved_user_code()
-        return self.async_show_form(step_id="cloud_wizard",
-                                    data_schema=vol.Schema({vol.Optional("user_code", default=saved_code or ""): str}))
+        return await self._async_login_form("cloud_wizard", user_input)
 
     async def async_step_cloud_wizard_progress(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         from rustuya_manager.wizard import WizardState
@@ -432,42 +424,16 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
         if session.state == WizardState.ERROR:
             await self._async_close()
             return self.async_abort(reason="wizard_failed", description_placeholders={"error": session.error or ""})
-        if session.qr_url:
-            return self.async_show_progress_done(next_step_id="cloud_wizard_scan")
-        return self.async_show_progress(step_id="cloud_wizard_progress", progress_action="cloud_wizard_working",
-                                        description_placeholders={"message": session.message},
-                                        progress_task=self.hass.async_create_task(self._tick()))
-
-    async def async_step_cloud_wizard_scan(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        if user_input is not None and self._scan_shown:       # a submit of the QR form, not a forwarded input
-            return await self.async_step_cloud_wizard_progress()
-        self._scan_shown = True
-        return self.async_show_form(step_id="cloud_wizard_scan", data_schema=_qr_schema(self._manager.wizard.session.qr_url))
-
-    async def _tick(self) -> None:
-        from rustuya_manager.wizard import WizardState
-
-        session = self._manager.wizard.session
-        start_state = session.state
-        for _ in range(50):
-            if session.state != start_state or session.state in (WizardState.DONE, WizardState.ERROR):
-                return
-            await asyncio.sleep(0.1)
+        return self._login_running(session)
 
     async def async_step_bridge_sync(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Every device, in sync or not: add the missing, update the mismatched, remove anything on the bridge
         (orphans included). Nothing is pre-selected."""
         manager = await self._async_manager()
         diff = await manager.sync()
-        # only a submission of this form, not the input a `progress_done` hands on (see the config flow's step)
-        if user_input is not None and self._sync_shown:
-            try:
-                await bridge_sync.apply(manager, diff, user_input)
-            except RuntimeError as e:
-                return self.async_show_form(
-                    step_id="bridge_sync", data_schema=bridge_sync.schema(diff), errors={"base": "publish_failed"},
-                    description_placeholders={**bridge_sync.placeholders(diff), "error": str(e)})
-            await self._async_close()
+        if self._sync_submitted(user_input):
+            if (failed := await self._async_send_selection("bridge_sync", diff, user_input)) is not None:
+                return failed
             # nothing watches tuyadevices.json (it only changes through the cloud login here): tell the running Hub,
             # or start the entry if it is not running
             self._logged_in = False
@@ -476,14 +442,7 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
         if not bridge_sync.has_devices(diff):
             await self._async_close()
             return self.async_abort(reason="no_devices")
-        self._sync_shown = True
-        return self.async_show_form(step_id="bridge_sync", data_schema=bridge_sync.schema(diff),
-                                    description_placeholders={**bridge_sync.placeholders(diff), "error": ""})
-
-    async def _async_close(self) -> None:
-        if self._manager is not None:
-            await manager_session.close_manager(self._manager)
-            self._manager = None
+        return self._sync_form("bridge_sync", diff)
 
     async def _async_hand_over(self) -> None:
         from . import async_refresh_devices

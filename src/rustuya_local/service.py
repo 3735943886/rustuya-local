@@ -43,7 +43,7 @@ from tuya2ildevice.host import (
 )
 from tuya2ildevice.host.transport import Transport
 
-from .bridge_client import BridgeClient
+from .bridge_client import BridgeClient, payload_text
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +55,13 @@ def _close_later(stack: contextlib.AsyncExitStack, transport: Transport) -> None
 
 
 Will = tuple[str, str, int, bool]
+
+
+async def wait_event(event: asyncio.Event, timeout: float) -> bool:
+    """Wait for `event`, at most `timeout` seconds; whether it was set."""
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(event.wait(), timeout)
+    return event.is_set()
 
 
 class AnotherProducer(RuntimeError):
@@ -210,8 +217,7 @@ class Service:
             except Exception as e:
                 _LOGGER.exception("override pack")
                 self.pack_status = {"at": time.time(), "error": f"{type(e).__name__}: {e}"}
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(self._pack_now.wait(), self.settings.pack_interval)
+            await wait_event(self._pack_now, self.settings.pack_interval)
 
     def sync_pack_now(self) -> bool:
         """Run the pack sync now instead of at the end of its interval; False when the pack is off (nothing runs).
@@ -358,8 +364,7 @@ async def _flush(il: Transport, topic: str, timeout: float) -> None:
     back = asyncio.Event()
 
     def on_message(msg) -> None:
-        payload = msg.payload.decode("utf-8", "replace") if isinstance(msg.payload, bytes) else msg.payload
-        if payload == nonce:
+        if payload_text(msg.payload) == nonce:
             back.set()
 
     unsub = await il.subscribe(topic, on_message)

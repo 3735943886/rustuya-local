@@ -21,13 +21,17 @@ read from its retained `{root}/bridge/config` at start.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
-from tuya2ildevice.host import load_devices
+from tuya2ildevice.host import MqttTransport, load_devices
 
 from .service import Settings
+
+KEYS = frozenset({"bridge", "il", "devices", "options", "watch_interval", "custom_converters", "pack"})
+OPTIONS = frozenset({"allow_hazardous", "expose_unused", "overrides", "converters", "use_quirks"})
+_DEFAULT = Settings()
 
 
 @dataclass
@@ -37,51 +41,63 @@ class Broker:
     username: str | None = None
     password: str | None = None
 
+    @classmethod
+    def from_dict(cls, data: dict) -> Broker:
+        """The broker keys of a `bridge` / `il` block; its other keys (`root`, `prefix`, `source`) are the Config's."""
+        names = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in names})
+
+    async def connect(self, client_id: str, will: Any = None) -> MqttTransport:
+        transport = MqttTransport(self.host, self.port, client_id=client_id, username=self.username,
+                                  password=self.password, will=will)
+        await transport.connect()
+        return transport
+
+
+def _resolve(path: str, base: Path | None) -> Path:
+    """`path` relative to the config file's directory; an absolute one as is."""
+    p = Path(path)
+    return p if p.is_absolute() or base is None else base / p
+
 
 @dataclass
 class Config:
     bridge: Broker = field(default_factory=Broker)
     il: Broker = field(default_factory=Broker)
-    root: str = "rustuya"
-    prefix: str = "il"
-    source: str = "tuya"
+    root: str = _DEFAULT.root
+    prefix: str = _DEFAULT.prefix
+    source: str = _DEFAULT.source
     devices: list[dict] = field(default_factory=list)
     devices_path: Path | None = None
     overrides_path: Path | None = None
-    watch_interval: float = 5.0
+    watch_interval: float = _DEFAULT.watch_interval
     pack: bool = True
     hub_options: dict[str, Any] = field(default_factory=dict)
     """Keyword arguments for `tuya2ildevice.Hub`: `allow_hazardous`, `expose_unused`, `overrides`, `converters`."""
 
     @classmethod
     def from_dict(cls, data: dict, base: Path | None = None) -> Config:
-        unknown = set(data) - {"bridge", "il", "devices", "options", "watch_interval", "custom_converters", "pack"}
-        if unknown:
+        if unknown := set(data) - KEYS:
             raise ValueError(f"unknown config keys: {sorted(unknown)}")
-        bridge, il = dict(data.get("bridge", {})), dict(data.get("il", {}))
+        options = dict(data.get("options", {}))
+        if bad := set(options) - OPTIONS:
+            raise ValueError(f"unknown options: {sorted(bad)}")
+        bridge, il = data.get("bridge", {}), data.get("il", {})
         devices, devices_path = data.get("devices", []), None
         if isinstance(devices, str):
-            path = Path(devices)
-            devices_path = path if path.is_absolute() or base is None else base / path
+            devices_path = _resolve(devices, base)
             devices = load_devices(devices_path)
-        overrides_path = None
-        if data.get("custom_converters"):
-            path = Path(data["custom_converters"])
-            overrides_path = path if path.is_absolute() or base is None else base / path
-        options = dict(data.get("options", {}))
-        bad = set(options) - {"allow_hazardous", "expose_unused", "overrides", "converters", "use_quirks"}
-        if bad:
-            raise ValueError(f"unknown options: {sorted(bad)}")
+        converters = data.get("custom_converters")
         return cls(
-            bridge=Broker(**{k: v for k, v in bridge.items() if k in Broker.__dataclass_fields__}),
-            il=Broker(**{k: v for k, v in il.items() if k in Broker.__dataclass_fields__}),
-            root=bridge.get("root", "rustuya"),
-            prefix=il.get("prefix", "il"),
-            source=il.get("source", "tuya"),
+            bridge=Broker.from_dict(bridge),
+            il=Broker.from_dict(il),
+            root=bridge.get("root", _DEFAULT.root),
+            prefix=il.get("prefix", _DEFAULT.prefix),
+            source=il.get("source", _DEFAULT.source),
             devices=list(devices),
             devices_path=devices_path,
-            overrides_path=overrides_path,
-            watch_interval=float(data.get("watch_interval", 5)),
+            overrides_path=_resolve(converters, base) if converters else None,
+            watch_interval=float(data.get("watch_interval", _DEFAULT.watch_interval)),
             pack=bool(data.get("pack", True)),
             hub_options=options,
         )

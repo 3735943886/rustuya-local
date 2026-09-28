@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
+import functools
+import hashlib
 import secrets
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -27,29 +28,27 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
+from . import broker
 from .const import (
     BRIDGE_EMBEDDED,
-    CONF_ALLOW_HAZARDOUS,
+    BRIDGE_LOG_LEVELS,
     CONF_BRIDGE_LOG_LEVEL,
     CONF_BRIDGE_MODE,
     CONF_BRIDGE_ROOT,
     CONF_BRIDGE_STATE_FILE,
-    CONF_BROKER_HOST,
-    CONF_BROKER_PASSWORD,
-    CONF_BROKER_PORT,
-    CONF_BROKER_USERNAME,
     CONF_DEVICES_PATH,
-    CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
     CONF_PACK,
     CONF_PANEL,
     CONVERTERS_DIR,
+    DEFAULT_OPTIONS,
     DOMAIN,
 )
 
 PANEL_URL = "rustuya"
 STATIC_URL = "/rustuya_static"
+WWW = Path(__file__).parent / "www"
 _VIEWS_KEY = f"{DOMAIN}_panel_views"
 _CLOUD_KEY = f"{DOMAIN}_cloud_fetch"         # the panel's running (or last) cloud fetch
 
@@ -60,7 +59,7 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
     if not hass.data.get(_VIEWS_KEY):
         hass.data[_VIEWS_KEY] = True
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)])
+            [StaticPathConfig(STATIC_URL, str(WWW), False)])
         for view in (ConvertersView, ConverterView, PackView, BridgeView, PanelView, SettingsView, OptionsView,
                      CloudView):
             hass.http.register_view(view())
@@ -71,7 +70,7 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
     if PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
         # the file's own hash, not only the release: a changed file is never served from a browser's cache
         version = (await async_get_integration(hass, DOMAIN)).version
-        digest = await hass.async_add_executor_job(_digest, Path(__file__).parent / "www" / "rustuya-panel.js")
+        digest = await hass.async_add_executor_job(_digest, WWW / "rustuya-panel.js")
         await panel_custom.async_register_panel(
             hass, frontend_url_path=PANEL_URL, webcomponent_name="rustuya-panel",
             module_url=f"{STATIC_URL}/rustuya-panel.js?v={version}-{digest}",
@@ -81,8 +80,6 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
 
 
 def _digest(path: Path) -> str:
-    import hashlib
-
     return hashlib.sha256(path.read_bytes()).hexdigest()[:10]
 
 
@@ -103,25 +100,38 @@ def _runtime(hass: HomeAssistant) -> tuple[Any, Any] | None:
     return None
 
 
-class _View(HomeAssistantView):
-    requires_auth = True
+async def _json_body(request: web.Request) -> Any:
+    """The request's JSON body; None when there is none or it is not JSON."""
+    try:
+        return await request.json()
+    except ValueError:
+        return None
 
-    def _loaded(self, request: web.Request) -> tuple[Any, Any] | web.Response:
+
+def _entry_view(handler: Callable[..., Awaitable[web.Response]]) -> Callable[..., Awaitable[web.Response]]:
+    """A view method for administrators, while a loaded entry has the panel on (403 / 404 otherwise): called with
+    that entry and its runtime after the request."""
+
+    @functools.wraps(handler)
+    async def view(self: _View, request: web.Request, **match: str) -> web.Response:
         if not request["hass_user"].is_admin:
             return self.json_message("administrators only", HTTPStatus.FORBIDDEN)
         found = _runtime(request.app["hass"])
         if found is None:
             return self.json_message("the Rustuya panel is off", HTTPStatus.NOT_FOUND)
-        return found
+        return await handler(self, request, *found, **match)
+
+    return view
+
+
+class _View(HomeAssistantView):
+    requires_auth = True
 
     async def _files(self, request: web.Request, fn: Callable[..., dict[str, Any]], *args: Any,
-                     extend: Callable[[Any, Any, dict[str, Any]], dict[str, Any]] | None = None) -> web.Response:
+                     extend: Callable[[dict[str, Any]], dict[str, Any]] | None = None) -> web.Response:
         """`fn(<config>/rustuya_converters, *args)` in the executor, its errors as 400 / 404."""
         from rustuya_local.manager_plugin.api import Invalid
 
-        found = self._loaded(request)
-        if isinstance(found, web.Response):
-            return found
         hass: HomeAssistant = request.app["hass"]
         try:
             result = await hass.async_add_executor_job(fn, Path(hass.config.path(CONVERTERS_DIR)), *args)
@@ -129,42 +139,43 @@ class _View(HomeAssistantView):
             return self.json_message(str(e), HTTPStatus.BAD_REQUEST)
         except FileNotFoundError as e:
             return self.json_message(f"no such file: {e}", HTTPStatus.NOT_FOUND)
-        return self.json(extend(*found, result) if extend else result)
+        return self.json(extend(result) if extend else result)
 
 
 class ConvertersView(_View):
     url = "/api/rustuya/converters"
     name = "api:rustuya:converters"
 
-    async def get(self, request: web.Request) -> web.Response:
+    @_entry_view
+    async def get(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
         from rustuya_local.manager_plugin.api import list_converters
 
-        def with_pack(entry: Any, runtime: Any, result: dict[str, Any]) -> dict[str, Any]:
-            return {**result, "pack": {"enabled": entry.options.get(CONF_PACK, True),
-                                       "status": runtime.service.pack_status}}
-
-        return await self._files(request, list_converters, extend=with_pack)
+        pack = {"enabled": entry.options.get(CONF_PACK, DEFAULT_OPTIONS[CONF_PACK]),
+                "status": runtime.service.pack_status}
+        return await self._files(request, list_converters, extend=lambda result: {**result, "pack": pack})
 
 
 class ConverterView(_View):
     url = "/api/rustuya/converters/{name}"
     name = "api:rustuya:converter"
 
-    async def get(self, request: web.Request, name: str) -> web.Response:
+    @_entry_view
+    async def get(self, request: web.Request, entry: Any, runtime: Any, name: str) -> web.Response:
         from rustuya_local.manager_plugin.api import read_converter
 
         return await self._files(request, read_converter, name)
 
-    async def put(self, request: web.Request, name: str) -> web.Response:
+    @_entry_view
+    async def put(self, request: web.Request, entry: Any, runtime: Any, name: str) -> web.Response:
         from rustuya_local.manager_plugin.api import save_converter
 
-        try:
-            body = await request.json()
-        except ValueError:
+        body = await _json_body(request)
+        if body is None:
             return self.json_message('the body is JSON: {"content": "..."}', HTTPStatus.BAD_REQUEST)
         return await self._files(request, save_converter, name, body.get("content") if isinstance(body, dict) else None)
 
-    async def delete(self, request: web.Request, name: str) -> web.Response:
+    @_entry_view
+    async def delete(self, request: web.Request, entry: Any, runtime: Any, name: str) -> web.Response:
         from rustuya_local.manager_plugin.api import delete_converter
 
         return await self._files(request, delete_converter, name)
@@ -177,16 +188,10 @@ class PanelView(_View):
     url = "/api/rustuya/panel"
     name = "api:rustuya:panel"
 
-    async def delete(self, request: web.Request) -> web.Response:
-        found = self._loaded(request)
-        if isinstance(found, web.Response):
-            return found
-        entry = found[0]
+    @_entry_view
+    async def delete(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
         request.app["hass"].config_entries.async_update_entry(entry, options={**entry.options, CONF_PANEL: False})
         return self.json({"panel": False})
-
-
-OPTIONS = {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True}     # with their defaults
 
 
 class OptionsView(_View):
@@ -197,32 +202,22 @@ class OptionsView(_View):
     url = "/api/rustuya/options"
     name = "api:rustuya:options"
 
-    async def get(self, request: web.Request) -> web.Response:
-        found = self._loaded(request)
-        if isinstance(found, web.Response):
-            return found
-        options = found[0].options
-        return self.json({k: bool(options.get(k, default)) for k, default in OPTIONS.items()})
+    @_entry_view
+    async def get(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
+        return self.json({k: bool(entry.options.get(k, default)) for k, default in DEFAULT_OPTIONS.items()})
 
-    async def put(self, request: web.Request) -> web.Response:
-        found = self._loaded(request)
-        if isinstance(found, web.Response):
-            return found
-        try:
-            body = await request.json()
-        except ValueError:
-            body = None
-        if not isinstance(body, dict) or set(body) - set(OPTIONS) or not all(isinstance(v, bool) for v in body.values()):
-            return self.json_message(f"the options are {sorted(OPTIONS)}, each true or false", HTTPStatus.BAD_REQUEST)
-        entry = found[0]
+    @_entry_view
+    async def put(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
+        body = await _json_body(request)
+        if (not isinstance(body, dict) or set(body) - set(DEFAULT_OPTIONS)
+                or not all(isinstance(v, bool) for v in body.values())):
+            return self.json_message(f"the options are {sorted(DEFAULT_OPTIONS)}, each true or false",
+                                     HTTPStatus.BAD_REQUEST)
         options = {**entry.options, **body}
         if options == dict(entry.options):
             return self.json({"restarting": False})
         await _restart(request.app["hass"], entry, options=options)        # answered once it has restarted
         return self.json({"restarting": True})
-
-
-LOG_LEVELS = ("error", "warn", "info", "debug")
 
 
 def settings_of(data: Any) -> dict[str, Any]:
@@ -243,16 +238,15 @@ def validate_settings(hass: HomeAssistant, data: Any, body: Any) -> dict[str, An
         if not isinstance(value, str) or not value.strip() or value != value.strip():
             raise ValueError(f"{key} is a non-empty text without surrounding spaces")
     for key in (CONF_BRIDGE_ROOT, CONF_IL_PREFIX, CONF_IL_SOURCE):
-        levels = new[key].split("/")
-        if any(c in new[key] for c in "+#\0") or "" in levels:
+        if not broker.topic_ok(new[key]):
             raise ValueError(f"{key} is an MQTT topic without wildcards or empty levels")
     if "/" in new[CONF_IL_SOURCE] or new[CONF_IL_SOURCE].startswith("_"):
         raise ValueError(f"{CONF_IL_SOURCE} is one topic level, not starting with _")
     for key in (CONF_DEVICES_PATH, CONF_BRIDGE_STATE_FILE):
         if key in new:
             new[key] = hass.config.path(new[key])       # relative to the config directory; an absolute path as is
-    if CONF_BRIDGE_LOG_LEVEL in new and new[CONF_BRIDGE_LOG_LEVEL] not in LOG_LEVELS:
-        raise ValueError(f"{CONF_BRIDGE_LOG_LEVEL} is one of {', '.join(LOG_LEVELS)}")
+    if CONF_BRIDGE_LOG_LEVEL in new and new[CONF_BRIDGE_LOG_LEVEL] not in BRIDGE_LOG_LEVELS:
+        raise ValueError(f"{CONF_BRIDGE_LOG_LEVEL} is one of {', '.join(BRIDGE_LOG_LEVELS)}")
     return new
 
 
@@ -264,18 +258,14 @@ class SettingsView(_View):
     url = "/api/rustuya/settings"
     name = "api:rustuya:settings"
 
-    async def get(self, request: web.Request) -> web.Response:
-        found = self._loaded(request)
-        if isinstance(found, web.Response):
-            return found
-        data = found[0].data
-        return self.json({"mode": data.get(CONF_BRIDGE_MODE), "settings": settings_of(data)})
+    @_entry_view
+    async def get(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
+        return self.json({"mode": entry.data.get(CONF_BRIDGE_MODE), "settings": settings_of(entry.data),
+                          "log_levels": list(BRIDGE_LOG_LEVELS)})
 
-    async def put(self, request: web.Request) -> web.Response:
-        found = self._loaded(request)
-        if isinstance(found, web.Response):
-            return found
-        hass, entry = request.app["hass"], found[0]
+    @_entry_view
+    async def put(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
+        hass = request.app["hass"]
         try:
             new = validate_settings(hass, entry.data, await request.json())
         except ValueError as e:
@@ -334,11 +324,9 @@ class PackView(_View):
     url = "/api/rustuya/pack"
     name = "api:rustuya:pack"
 
-    async def post(self, request: web.Request) -> web.Response:
-        found = self._loaded(request)
-        if isinstance(found, web.Response):
-            return found
-        return self.json({"started": found[1].service.sync_pack_now()})
+    @_entry_view
+    async def post(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
+        return self.json({"started": runtime.service.sync_pack_now()})
 
 
 def _online(service: Any) -> dict[str, bool]:
@@ -346,6 +334,14 @@ def _online(service: Any) -> dict[str, bool]:
     session opened per request): the devices both in the device file and on the bridge."""
     hub = getattr(service, "hub", None)
     return {device_id: bool(driver.linked) for device_id, driver in hub.drivers.items()} if hub is not None else {}
+
+
+def _wizard_state(session: Any) -> str:
+    return str(getattr(session.state, "value", session.state))
+
+
+def _outcome(state: str, message: str = "", error: str | None = None) -> dict[str, Any]:
+    return {"state": state, "message": message, "qr": None, "error": error}
 
 
 class CloudFetch:
@@ -356,6 +352,7 @@ class CloudFetch:
 
     IDLE_TIMEOUT = 30.0         # seconds without a poll before the session is closed
     MAX_TIME = 600.0            # a QR not scanned in 10 minutes is given up
+    WATCH_INTERVAL = 0.5        # seconds between looks at the wizard's state
 
     def __init__(self, hass: HomeAssistant, entry: Any) -> None:
         self.hass, self.entry = hass, entry
@@ -372,13 +369,7 @@ class CloudFetch:
     async def start(self, user_code: str | None) -> None:
         from . import manager_session
 
-        data = self.entry.data
-        await self.hass.async_add_executor_job(
-            lambda: os.makedirs(os.path.dirname(data[CONF_DEVICES_PATH]), exist_ok=True))    # the login is saved there
-        self.manager = await manager_session.open_manager(
-            broker=f"mqtt://{data[CONF_BROKER_HOST]}:{data[CONF_BROKER_PORT]}", root=data[CONF_BRIDGE_ROOT],
-            devices_path=data[CONF_DEVICES_PATH], username=data.get(CONF_BROKER_USERNAME) or None,
-            password=data.get(CONF_BROKER_PASSWORD) or None)
+        self.manager = await manager_session.open_for_entry(self.hass, self.entry.data)
         try:
             await self.manager.wizard.start(user_code or None, scan=False)
         except BaseException:
@@ -392,7 +383,7 @@ class CloudFetch:
         if self.final is not None:
             return self.final
         session = self.manager.wizard.session
-        state = str(getattr(session.state, "value", session.state))
+        state = _wizard_state(session)
         if state in ("done", "error"):              # the outcome is reported once the session has closed (`_finish`)
             state = "finishing"
         return {"state": state, "message": session.message or "", "qr": session.qr_image_data_url,
@@ -400,20 +391,18 @@ class CloudFetch:
 
     async def cancel(self) -> None:
         if self.running and not self._finishing:
-            await self._finish({"state": "cancelled", "message": "Cancelled", "qr": None, "error": None})
+            await self._finish(_outcome("cancelled", "Cancelled"))
 
     async def _watch(self) -> None:
         while self.running and not self._finishing:
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(self.WATCH_INTERVAL)
             session = self.manager.wizard.session
-            state = str(getattr(session.state, "value", session.state))
+            state = _wizard_state(session)
             now = self.hass.loop.time()
             if state in ("done", "error"):
-                await self._finish({"state": state, "message": session.message or "", "qr": None,
-                                    "error": session.error})
+                await self._finish(_outcome(state, session.message or "", session.error))
             elif now - self._polled > self.IDLE_TIMEOUT or now - self._started > self.MAX_TIME:
-                await self._finish({"state": "cancelled", "message": "Stopped: the page stopped asking, or it took too "
-                                    "long", "qr": None, "error": None})
+                await self._finish(_outcome("cancelled", "Stopped: the page stopped asking, or it took too long"))
 
     async def _finish(self, final: dict[str, Any]) -> None:
         from . import async_refresh_devices, manager_session
@@ -427,7 +416,11 @@ class CloudFetch:
                 await async_refresh_devices(self.hass, self.entry)   # after the session: the new file to the entry
         finally:
             # reported only now: the page reloads the bridge list on `done`, which needs the session lock this held
-            self.final = {**final, "qr": None}
+            self.final = final
+
+
+def _fetch_status(fetch: CloudFetch | None) -> dict[str, Any]:
+    return fetch.status() if fetch is not None else {"state": "idle"}
 
 
 class CloudView(_View):
@@ -437,33 +430,25 @@ class CloudView(_View):
     url = "/api/rustuya/cloud"
     name = "api:rustuya:cloud"
 
-    async def get(self, request: web.Request) -> web.Response:
-        found = self._loaded(request)
-        if isinstance(found, web.Response):
-            return found
-        fetch: CloudFetch | None = request.app["hass"].data.get(_CLOUD_KEY)
-        return self.json(fetch.status() if fetch is not None else {"state": "idle"})
+    @_entry_view
+    async def get(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
+        return self.json(_fetch_status(request.app["hass"].data.get(_CLOUD_KEY)))
 
-    async def post(self, request: web.Request) -> web.Response:
+    @_entry_view
+    async def post(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
         from . import manager_session
 
-        found = self._loaded(request)
-        if isinstance(found, web.Response):
-            return found
         if not manager_session.available():
             return self.json_message("rustuya-manager is not installed", HTTPStatus.NOT_IMPLEMENTED)
         hass = request.app["hass"]
-        try:
-            body = await request.json()
-        except ValueError:
-            body = {}
+        body = await _json_body(request)
         user_code = body.get("user_code") if isinstance(body, dict) else None
         if user_code is not None and not isinstance(user_code, str):
             return self.json_message('the body is {"user_code": "..."} (optional)', HTTPStatus.BAD_REQUEST)
         current: CloudFetch | None = hass.data.get(_CLOUD_KEY)
         if current is not None and current.running:
             return self.json_message("a fetch is already running", HTTPStatus.CONFLICT)
-        fetch = CloudFetch(hass, found[0])
+        fetch = CloudFetch(hass, entry)
         try:
             await fetch.start((user_code or "").strip() or None)
         except manager_session.Busy:
@@ -474,14 +459,21 @@ class CloudView(_View):
         hass.data[_CLOUD_KEY] = fetch
         return self.json(fetch.status())
 
-    async def delete(self, request: web.Request) -> web.Response:
-        found = self._loaded(request)
-        if isinstance(found, web.Response):
-            return found
+    @_entry_view
+    async def delete(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
         fetch: CloudFetch | None = request.app["hass"].data.get(_CLOUD_KEY)
         if fetch is not None:
             await fetch.cancel()
-        return self.json(fetch.status() if fetch is not None else {"state": "idle"})
+        return self.json(_fetch_status(fetch))
+
+
+def _selection_ok(body: Any) -> bool:
+    """`{"add": [ids], "update": [ids], "remove": [ids]}`, each optional."""
+    from . import bridge_sync
+
+    return isinstance(body, dict) and all(
+        isinstance(ids := body.get(k, []), list) and all(isinstance(i, str) for i in ids)
+        for k in (bridge_sync.ADD, bridge_sync.UPDATE, bridge_sync.REMOVE))
 
 
 class BridgeView(_View):
@@ -494,40 +486,26 @@ class BridgeView(_View):
     name = "api:rustuya:bridge"
     SETTLE = 1.5            # seconds for the bridge's replies to land before the list is read again after a POST
 
-    async def get(self, request: web.Request) -> web.Response:
-        return await self._session(request, None)
+    @_entry_view
+    async def get(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
+        return await self._session(request, entry, runtime, None)
 
-    async def post(self, request: web.Request) -> web.Response:
-        from . import bridge_sync
-
-        try:
-            body = await request.json()
-        except ValueError:
-            body = None
-        if not isinstance(body, dict) or not all(
-                isinstance(body.get(k, []), list) and all(isinstance(i, str) for i in body.get(k, []))
-                for k in (bridge_sync.ADD, bridge_sync.UPDATE, bridge_sync.REMOVE)):
+    @_entry_view
+    async def post(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
+        body = await _json_body(request)
+        if not _selection_ok(body):
             return self.json_message('the body is {"add": [ids], "update": [ids], "remove": [ids]}',
                                      HTTPStatus.BAD_REQUEST)
-        return await self._session(request, body)
+        return await self._session(request, entry, runtime, body)
 
-    async def _session(self, request: web.Request, selection: dict[str, list[str]] | None) -> web.Response:
+    async def _session(self, request: web.Request, entry: Any, runtime: Any,
+                       selection: dict[str, list[str]] | None) -> web.Response:
         from . import bridge_sync, manager_session
 
-        found = self._loaded(request)
-        if isinstance(found, web.Response):
-            return found
         if not manager_session.available():
             return self.json_message("rustuya-manager is not installed", HTTPStatus.NOT_IMPLEMENTED)
-        data = found[0].data
-        # the device file's directory, as the flows make sure of (the Tuya login is saved beside it)
-        await request.app["hass"].async_add_executor_job(
-            lambda: os.makedirs(os.path.dirname(data[CONF_DEVICES_PATH]), exist_ok=True))
         try:
-            manager = await manager_session.open_manager(
-                broker=f"mqtt://{data[CONF_BROKER_HOST]}:{data[CONF_BROKER_PORT]}", root=data[CONF_BRIDGE_ROOT],
-                devices_path=data[CONF_DEVICES_PATH], username=data.get(CONF_BROKER_USERNAME) or None,
-                password=data.get(CONF_BROKER_PASSWORD) or None)
+            manager = await manager_session.open_for_entry(request.app["hass"], entry.data)
         except manager_session.Busy:
             return self.json_message("a Tuya login or device sync window is open; close it and try again",
                                      HTTPStatus.CONFLICT)
@@ -537,17 +515,14 @@ class BridgeView(_View):
             diff = await manager.sync()
             sent = 0
             if selection is not None:
-                selection = {**selection, bridge_sync.ADD: bridge_sync.parents_first(
-                    selection.get(bridge_sync.ADD, []), diff)}
-                sent = await bridge_sync.apply(manager, diff, selection)
+                sent = await bridge_sync.apply(manager, diff, selection)      # gateways first, as the flows do
                 if sent:
                     await asyncio.sleep(self.SETTLE)
                     diff = await manager.sync()
             state = getattr(manager, "state", None)
-            bridge = getattr(state, "bridge", None) if state is not None else None
-            return self.json({"devices": bridge_sync.listing(diff, bridge), "sent": sent,
+            return self.json({"devices": bridge_sync.listing(diff, getattr(state, "bridge", None)), "sent": sent,
                               "cloud_loaded": bool(getattr(state, "cloud", True)),
-                              "online": _online(found[1].service)})
+                              "online": _online(runtime.service)})
         except RuntimeError as e:                                  # a publish failed
             return self.json_message(f"could not send the command to the bridge: {e}", HTTPStatus.BAD_GATEWAY)
         finally:
@@ -563,8 +538,6 @@ async def ws_subscribe_links(hass: HomeAssistant, connection: websocket_api.Acti
     to the bridge's messages (`LinkWatcher`, topics resolved the way `BridgeClient` does), closed when the panel
     unsubscribes or its websocket goes. Events are `{"links": {id: {"online", "code", "message"}}}`: all of them
     first, then each change."""
-    from tuya2ildevice.host import MqttTransport
-
     from rustuya_local.bridge_client import LinkWatcher
 
     found = _runtime(hass)
@@ -572,10 +545,7 @@ async def ws_subscribe_links(hass: HomeAssistant, connection: websocket_api.Acti
         connection.send_error(msg["id"], "not_found", "the Rustuya panel is off")
         return
     data = found[0].data
-    transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
-                              client_id=f"rustuya-panel-{secrets.token_hex(4)}",
-                              username=data.get(CONF_BROKER_USERNAME) or None,
-                              password=data.get(CONF_BROKER_PASSWORD) or None)
+    transport = broker.transport(data, f"rustuya-panel-{secrets.token_hex(4)}")
     watcher = LinkWatcher(transport, data[CONF_BRIDGE_ROOT])
     try:
         await transport.connect()

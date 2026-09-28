@@ -21,6 +21,13 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+// the host's toast and confirm are optional: without them nothing shows, and nothing is asked
+const toast = (ctx, text, kind) => ctx.toast && ctx.toast(text, kind);
+const confirmed = async (ctx, question) => !ctx.confirm || ctx.confirm(question);
+const converterUrl = (name) => `${API}/converters/${encodeURIComponent(name)}`;
+const PACK_CHANGES = ["added", "updated", "removed", "kept"];
+const CONVERTER_FILE = /\.(json|py)$/;
+
 const section = (title, ...body) =>
   el("section", { class: "mb-6" }, el("h2", { class: "text-lg font-semibold mb-2" }, title), ...body);
 
@@ -50,7 +57,7 @@ function paintStatus(box, data) {
   if (p) {
     const when = new Date(p.at * 1000).toLocaleString();
     const text = p.error ? `Override pack: not synced (${p.error}), ${when}`
-      : `Override pack: synced ${when}` + ["added", "updated", "removed", "kept"]
+      : `Override pack: synced ${when}` + PACK_CHANGES
         .filter((k) => p[k] && p[k].length).map((k) => `; ${k} ${p[k].join(", ")}`).join("");
     box.append(el("p", { class: `text-sm mt-2 ${p.error || (p.failed && p.failed.length) ? "text-amber-600" : "text-gray-500"}` }, text));
     for (const f of p.failed || []) box.append(el("p", { class: "text-sm text-amber-600" }, f));
@@ -83,9 +90,9 @@ async function settingsBox(ctx) {
                    options: Object.fromEntries(OPTIONS.map(([k]) => [k, checks[k].checked])) };
     try {
       await ctx.api(`${API}/settings`, { method: "PUT", body });
-      ctx.toast && ctx.toast("Saved; the service restarts with the new settings", "ok");
+      toast(ctx, "Saved; the service restarts with the new settings", "ok");
     } catch (e) {
-      ctx.toast && ctx.toast(`Not saved: ${e.message}`, "error");
+      toast(ctx, `Not saved: ${e.message}`, "error");
     }
   };
   box.append(
@@ -115,11 +122,11 @@ async function convertersBox(ctx) {
   };
   const open = async (file) => {
     try {
-      const r = await ctx.api(`${API}/converters/${encodeURIComponent(file)}`);
+      const r = await ctx.api(converterUrl(file));
       name.value = r.name;
       text.value = r.content;
     } catch (e) {
-      ctx.toast && ctx.toast(e.message, "error");
+      toast(ctx, e.message, "error");
     }
   };
   let origins = {};
@@ -138,28 +145,28 @@ async function convertersBox(ctx) {
   };
   const save = async () => {
     const file = name.value.trim();
-    if (origins[file] === "pack" && ctx.confirm && !(await ctx.confirm({ title: `Edit ${file}?`,
+    if (origins[file] === "pack" && !(await confirmed(ctx, { title: `Edit ${file}?`,
       body: "It comes from the override pack. Once edited it is yours: the pack no longer updates or removes it." }))) return;
     try {
-      const r = await ctx.api(`${API}/converters/${encodeURIComponent(file)}`, { method: "PUT", body: { content: text.value } });
+      const r = await ctx.api(converterUrl(file), { method: "PUT", body: { content: text.value } });
       showWarnings(r.warnings);
-      ctx.toast && ctx.toast(`Saved ${file}; the service picks it up within seconds`, "ok");
+      toast(ctx, `Saved ${file}; the service picks it up within seconds`, "ok");
       await refresh();
     } catch (e) {
-      ctx.toast && ctx.toast(`Not saved: ${e.message}`, "error");
+      toast(ctx, `Not saved: ${e.message}`, "error");
     }
   };
   const remove = async () => {
     const file = name.value.trim();
     if (!file) return;
-    if (ctx.confirm && !(await ctx.confirm({ title: `Delete ${file}?`, body: "The file is removed from custom_converters." }))) return;
+    if (!(await confirmed(ctx, { title: `Delete ${file}?`, body: "The file is removed from custom_converters." }))) return;
     try {
-      await ctx.api(`${API}/converters/${encodeURIComponent(file)}`, { method: "DELETE" });
+      await ctx.api(converterUrl(file), { method: "DELETE" });
       name.value = "";
       text.value = "";
       await refresh();
     } catch (e) {
-      ctx.toast && ctx.toast(`Not deleted: ${e.message}`, "error");
+      toast(ctx, `Not deleted: ${e.message}`, "error");
     }
   };
   // each dropped file saved under its own name through the same API and checks as Save (a *.json must parse)
@@ -167,24 +174,24 @@ async function convertersBox(ctx) {
     const saved = [];
     for (const file of files) {
       const fname = file.name;
-      if (!/\.(json|py)$/.test(fname)) {
-        ctx.toast && ctx.toast(`${fname}: only *.json and *.py files are converters`, "error");
+      if (!CONVERTER_FILE.test(fname)) {
+        toast(ctx, `${fname}: only *.json and *.py files are converters`, "error");
         continue;
       }
-      if (fname in origins && ctx.confirm && !(await ctx.confirm(origins[fname] === "pack"
+      if (fname in origins && !(await confirmed(ctx, origins[fname] === "pack"
         ? { title: `Replace ${fname}?`, body: "It comes from the override pack. Replaced, it is yours: the pack no longer updates or removes it." }
         : { title: `Replace ${fname}?`, body: "A file of that name is already in custom_converters." }))) continue;
       try {
-        await ctx.api(`${API}/converters/${encodeURIComponent(fname)}`, { method: "PUT", body: { content: await file.text() } });
+        await ctx.api(converterUrl(fname), { method: "PUT", body: { content: await file.text() } });
         saved.push(fname);
       } catch (e) {
-        ctx.toast && ctx.toast(`${fname} not copied: ${e.message}`, "error");
+        toast(ctx, `${fname} not copied: ${e.message}`, "error");
       }
     }
     if (!saved.length) return;
     await refresh();
     if (saved.length === 1) await open(saved[0]);
-    ctx.toast && ctx.toast(`Copied ${saved.join(", ")}; the service picks them up within seconds`, "ok");
+    toast(ctx, `Copied ${saved.join(", ")}; the service picks them up within seconds`, "ok");
   };
   // files dragged from the desktop onto this box are copied in; the outline is inline style, not a Tailwind class the
   // manager's stylesheet may not carry

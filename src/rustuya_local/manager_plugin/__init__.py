@@ -27,7 +27,6 @@ every 30 s.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import weakref
 from pathlib import Path
@@ -37,6 +36,8 @@ _LOGGER = logging.getLogger(__name__)
 
 NAME = "rustuya-local"
 MIN_API = 4
+RETRY_INTERVAL = 30.0       # seconds between starts while another producer serves the IL prefix and source
+STATUS_INTERVAL = 5.0       # seconds between status publishes while running
 
 # The manager loads pip-installed plugins by entry point and dropped-in ones by their top-level `register`, and does not
 # dedup the two: installed both ways, this is called twice with the same ctx (one module, whichever copy won sys.path)
@@ -46,15 +47,13 @@ _REGISTERED: weakref.WeakSet[Any] = weakref.WeakSet()
 def load_settings(data_dir: Path, bridge_root: str, devices: list[dict]):
     """The service settings from the plugin's data dir (defaults when `settings.json` is missing)."""
     from ..service import Settings
-    from .api import validate_settings
+    from .api import CONVERTERS_DIR, SETTINGS_FILE, read_raw_settings, validate_settings
 
-    path = data_dir / "settings.json"
-    raw: dict[str, Any] = json.loads(path.read_text()) if path.is_file() else {}
     try:
-        checked = validate_settings(raw)
+        checked = validate_settings(read_raw_settings(data_dir))
     except ValueError as e:
-        raise ValueError(f"{path}: {e}") from e
-    conv = data_dir / "custom_converters"
+        raise ValueError(f"{data_dir / SETTINGS_FILE}: {e}") from e
+    conv = data_dir / CONVERTERS_DIR
     conv.mkdir(exist_ok=True)
     options = dict(checked["options"])
     pack = options.pop("pack")
@@ -93,7 +92,7 @@ class Plugin:
     async def run(self) -> None:
         """The supervised service: started by the manager after bootstrap, cancelled on shutdown. A start that fails
         (the broker is down) raises, for the manager's backoff; settings it cannot use wait for a fix instead."""
-        from ..service import AnotherProducer, Service
+        from ..service import AnotherProducer, Service, wait_event
 
         data = self.ctx.data_dir(NAME)
         while True:
@@ -113,19 +112,13 @@ class Plugin:
             except AnotherProducer as e:
                 self.error = str(e)
                 await self.publish_status()
-                try:
-                    await asyncio.wait_for(self._restart.wait(), 30)
-                except TimeoutError:
-                    pass
+                await wait_event(self._restart, RETRY_INTERVAL)
                 continue
             self.service, self.error = service, None
             try:
                 while not self._restart.is_set():
                     await self.publish_status()
-                    try:
-                        await asyncio.wait_for(self._restart.wait(), 5)
-                    except TimeoutError:
-                        pass
+                    await wait_event(self._restart, STATUS_INTERVAL)
             finally:
                 service, self.service = self.service, None
                 await service.stop()
@@ -140,13 +133,10 @@ class Plugin:
         s = self.service
         if s is None or s.hub is None:
             return {"running": False, "error": self.error}
-        hub = s.hub
-        devices = []
-        for device_id, drv in sorted(hub.drivers.items()):
-            desc = drv.descriptor
-            devices.append({"id": device_id, "name": desc.get("label") or desc.get("model") or device_id,
-                            "kind": desc.get("kind"), "online": bool(drv.linked),
-                            "props": sum(1 for p in desc["props"] if p != "available")})
+        devices = [{"id": device_id, "name": drv.descriptor.get("label") or drv.descriptor.get("model") or device_id,
+                    "kind": drv.descriptor.get("kind"), "online": bool(drv.linked),
+                    "props": sum(p != "available" for p in drv.descriptor["props"])}
+                   for device_id, drv in sorted(s.hub.drivers.items())]
         return {"running": True, "error": self.error, "bridge_root": s.settings.root, "il_prefix": s.settings.prefix,
                 "devices": devices, "pack": s.pack_status}
 

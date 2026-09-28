@@ -75,6 +75,38 @@ async def open_manager(*, broker: str, root: str, devices_path: str, username: s
     return manager
 
 
+async def open_for_entry(hass: Any, data: dict[str, Any], *, run_bridge: bool = False):
+    """`open_manager` for an entry's `data`. `run_bridge`: with the embedded bridge, the session runs it (on the entry's
+    state file) — for when the entry does not (setup, or an entry that failed to start)."""
+    import os
+
+    from . import broker
+    from .const import (
+        BRIDGE_EMBEDDED,
+        CONF_BRIDGE_LOG_LEVEL,
+        CONF_BRIDGE_MODE,
+        CONF_BRIDGE_ROOT,
+        CONF_BRIDGE_STATE_FILE,
+        CONF_DEVICES_PATH,
+        DEFAULT_BRIDGE_LOG_LEVEL,
+        DEFAULT_BRIDGE_STATE_FILE,
+    )
+
+    # the device file's directory: the Tuya login (`tuyacreds.json`) is saved beside it by a library that does not
+    # create it, and fails (only logging it) when it is missing — then every login asks again
+    dirs = [os.path.dirname(data[CONF_DEVICES_PATH])]
+    bridge: dict[str, Any] = {}
+    if run_bridge and data.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED:
+        state_file = data.get(CONF_BRIDGE_STATE_FILE) or hass.config.path(DEFAULT_BRIDGE_STATE_FILE)
+        dirs.append(os.path.dirname(state_file))
+        bridge = {"bridge_state": state_file,
+                  "bridge_log_level": data.get(CONF_BRIDGE_LOG_LEVEL, DEFAULT_BRIDGE_LOG_LEVEL)}
+    await hass.async_add_executor_job(lambda: [os.makedirs(d, exist_ok=True) for d in dirs if d])
+    username, password = broker.credentials(data)
+    return await open_manager(broker=broker.url(data), root=data[CONF_BRIDGE_ROOT],
+                              devices_path=data[CONF_DEVICES_PATH], username=username, password=password, **bridge)
+
+
 async def close_manager(manager: Any) -> None:
     if manager is None:
         return
