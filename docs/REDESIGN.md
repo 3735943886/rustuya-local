@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.34). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.35). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)
@@ -312,3 +312,8 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
 - **2026-09-28 0.0.34**: HA 서비스 `rustuya.send_command`(device_id·dp·value): IL 을 거치지 않고 브리지로 raw DP 하나를 쏘고 끝.
   device_id 는 Tuya id 또는 HA 기기 id(IL consumer 가 등록한 identifiers 값 중 서비스가 모는 것). `allow_hazardous` 가 꺼져
   있으면 잠금장치·경보·차고문(Tuya 카테고리, 또는 Hub 가 만든 alarm / 위험 class cover)은 거부(`Service.send_dps`, `hazardous()`).
+- **2026-09-28 0.0.35** (tuya2ildevice 0.3.12): 패널 save and restart·옵션 변경 때 모든 기기가 unavailable 로 깜빡이던 것 수정.
+  재시작이 presence offline → 기기마다 `available: false` → 값 재발행을 해서, HA 에서 상태를 따르는 자동화(이벤트 엔티티가
+  unavailable 에서 돌아오면 마지막 event_type 을 달고 있어 리모컨이 눌린 것처럼 보임)가 불·플러그·IR 을 움직였다. BridgeClient 가
+  dp 별 retained `state` 를 합치고(마지막 dp 만 남던 버그) 연결 상태와 함께 Hub 에 seed 로 넘김(`set_device(device, seed)`),
+  옵션만 바뀐 재시작은 `stop(offline=False)`/`start(resume=True)` 로 presence 를 online 으로 유지.
