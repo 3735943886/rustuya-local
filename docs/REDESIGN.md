@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.29). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.30). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)
@@ -298,3 +298,7 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
   상태 파일로 브리지를 직접 띄움. `progress_done` 이 넘기는 입력 때문에 QR 제출 후 기기 선택이 건너뛰어지고 즉시 실패한 로그인이
   재시도 대신 오류가 되던 것 → 그 단계들은 자기 폼을 보인 뒤의 제출만 받음. `.storage/rustuya/` 가 없으면 Tuya 로그인이 저장되지 않던
   것(0.0.25 회귀) → 세션 전에 디렉터리 생성. 게이트웨이 먼저 추가, Configure 로그인 후 기기 파일을 항상 entry 에 전달.
+- **2026-09-28 0.0.30**: "Tuya Cloud 로그인" 대신 "Tuya Cloud 에서 기기 가져오기"(저장된 로그인 재사용, 없거나 만료일 때만 QR).
+  패널의 Bridge devices 카드에서도 가져오기(`/api/rustuya/cloud`, 세션은 폴링이 끊기거나 10분이 지나면 닫힘, 완료는 세션을 닫고
+  기기 파일을 entry 에 넘긴 뒤 보고). Configure 의 Show the Rustuya panel 은 바로 켜고 링크(켜진 뒤엔 Open/Hide). 패널의
+  Save and restart 는 바뀐 게 있을 때만 활성, Hide panel 은 저장 안 한 변경을 경고.
