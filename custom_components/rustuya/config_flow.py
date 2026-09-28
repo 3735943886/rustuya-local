@@ -278,18 +278,17 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_tuning(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
-            # merged: the panel option is only on the form in advanced mode, and keeps its value when it is not
+            # merged over the current options, so any option not on the form keeps its value
             return self.async_create_entry(title="", data={**self.config_entry.options, **user_input})
         current = self.config_entry.options
         fields = {
             vol.Required(CONF_ALLOW_HAZARDOUS, default=current.get(CONF_ALLOW_HAZARDOUS, False)): bool,
             vol.Required(CONF_EXPOSE_UNUSED, default=current.get(CONF_EXPOSE_UNUSED, False)): bool,
             vol.Required(CONF_PACK, default=current.get(CONF_PACK, True)): bool,
+            # always offered: Home Assistant's `show_advanced_options` is deprecated and always true since 2026.9
+            vol.Required(CONF_PANEL, default=current.get(CONF_PANEL, False)): bool,
         }
-        if self.show_advanced_options:
-            fields[vol.Required(CONF_PANEL, default=current.get(CONF_PANEL, False))] = bool
-        schema = vol.Schema(fields)
-        return self.async_show_form(step_id="tuning", data_schema=schema)
+        return self.async_show_form(step_id="tuning", data_schema=vol.Schema(fields))
 
     async def _async_manager(self):
         if self._manager is None:

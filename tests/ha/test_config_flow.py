@@ -17,6 +17,7 @@ from custom_components.rustuya.const import (
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
     CONF_PACK,
+    CONF_PANEL,
     DOMAIN,
 )
 
@@ -200,9 +201,9 @@ async def test_tuning_updates_options(hass, tmp_path):
     result = await hass.config_entries.options.async_init(entry.entry_id)
     r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tuning"})
     r = await hass.config_entries.options.async_configure(
-        r["flow_id"], {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False})
+        r["flow_id"], {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False, CONF_PANEL: True})
     assert r["type"] == "create_entry"
-    assert r["data"] == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False}
+    assert r["data"] == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False, CONF_PANEL: True}
 
 
 async def test_a_session_still_open_elsewhere_aborts_with_a_hint(hass, tmp_path, monkeypatch):
@@ -364,19 +365,10 @@ async def test_the_devices_step_gives_every_placeholder_its_description_names(ha
     assert bool(r["description_placeholders"]["warning"]) is not manager_installed
 
 
-async def test_the_panel_option_is_offered_in_advanced_mode_only(hass, tmp_path):
-    from custom_components.rustuya.const import CONF_PANEL
-
+async def test_the_panel_option_is_on_the_tuning_form(hass, tmp_path):
     entry = _entry(hass, tmp_path)
     hass.config_entries.async_update_entry(entry, options={CONF_PANEL: True})
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tuning"})
-    assert CONF_PANEL not in r["data_schema"].schema
-    r = await hass.config_entries.options.async_configure(
-        r["flow_id"], {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True})
-    assert r["data"][CONF_PANEL] is True                              # kept, though not on the form
-
-    result = await hass.config_entries.options.async_init(entry.entry_id, context={"show_advanced_options": True})
     r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tuning"})
     assert CONF_PANEL in r["data_schema"].schema
     r = await hass.config_entries.options.async_configure(

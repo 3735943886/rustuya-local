@@ -62,7 +62,7 @@ false` (daemon), the integration's *Tuning* options, or the plugin tab. The pack
 put there, and leaves a file alone once you edit it.
 
 In Home Assistant the files can be edited from a sidebar panel: turn on *Show the Rustuya panel* in the integration's
-*Tuning* options (shown with *Advanced mode* on in your user profile). The panel is for administrators. It shows the
+*Tuning* options. The panel is for administrators. It shows the
 bridge's devices against the cloud list as rustuya-manager does (missing, orphan, mismatch, synced, each a filter you can
 turn off; sub-devices under their gateway; each device's bridge connection, live while the panel is open) with add /
 update / remove, lists the converter files with the pack's
