@@ -274,7 +274,7 @@ class BridgeClient:
         if "errorCode" in parsed and device_id and device_id != "bridge":
             conn = Connected() if parsed.get("errorCode") == 0 else Disconnected()
             self._last_conn[device_id] = conn
-            self.runner.on_bridge_message(device_id, conn)
+            self.runner.on_bridge_message(device_id, conn, retained=retained)       # a retained one asks for no `get`
             return
         if self._records is None or retained:                # a retained reply is an old one; `status` is asked live
             return

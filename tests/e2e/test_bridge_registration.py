@@ -214,7 +214,8 @@ async def test_a_restart_republishes_devices_as_they_were_without_a_flap():
     """What a restarting producer hears first is the bridge's retained topics: the link state and, with a `{dp}` in the
     event topic, one retained message per dp. All of it is handed over with the device, so the first thing IL sees
     of it is `available: true` and every value — never `available: false` in between (an il consumer's automation
-    reads that as the device going away and coming back). A sub-device has only its snapshot, and gets no `get`."""
+    reads that as the device going away and coming back). Nothing is asked of the bridge: its retained snapshot is its
+    current copy. A live reconnect afterwards does ask for the state (`get`)."""
     bridge, il = InProcessTransport(), InProcessTransport()
     await bridge.publish("rustuya/bridge/config", json.dumps({
         "mqtt_root_topic": "rustuya", "mqtt_command_topic": "{root}/command/{action}/{id}/{dp}",
@@ -238,6 +239,10 @@ async def test_a_restart_republishes_devices_as_they_were_without_a_flap():
             assert [p for t, p, *_ in il.published if t == f"il/{device}/available"] == ["true"]
             assert il.retained[f"il/{device}/brightness"].payload == "100"
             assert il.retained[f"il/{device}/switch_led"].payload == "true"
+        gets = [t for t, *_ in bridge.published if t.startswith("rustuya/command/get/")]
+        assert gets == []
+        await bridge.publish("rustuya/error/a", '{"errorCode":0,"errorMsg":"Connection Successful"}', 0, False)
+        await settle(runner, bridge_client, bridge, il)
         gets = [t for t, *_ in bridge.published if t.startswith("rustuya/command/get/")]
         assert gets == ["rustuya/command/get/a/-"]
     finally:
