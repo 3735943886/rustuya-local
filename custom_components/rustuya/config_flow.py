@@ -9,7 +9,9 @@ can skip straight to the IL step and point at that file.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import secrets
 from typing import Any
 
 import voluptuous as vol
@@ -47,6 +49,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+PROBE_TIMEOUT = 5.0      # seconds each for the broker to accept us and the bridge's retained config to arrive
 
 
 def _broker_url(data: dict[str, Any]) -> str:
@@ -74,6 +77,47 @@ def _broker_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     })
 
 
+def _import_transport() -> None:
+    """Importing tuya2ildevice reads its data files; run in Home Assistant's import executor, not the event loop."""
+    import tuya2ildevice.host  # noqa: F401
+
+
+async def _probe_bridge(hass, data: dict[str, Any]) -> str | None:
+    """Is an external rustuya-bridge actually running on this broker and root? A running bridge keeps its retained
+    `{root}/bridge/config` published (and clears it when it goes away), so that arriving is the sign. `None` when it
+    is there, otherwise the error key: `cannot_connect` (the broker is unreachable or refuses the credentials) or
+    `bridge_not_found` (the broker answers but no bridge is on that root)."""
+    await hass.async_add_import_executor_job(_import_transport)
+    from tuya2ildevice.host import MqttTransport
+
+    transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
+                              client_id=f"rustuya-probe-{secrets.token_hex(4)}",
+                              username=data.get(CONF_BROKER_USERNAME) or None,
+                              password=data.get(CONF_BROKER_PASSWORD) or None)
+    try:
+        await transport.connect(timeout=PROBE_TIMEOUT)
+    except Exception as e:  # noqa: BLE001 -- refused, unresolvable, timed out: all mean the broker is not usable
+        _LOGGER.debug("the broker at %s did not accept a connection: %r", _broker_url(data), e)
+        with contextlib.suppress(Exception):
+            await transport.close()
+        return "cannot_connect"
+    seen = asyncio.Event()
+
+    def on_config(msg: Any) -> None:
+        payload = msg.payload.decode("utf-8", "replace") if isinstance(msg.payload, bytes) else msg.payload
+        if payload.strip():                         # an empty retained config is a bridge that went offline
+            seen.set()
+
+    try:
+        await transport.subscribe(f"{data[CONF_BRIDGE_ROOT]}/bridge/config", on_config)
+        await asyncio.wait_for(seen.wait(), PROBE_TIMEOUT)
+    except TimeoutError:
+        return "bridge_not_found"
+    finally:
+        with contextlib.suppress(Exception):
+            await transport.close()
+    return None
+
 
 async def _open(**kw: Any):
     """A Manager session, or the flow aborts: another flow's session is still open (`manager_session.Busy`)."""
@@ -97,10 +141,15 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_menu(step_id="user", menu_options=["external", "embedded"])
 
     async def async_step_external(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._data.update(user_input, **{CONF_BRIDGE_MODE: BRIDGE_EXTERNAL})
-            return await self.async_step_devices()
-        return self.async_show_form(step_id="external", data_schema=_broker_schema())
+            error = await _probe_bridge(self.hass, user_input)
+            if error is None:
+                self._data.update(user_input, **{CONF_BRIDGE_MODE: BRIDGE_EXTERNAL})
+                return await self.async_step_devices()
+            errors["base"] = error
+        # what was typed stays on the form after an error, rather than falling back to the defaults
+        return self.async_show_form(step_id="external", data_schema=_broker_schema(user_input), errors=errors)
 
     async def async_step_embedded(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}

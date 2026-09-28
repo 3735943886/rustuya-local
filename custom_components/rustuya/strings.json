@@ -85,8 +85,10 @@
       "cloud_wizard_working": "{message}"
     },
     "error": {
-      "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead",
-      "publish_failed": "Could not send the command to the bridge."
+      "bridge_not_found": "The broker answers, but no rustuya-bridge is running on that topic root. Start the bridge (or fix the topic root) and try again.",
+      "cannot_connect": "Could not connect to the MQTT broker. Check the host, port and credentials.",
+      "publish_failed": "Could not send the command to the bridge.",
+      "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead"
     },
     "abort": {
       "already_configured": "Already set up.",

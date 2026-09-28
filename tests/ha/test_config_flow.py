@@ -25,8 +25,10 @@ from custom_components.rustuya.const import (
 @pytest.fixture(autouse=True)
 def _no_real_setup():
     """A completed flow's `async_create_entry` makes Home Assistant set the entry up for real — this file is about
-    the flow's own state machine, not a live MQTT connection (that belongs to test_init.py)."""
-    with patch("custom_components.rustuya.async_setup_entry", return_value=True):
+    the flow's own state machine, not a live MQTT connection (that belongs to test_init.py). The external step's
+    bridge check is taken as passing for the same reason (test_bridge_probe.py runs it against a real broker)."""
+    with (patch("custom_components.rustuya.async_setup_entry", return_value=True),
+          patch("custom_components.rustuya.config_flow._probe_bridge", return_value=None)):
         yield
 
 
@@ -94,6 +96,22 @@ async def test_skipping_onboarding_goes_straight_to_il_and_creates_the_entry(has
     assert r["type"] == "create_entry"
     assert r["data"][CONF_DEVICES_PATH] == devices_path and r["data"][CONF_BRIDGE_ROOT] == "rustuya"
     assert r["options"] == {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True}
+
+
+@pytest.mark.parametrize("error", ["cannot_connect", "bridge_not_found"])
+async def test_an_external_bridge_that_is_not_there_keeps_the_form_open(hass, error):
+    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p",
+             "bridge_root": "rb"}
+    result = await _start(hass)
+    r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
+    with patch("custom_components.rustuya.config_flow._probe_bridge", return_value=error):
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], typed)
+    assert r["type"] == "form" and r["step_id"] == "external" and r["errors"] == {"base": error}
+    # what was typed is kept on the re-shown form
+    defaults = {str(k): k.default() for k in r["data_schema"].schema}
+    assert defaults == typed
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], typed)     # the bridge is up now
+    assert r["step_id"] == "devices"
 
 
 async def test_embedded_mode_without_pyrustuyabridge_shows_an_error(hass, monkeypatch):
