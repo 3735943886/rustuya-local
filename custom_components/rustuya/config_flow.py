@@ -391,10 +391,14 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
         return self.async_abort(reason=reason, description_placeholders={"url": f"/{PANEL_URL}"})
 
     async def async_step_panel_show(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Turn the panel on now (the entry reloads and registers it) and hand over its link. The other options
+        """Add the panel now (a panel-only change: no restart) and hand over its link. The other options
         (hazardous control, unused data points, the pack) are in its Options card."""
+        from . import panel
+
         entry = self.config_entry
         self.hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_PANEL: True})
+        if entry.state is config_entries.ConfigEntryState.LOADED:
+            await panel.async_setup(self.hass, entry)   # in the sidebar before the link shows (the listener: no-op)
         return self._panel_link("panel_shown")
 
     async def async_step_panel_open(self, user_input: dict[str, Any] | None = None) -> FlowResult:

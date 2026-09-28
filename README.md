@@ -72,8 +72,8 @@ into the directory at start and daily, as `00_pack_*` files that your own files 
 false` (daemon), the Rustuya panel's *Options* (integration), or the plugin tab. The pack only replaces or removes the files it
 put there, and leaves a file alone once you edit it.
 
-In Home Assistant the files can be edited from a sidebar panel: the integration's *Configure* → *Show the Rustuya
-panel* turns it on and links to it. The panel is for administrators. It fetches the device list from Tuya Cloud, shows the
+In Home Assistant the files can be edited from a sidebar panel: the integration's *Configure* → *Add the Rustuya
+panel to the sidebar* adds it and links to it. The panel is for administrators. It fetches the device list from Tuya Cloud, shows the
 bridge's devices against the cloud list as rustuya-manager does (missing, orphan, mismatch, synced, each a filter you can
 turn off; sub-devices under their gateway; each device's bridge connection, live while the panel is open) with add /
 update / remove, lists the converter files with the pack's

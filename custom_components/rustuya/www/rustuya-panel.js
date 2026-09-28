@@ -592,16 +592,16 @@ class OptionsSection {
       return;
     }
     this.save.disabled = true;
+    this.panel._toast("Saving; Rustuya is restarting…");
     try {
-      await this.panel._api("PUT", "options", changed);
+      await this.panel._api("PUT", "options", changed);     // answered once the restart is over
     } catch (e) {
       this.panel._toast(`Not saved: ${message(e)}`);
       this.updateSave();
       return;
     }
     this.current = { ...this.current, ...changed };      // saved: nothing left to warn about
-    this.panel._toast("Saved; Rustuya is restarting");
-    setTimeout(() => location.reload(), 4000);          // the restart takes the panel away and puts it back
+    location.reload();                                    // onto the restarted integration
   }
 }
 
@@ -664,8 +664,9 @@ class SettingsSection {
     }
     if (!confirm(`Save ${Object.keys(changed).join(", ")} and restart Rustuya?`)) return;
     this.save.disabled = true;
+    this.panel._toast("Saving; Rustuya is restarting…");
     try {
-      const r = await this.panel._api("PUT", "settings", changed);
+      const r = await this.panel._api("PUT", "settings", changed);     // answered once the restart is over
       if (!r.restarting) {
         this.panel._toast("Nothing changed");
         this.updateSave();
@@ -677,9 +678,7 @@ class SettingsSection {
       return;
     }
     this.current = { ...this.current, ...changed };      // saved: nothing left to warn about
-    this.panel._toast("Saved; Rustuya is restarting");
-    // the restart takes the panel away and puts it back: reload the page once it is back
-    setTimeout(() => location.reload(), 4000);
+    location.reload();                                    // onto the restarted integration
   }
 }
 
@@ -752,7 +751,7 @@ class RustuyaPanel extends HTMLElement {
     this.shadowRoot.replaceChildren(
       el("style", {}, STYLE),
       el("div", { class: "toolbar" }, this._menu, el("span", {}, "Rustuya"), el("span", { class: "spacer" }),
-        el("button", { title: "Remove this panel from the sidebar; Configure -> Show the Rustuya panel brings it back",
+        el("button", { title: "Remove this panel from the sidebar; the integration's Configure adds it back",
                        onclick: () => this._hide() }, "Hide panel")),
       el("div", { class: "content" },
         this._bridge.root,
@@ -858,8 +857,8 @@ class RustuyaPanel extends HTMLElement {
 
   async _hide() {
     const unsaved = [["Options", this._options], ["Settings", this._settings]].filter(([, x]) => x.dirty()).map(([n]) => n);
-    const lost = unsaved.length ? `Unsaved changes in ${unsaved.join(" and ")} will be lost.\n\n` : "";
-    if (!confirm(`${lost}Remove the Rustuya panel from the sidebar? Turn it back on in the integration's Configure -> Show the Rustuya panel.`)) return;
+    // asked only when something would be lost; otherwise it just goes (Configure adds it back)
+    if (unsaved.length && !confirm(`Unsaved changes in ${unsaved.join(" and ")} will be lost. Remove the Rustuya panel from the sidebar anyway?`)) return;
     try {
       await this._api("DELETE", "panel");
     } catch (e) {

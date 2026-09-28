@@ -65,7 +65,10 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
                      CloudView):
             hass.http.register_view(view())
         websocket_api.async_register_command(hass, ws_subscribe_links)
-    if entry.options.get(CONF_PANEL, False) and PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
+    if not entry.options.get(CONF_PANEL, False):
+        async_remove(hass)
+        return
+    if PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
         version = (await async_get_integration(hass, DOMAIN)).version     # a new release is not served from cache
         await panel_custom.async_register_panel(
             hass, frontend_url_path=PANEL_URL, webcomponent_name="rustuya-panel",
@@ -161,7 +164,7 @@ class ConverterView(_View):
 
 class PanelView(_View):
     """DELETE: turn the panel off from the panel itself (the `panel` option; the entry reloads and takes it away).
-    It comes back on from the integration's Configure -> Show the Rustuya panel."""
+    The integration's Configure adds it back."""
 
     url = "/api/rustuya/panel"
     name = "api:rustuya:panel"
@@ -207,7 +210,7 @@ class OptionsView(_View):
         options = {**entry.options, **body}
         if options == dict(entry.options):
             return self.json({"restarting": False})
-        request.app["hass"].config_entries.async_update_entry(entry, options=options)      # the entry reloads
+        await _restart(request.app["hass"], entry, options=options)        # answered once it has restarted
         return self.json({"restarting": True})
 
 
@@ -281,7 +284,7 @@ class SettingsView(_View):
                 return self.json_message(
                     f"no rustuya-bridge answers on {new[CONF_BRIDGE_ROOT]}" if error == "bridge_not_found"
                     else "cannot connect to the broker", HTTPStatus.BAD_REQUEST)
-        hass.async_create_task(_apply(hass, entry, old, {**old, **new}))
+        await _apply(hass, entry, old, {**old, **new})                       # answered once it has restarted
         return self.json({"restarting": True})
 
 
@@ -292,10 +295,23 @@ async def _apply(hass: HomeAssistant, entry: Any, old: dict[str, Any], data: dic
 
     il_moved = (old.get(CONF_IL_PREFIX), old.get(CONF_IL_SOURCE)) != (data[CONF_IL_PREFIX], data[CONF_IL_SOURCE])
     bridge_moved = old.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED and old[CONF_BRIDGE_ROOT] != data[CONF_BRIDGE_ROOT]
+    async def clear() -> None:
+        if il_moved or bridge_moved:
+            await async_clear_retained(hass, old, il=il_moved, bridge=bridge_moved)
+
+    await _restart(hass, entry, data=data, between=clear)
+
+
+async def _restart(hass: HomeAssistant, entry: Any, *, data: dict[str, Any] | None = None,
+                   options: dict[str, Any] | None = None, between: Callable[[], Any] | None = None) -> None:
+    """Stop the entry, run `between`, store the new data / options, start it again — all awaited, so the panel's save
+    answers once the restart is over (the page then reloads onto the restarted entry, not onto one about to go).
+    Stopped, the entry has no update listener, so storing does not start a second reload."""
     await hass.config_entries.async_unload(entry.entry_id)
-    if il_moved or bridge_moved:
-        await async_clear_retained(hass, old, il=il_moved, bridge=bridge_moved)
-    hass.config_entries.async_update_entry(entry, data=data)
+    if between is not None:
+        await between()
+    changes = {k: v for k, v in (("data", data), ("options", options)) if v is not None}
+    hass.config_entries.async_update_entry(entry, **changes)
     await hass.config_entries.async_setup(entry.entry_id)
 
 

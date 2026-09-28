@@ -43,6 +43,7 @@ class FakeHub:
 @dataclass
 class FakeRuntime:
     service: FakeService
+    embedded_bridge: Any = None
 
 
 @pytest.fixture
@@ -393,8 +394,13 @@ async def test_apply_clears_the_old_topics_between_stop_and_start(hass, monkeypa
     assert calls == expected
 
 
-async def test_the_options_other_than_the_panel_are_in_the_panel(hass, loaded, hass_client):
+async def test_the_options_other_than_the_panel_are_in_the_panel(hass, loaded, hass_client, monkeypatch):
     entry, _ = await loaded({CONF_PANEL: True, CONF_PACK: False})
+
+    async def restart(_hass, e, *, data=None, options=None, between=None):      # stored, as the restart would
+        _hass.config_entries.async_update_entry(e, options=options)
+
+    monkeypatch.setattr(panel, "_restart", restart)
     c = await hass_client()
     r = await c.get("/api/rustuya/options")
     assert await r.json() == {"allow_hazardous": False, "expose_unused": False, "pack": False}
@@ -474,3 +480,66 @@ async def test_a_panel_fetch_can_be_cancelled_and_ends_when_nothing_polls(hass, 
     await asyncio.sleep(1.2)                                                     # the page went away
     assert manager.closed
     assert (await (await c.get("/api/rustuya/cloud")).json())["state"] == "cancelled"
+
+
+
+async def test_restart_stops_stores_and_starts_in_order(hass, monkeypatch):
+    entry = MockConfigEntry(domain=DOMAIN, data={"a": 1}, options={"x": 1})
+    entry.add_to_hass(hass)
+    calls = []
+
+    async def unload(entry_id):
+        calls.append("unload")
+        return True
+
+    async def setup(entry_id):
+        calls.append(("setup", dict(entry.data), dict(entry.options)))
+        return True
+
+    async def between():
+        calls.append("between")
+
+    monkeypatch.setattr(hass.config_entries, "async_unload", unload)
+    monkeypatch.setattr(hass.config_entries, "async_setup", setup)
+    await panel._restart(hass, entry, options={"x": 2}, between=between)
+    assert calls == ["unload", "between", ("setup", {"a": 1}, {"x": 2})]
+
+
+async def test_a_panel_only_change_adds_or_removes_it_without_a_restart(hass, monkeypatch):
+    import custom_components.rustuya as integration
+
+    entry = MockConfigEntry(domain=DOMAIN, options={CONF_PANEL: False, CONF_PACK: True})
+    entry.add_to_hass(hass)
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = integration.RuntimeData(
+        service=FakeService(), embedded_bridge=None, options=dict(entry.options))
+    panel_calls, reloads = [], []
+
+    async def panel_setup(_hass, e):
+        panel_calls.append(e.options.get(CONF_PANEL))
+
+    monkeypatch.setattr(panel, "async_setup", panel_setup)
+    monkeypatch.setattr(hass.config_entries, "async_reload", lambda entry_id: reloads.append(entry_id) or _done())
+    hass.config_entries.async_update_entry(entry, options={CONF_PANEL: True, CONF_PACK: True})
+    await integration._async_reload(hass, entry)
+    assert panel_calls == [True] and reloads == []
+    hass.config_entries.async_update_entry(entry, options={CONF_PANEL: True, CONF_PACK: False})
+    await integration._async_reload(hass, entry)
+    assert reloads == [entry.entry_id]
+
+
+async def _done():
+    return True
+
+
+@pytest.mark.parametrize(("disabled", "kept"), [(False, True), (True, False)])
+async def test_a_reload_keeps_the_panel_and_disabling_removes_it(hass, loaded, disabled, kept):
+    from homeassistant.config_entries import ConfigEntryDisabler
+
+    import custom_components.rustuya as integration
+
+    entry, _ = await loaded({CONF_PANEL: True})
+    assert panel.PANEL_URL in hass.data[frontend.DATA_PANELS]
+    if disabled:
+        entry.disabled_by = ConfigEntryDisabler.USER
+    await integration.async_unload_entry(hass, entry)
+    assert (panel.PANEL_URL in hass.data.get(frontend.DATA_PANELS, {})) is kept

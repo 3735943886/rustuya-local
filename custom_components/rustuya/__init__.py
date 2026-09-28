@@ -33,6 +33,7 @@ from .const import (
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
     CONF_PACK,
+    CONF_PANEL,
     CONVERTERS_DIR,
     CREDS_FILE,
     DEFAULT_BRIDGE_STATE_FILE,
@@ -50,6 +51,7 @@ _LOGGER = logging.getLogger(__name__)
 class RuntimeData:
     service: Any
     embedded_bridge: Any | None
+    options: dict[str, Any] | None = None       # what the service started with (a panel-only change needs no restart)
 
 
 def _import_runtime() -> None:
@@ -103,7 +105,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await embedded_bridge.stop()
         raise
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = RuntimeData(service=service, embedded_bridge=embedded_bridge)
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = RuntimeData(service=service, embedded_bridge=embedded_bridge,
+                                                                   options=dict(options))
     from . import panel
 
     await panel.async_setup(hass, entry)
@@ -176,13 +179,29 @@ async def async_refresh_devices(hass: HomeAssistant, entry: ConfigEntry) -> None
 
 
 async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """An options change restarts the service, except one of the panel alone: that only adds or removes the panel."""
+    from . import panel
+
+    runtime: RuntimeData | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    new = dict(entry.options)
+    if runtime is not None and runtime.options is not None and _without_panel(new) == _without_panel(runtime.options):
+        runtime.options = new
+        await panel.async_setup(hass, entry)            # adds it, or removes it when the option is off
+        return
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+def _without_panel(options: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in options.items() if k != CONF_PANEL}
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from . import panel
 
-    panel.async_remove(hass)
+    # a restart (a reload) keeps the panel in the sidebar: taking it away closes it for whoever has it open, and the
+    # setup that follows puts it back anyway; only disabling the entry (or deleting it, below) removes it
+    if entry.disabled_by is not None:
+        panel.async_remove(hass)
     runtime: RuntimeData = hass.data[DOMAIN].pop(entry.entry_id)
     await runtime.service.stop()
     if runtime.embedded_bridge:
@@ -197,6 +216,9 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     storage directory (the device list and the Tuya login). A path the user pointed elsewhere is left alone, as is
     everything on an external bridge. A broker that cannot be reached only leaves the retained topics behind; the
     removal goes on."""
+    from . import panel
+
+    panel.async_remove(hass)
     data = entry.data
     embedded = data.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED
     await async_clear_retained(hass, data, il=True, bridge=embedded)
