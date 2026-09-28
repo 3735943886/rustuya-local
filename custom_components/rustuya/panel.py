@@ -11,13 +11,16 @@ every view is for administrators only.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import secrets
 from collections.abc import Callable
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
+import voluptuous as vol
 from aiohttp import web
-from homeassistant.components import frontend, panel_custom
+from homeassistant.components import frontend, panel_custom, websocket_api
 from homeassistant.components.http import HomeAssistantView, StaticPathConfig
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -50,6 +53,7 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
             [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)])
         for view in (ConvertersView, ConverterView, PackView, BridgeView):
             hass.http.register_view(view())
+        websocket_api.async_register_command(hass, ws_subscribe_links)
     if entry.options.get(CONF_PANEL, False) and PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
         version = (await async_get_integration(hass, DOMAIN)).version     # a new release is not served from cache
         await panel_custom.async_register_panel(
@@ -225,3 +229,48 @@ class BridgeView(_View):
             return self.json_message(f"could not send the command to the bridge: {e}", HTTPStatus.BAD_GATEWAY)
         finally:
             await manager_session.close_manager(manager)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): "rustuya/subscribe_links"})
+@websocket_api.async_response
+async def ws_subscribe_links(hass: HomeAssistant, connection: websocket_api.ActiveConnection,
+                             msg: dict[str, Any]) -> None:
+    """Every device's bridge connection, live, for as long as the panel is open: its own MQTT connection listening
+    to the bridge's messages (`LinkWatcher`, topics resolved the way `BridgeClient` does), closed when the panel
+    unsubscribes or its websocket goes. Events are `{"links": {id: {"online", "code", "message"}}}`: all of them
+    first, then each change."""
+    from tuya2ildevice.host import MqttTransport
+
+    from rustuya_local.bridge_client import LinkWatcher
+
+    found = _runtime(hass)
+    if found is None:
+        connection.send_error(msg["id"], "not_found", "the Rustuya panel is off")
+        return
+    data = found[0].data
+    transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
+                              client_id=f"rustuya-panel-{secrets.token_hex(4)}",
+                              username=data.get(CONF_BROKER_USERNAME) or None,
+                              password=data.get(CONF_BROKER_PASSWORD) or None)
+    watcher = LinkWatcher(transport, data[CONF_BRIDGE_ROOT])
+    try:
+        await transport.connect()
+        await watcher.start()
+    except Exception as e:  # noqa: BLE001 -- broker down, refused credentials: the panel keeps the service's view
+        with contextlib.suppress(Exception):
+            await transport.close()
+        connection.send_error(msg["id"], "cannot_connect", f"cannot reach the broker: {e}")
+        return
+
+    def send(links: dict[str, Any]) -> None:
+        connection.send_message(websocket_api.event_message(msg["id"], {"links": links}))
+
+    def close() -> None:
+        watcher.stop()
+        hass.async_create_task(transport.close())
+
+    connection.subscriptions[msg["id"]] = close
+    connection.send_result(msg["id"])
+    send(dict(watcher.links))                     # what the retained messages said so far; later ones come as changes
+    watcher.on_change = lambda device_id, link: send({device_id: link})

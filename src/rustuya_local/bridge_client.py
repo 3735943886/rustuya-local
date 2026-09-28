@@ -63,6 +63,20 @@ class BridgeTemplates:
     payload: str
 
 
+def templates_from_config(cfg: dict, root: str) -> BridgeTemplates:
+    """The bridge's topic and payload templates from its retained `bridge/config` (`{}`: the default layout), with
+    `{root}` rendered by the bridge's own parser."""
+    root = cfg.get("mqtt_root_topic") or root
+
+    def resolve(key: str, default: str) -> str:
+        return pb.render_template(cfg.get(key) or default, {"root": root})
+
+    return BridgeTemplates(root=root, event=resolve("mqtt_event_topic", DEFAULT_EVENT),
+                           message=resolve("mqtt_message_topic", DEFAULT_MESSAGE),
+                           command=resolve("mqtt_command_topic", DEFAULT_COMMAND),
+                           payload=cfg.get("mqtt_payload_template") or DEFAULT_PAYLOAD)
+
+
 class BridgeClient:
     """One per bridge connection. `runner` is set after construction (it needs `send_command` to exist first —
     see the wiring in `cli.py` / `custom_components/rustuya_local/__init__.py`)."""
@@ -159,15 +173,8 @@ class BridgeClient:
                 self._request_status()                      # a bridge >= 0.4 announces registry changes here
 
     async def _apply_templates(self, cfg: dict) -> None:
-        root = cfg.get("mqtt_root_topic") or self.root
-
-        def resolve(key: str, default: str) -> str:
-            return pb.render_template(cfg.get(key) or default, {"root": root})
-
-        templates = BridgeTemplates(root=root, event=resolve("mqtt_event_topic", DEFAULT_EVENT),
-                                    message=resolve("mqtt_message_topic", DEFAULT_MESSAGE),
-                                    command=resolve("mqtt_command_topic", DEFAULT_COMMAND),
-                                    payload=cfg.get("mqtt_payload_template") or DEFAULT_PAYLOAD)
+        templates = templates_from_config(cfg, self.root)
+        root = templates.root
         if templates == self._templates:
             self._bootstrapped.set()
             return
@@ -308,3 +315,94 @@ class BridgeClient:
         for device_id in [d for d in self._last_conn if d not in self._registered]:
             self._forget(device_id)
         self._reconcile()
+
+
+# ---- link state, for a status view ------------------------------------------------------------------------------
+
+_ERROR_ENVELOPE = frozenset({"errorCode", "errorMsg", "payloadStr", "errorPayloadObj", "payloadRaw"})
+
+
+def error_text(parsed: dict) -> str:
+    """A bridge error frame as one line, as rustuya-manager shows it: `errorMsg`, then any scalar extras
+    (`reason=ip_mismatch, configured=...`)."""
+    base = parsed.get("errorMsg") or parsed.get("payloadStr") or ""
+    extras = ", ".join(f"{k}={v}" for k, v in parsed.items()
+                       if k not in _ERROR_ENVELOPE and v is not None and not isinstance(v, (dict, list)))
+    return f"{base} ({extras})" if base and extras else str(base or extras)
+
+
+class LinkWatcher:
+    """Each device's connection as the bridge reports it, for a status view: the `errorCode` frames on the bridge's
+    message topic (retained, so every device the bridge holds answers on subscribe), and a live event as proof of
+    life, like rustuya-manager's live status. Topics come from the bridge's config through `templates_from_config`,
+    as `BridgeClient` resolves them. It only listens; `on_change(device_id, link)` gets
+    `{"online": bool, "code": int | None, "message": str}`."""
+
+    def __init__(self, transport: Transport, root: str, on_change: Any = None) -> None:
+        self.transport = transport
+        self.root = root
+        self.on_change = on_change
+        self.links: dict[str, dict[str, Any]] = {}
+        self._templates: BridgeTemplates | None = None
+        self._ready = asyncio.Event()
+        self._unsubs: list[Unsubscribe] = []
+        self._topic_unsubs: list[Unsubscribe] = []
+
+    async def start(self, timeout: float = 3.0) -> None:
+        self._unsubs.append(await self.transport.subscribe(f"{self.root}/bridge/config", self._on_config))
+        try:
+            await asyncio.wait_for(self._ready.wait(), timeout)
+        except TimeoutError:
+            await self._apply({})
+
+    def stop(self) -> None:
+        for unsub in (*self._topic_unsubs, *self._unsubs):
+            unsub()
+        self._topic_unsubs, self._unsubs = [], []
+
+    async def _on_config(self, msg: TransportMessage) -> None:
+        payload = msg.payload.decode("utf-8", "replace") if isinstance(msg.payload, bytes) else msg.payload
+        if not payload.strip():
+            return
+        try:
+            cfg = json.loads(payload)
+        except ValueError:
+            return
+        if isinstance(cfg, dict):
+            await self._apply(cfg)
+
+    async def _apply(self, cfg: dict) -> None:
+        templates = templates_from_config(cfg, self.root)
+        if templates != self._templates:
+            for unsub in self._topic_unsubs:
+                unsub()
+            self._templates = templates
+            self._topic_unsubs = [
+                await self.transport.subscribe(pb.tpl_to_wildcard(templates.message, templates.root), self._on_message),
+                await self.transport.subscribe(pb.tpl_to_wildcard(templates.event, templates.root), self._on_message)]
+        self._ready.set()
+
+    def _on_message(self, msg: TransportMessage) -> None:
+        t = self._templates
+        if t is None:
+            return
+        payload = msg.payload.decode("utf-8", "replace") if isinstance(msg.payload, bytes) else msg.payload
+        if (vars_ := pb.match_topic(msg.topic, t.message)) is not None:
+            try:
+                parsed = json.loads(payload)
+            except ValueError:
+                return
+            device_id = vars_.get("id") or (parsed.get("id") if isinstance(parsed, dict) else None)
+            if isinstance(parsed, dict) and "errorCode" in parsed and device_id and device_id != "bridge":
+                code = parsed.get("errorCode")
+                self._set(device_id, {"online": code == 0, "code": code, "message": "" if code == 0 else error_text(parsed)})
+        elif not msg.retain and (vars_ := pb.match_topic(msg.topic, t.event)) is not None and vars_.get("id"):
+            if not (self.links.get(vars_["id"]) or {}).get("online"):
+                self._set(vars_["id"], {"online": True, "code": 0, "message": ""})     # live data: it is connected
+
+    def _set(self, device_id: str, link: dict[str, Any]) -> None:
+        if self.links.get(device_id) == link:
+            return
+        self.links[device_id] = link
+        if self.on_change is not None:
+            self.on_change(device_id, link)

@@ -3,7 +3,7 @@
   "name": "Rustuya",
   "codeowners": ["@3735943886"],
   "config_flow": true,
-  "after_dependencies": ["frontend", "http", "panel_custom"],
+  "after_dependencies": ["frontend", "http", "panel_custom", "websocket_api"],
   "documentation": "https://github.com/3735943886/rustuya-local",
   "integration_type": "hub",
   "iot_class": "local_push",

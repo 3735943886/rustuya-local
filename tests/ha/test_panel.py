@@ -200,3 +200,69 @@ async def test_the_bridge_list_when_it_cannot_be_had(hass, loaded, hass_client, 
     monkeypatch.setattr(manager_session, "open_manager", down)
     r = await c.get("/api/rustuya/bridge")
     assert r.status == 502 and "no bridge status" in (await r.json())["message"]
+
+
+async def test_live_links_while_subscribed(hass, loaded, hass_ws_client, monkeypatch):
+    import json
+
+    import tuya2ildevice.host
+    from tuya2ildevice.host.memory import InProcessTransport
+
+    broker = InProcessTransport()
+    made = []
+
+    class FakeMqtt:
+        def __init__(self, host, port, **kw):
+            self.kw, self.closed = kw, False
+            made.append(self)
+
+        async def connect(self):
+            pass
+
+        async def close(self):
+            self.closed = True
+
+        def __getattr__(self, name):                   # subscribe / publish on the shared in-process broker
+            return getattr(broker, name)
+
+    monkeypatch.setattr(tuya2ildevice.host, "MqttTransport", FakeMqtt)
+    await broker.publish("rustuya/error/lamp", json.dumps({"errorCode": 0}), retain=True)
+    await loaded({CONF_PANEL: True})
+    ws = await hass_ws_client(hass)
+
+    await ws.send_json({"id": 1, "type": "rustuya/subscribe_links"})
+    assert (await ws.receive_json())["success"]
+    first = await ws.receive_json()
+    assert first["event"] == {"links": {"lamp": {"online": True, "code": 0, "message": ""}}}
+    assert made[0].kw["client_id"].startswith("rustuya-panel-")
+
+    await broker.publish("rustuya/error/lamp", json.dumps({"errorCode": 905, "errorMsg": "Timeout"}))
+    await broker.settle()
+    assert (await ws.receive_json())["event"] == {"links": {"lamp": {"online": False, "code": 905,
+                                                                      "message": "Timeout"}}}
+
+    await ws.send_json({"id": 2, "type": "unsubscribe_events", "subscription": 1})
+    assert (await ws.receive_json())["success"]
+    await hass.async_block_till_done()
+    assert made[0].closed
+
+
+async def test_live_links_refuse_when_off_or_unreachable(hass, loaded, hass_ws_client, monkeypatch):
+    import tuya2ildevice.host
+
+    class Down:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def connect(self):
+            raise OSError("connection refused")
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(tuya2ildevice.host, "MqttTransport", Down)
+    await loaded({CONF_PANEL: True})
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "rustuya/subscribe_links"})
+    r = await ws.receive_json()
+    assert not r["success"] and r["error"]["code"] == "cannot_connect"

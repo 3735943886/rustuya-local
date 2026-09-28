@@ -81,6 +81,8 @@ const STYLE = `
   .fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px 12px; margin-top: 6px; font-size: 12px; }
   :host([narrow]) .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fields .wide { grid-column: span 2; }
+  .fields .full { grid-column: 1 / -1; }
+  .dev .err { margin-top: 2px; font-size: 11px; color: var(--error-color, #db4437); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fields b { font-weight: 400; color: var(--secondary-text-color); margin-right: 4px; }
   .fields span { font-family: var(--code-font-family, ui-monospace, monospace); word-break: break-all; }
   .reasons { margin-top: 6px; font-size: 12px; padding: 4px 8px; border-radius: 6px; word-break: break-all;
@@ -142,7 +144,9 @@ class BridgeSection {
   constructor(panel) {
     this.panel = panel;
     this.devices = null;                                  // null until the first load
-    this.online = {};
+    this.online = {};                                     // the service's link state, with the list
+    this.links = {};                                      // live from rustuya/subscribe_links while the panel is open
+    this.unsub = null;
     const f = stored("rustuya.filters", CATEGORIES);
     this.filters = new Set(Array.isArray(f) ? f.filter((c) => CATEGORIES.includes(c)) : CATEGORIES);
     this.sort = ["id", "name", "category"].includes(stored("rustuya.sort", "id")) ? stored("rustuya.sort", "id") : "id";
@@ -183,6 +187,43 @@ class BridgeSection {
       this.refreshBtn.disabled = false;
     }
     this.paint();
+  }
+
+  // Live link state for as long as the panel is on the page: Home Assistant opens its own MQTT listener for this
+  // subscription and closes it when we unsubscribe (or the websocket goes). Without it the dots are the service's.
+  async watch() {
+    if (this.unsub || !this.panel._hass) return;
+    this.unsub = "pending";
+    let unsub;
+    try {
+      unsub = await this.panel._hass.connection.subscribeMessage((m) => {
+        Object.assign(this.links, m.links || {});
+        this.paintSoon();
+      }, { type: "rustuya/subscribe_links" });
+    } catch (e) {
+      this.unsub = null;
+      return;
+    }
+    if (this.unsub === "pending") this.unsub = unsub;
+    else unsub();                                         // unwatched while subscribing
+  }
+
+  unwatch() {
+    if (typeof this.unsub === "function") this.unsub();
+    this.unsub = null;
+    this.links = {};
+  }
+
+  paintSoon() {
+    if (this.painting) return;
+    this.painting = true;
+    requestAnimationFrame(() => { this.painting = false; this.paint(); });
+  }
+
+  link(id) {
+    if (id in this.links) return this.links[id];
+    if (id in this.online) return { online: this.online[id], code: null, message: "" };
+    return null;
   }
 
   count(cat) {
@@ -283,8 +324,9 @@ class BridgeSection {
   card(d, child) {
     const s = d.cloud || d.bridge;
     const name = s.name && s.name !== "N/A" ? s.name : d.id;
-    // the running service's link state; none for a device it does not follow (missing, orphan)
-    const live = d.id in this.online ? (this.online[d.id] ? "online" : "offline") : null;
+    // the bridge's word on the connection (live while the panel is open, else the service's); none for a missing one
+    const ln = d.category === "missing" ? null : this.link(d.id);
+    const live = ln ? (ln.online ? "online" : "offline") : null;
     const acts = el("span", { class: "acts" },
       live ? el("span", { class: `dot ${live}`, title: live === "online" ? "Connected to the bridge" : "Not connected to the bridge" }) : "",
       el("span", { class: `pill cat-${d.category}` }, d.category));
@@ -297,14 +339,18 @@ class BridgeSection {
       onclick: () => { this.expanded.has(d.id) ? this.expanded.delete(d.id) : this.expanded.add(d.id); this.paint(); } },
       el("div", { class: "top" }, child ? el("span", { class: "tree" }, "└") : "", el("span", { class: "name" }, name), acts),
       name !== d.id ? el("div", { class: "id" }, d.id) : "");
-    if (!this.expanded.has(d.id)) return card;
+    const open = this.expanded.has(d.id);
+    // a synced card has no other sign of trouble, so its error shows collapsed too (as in rustuya-manager)
+    if (!open && d.category === "synced" && live === "offline" && ln.message) card.append(el("div", { class: "err", title: ln.message }, `⚠ ${ln.message}`));
+    if (!open) return card;
     // the bridge's value is what it runs with; the cloud's where the bridge does not have the device
     const b = d.bridge || {}, c = d.cloud || {};
     const pick = (k) => (b[k] && b[k] !== "Auto" ? b[k] : c[k] || b[k]) || "—";
     const field = (label, value, wide) => el("div", { class: wide ? "wide" : "" }, el("b", {}, label), el("span", {}, value));
     card.append(el("div", { class: "fields" }, ...(s.type === "SubDevice"
       ? [field("CID", s.cid || "—", true), field("PARENT", s.parent_id || "—", true)]
-      : [field("IP", pick("ip")), field("VER", pick("version")), field("KEY", s.key || "—", true)])));
+      : [field("IP", pick("ip")), field("VER", pick("version")), field("KEY", s.key || "—", true),
+         ...(ln && ln.message ? [el("div", { class: "full" }, el("b", {}, "MSG"), el("span", {}, ln.code != null ? `${ln.message} (${ln.code})` : ln.message))] : [])])));
     if (d.reasons.length) card.append(el("div", { class: "reasons" }, ...d.reasons.flatMap((r, i) => i ? [el("br"), r] : [r])));
     return card;
   }
@@ -373,7 +419,16 @@ class RustuyaPanel extends HTMLElement {
       this._build();
       this._refresh();
       this._bridge.load();
+      if (this.isConnected) this._bridge.watch();
     }
+  }
+
+  connectedCallback() {
+    if (this._bridge) this._bridge.watch();
+  }
+
+  disconnectedCallback() {
+    if (this._bridge) this._bridge.unwatch();
   }
 
   set narrow(narrow) {
