@@ -208,3 +208,37 @@ async def test_commands_take_the_command_templates_form():
     assert sent[1][0] == "rustuya/command/set/eb1/-"
     assert json.loads(sent[1][1]) == {"action": "set", "id": "eb1", "dps": {"21": "colour", "24": "000003e803e8"}}
     assert sent[2][0] == "rustuya/command/get/eb1/-" and json.loads(sent[2][1]) == {"action": "get", "id": "eb1"}
+
+
+async def test_a_restart_republishes_devices_as_they_were_without_a_flap():
+    """What a restarting producer hears first is the bridge's retained topics: the link state and, with a `{dp}` in the
+    event topic, one retained message per dp. All of it is handed over with the device, so the first thing IL sees
+    of it is `available: true` and every value — never `available: false` in between (an il consumer's automation
+    reads that as the device going away and coming back). A sub-device has only its snapshot, and gets no `get`."""
+    bridge, il = InProcessTransport(), InProcessTransport()
+    await bridge.publish("rustuya/bridge/config", json.dumps({
+        "mqtt_root_topic": "rustuya", "mqtt_command_topic": "{root}/command/{action}/{id}/{dp}",
+        "mqtt_event_topic": "{root}/event/{type}/{id}/{dp}", "mqtt_message_topic": "{root}/{level}/{id}"}), 0, True)
+    await bridge.publish("rustuya/error/a", '{"errorCode":0,"errorMsg":"Connection Successful"}', 0, True)
+    for dp, value in (("20", "true"), ("22", "1000"), ("23", "0")):
+        await bridge.publish(f"rustuya/event/state/a/{dp}", value, 0, True)
+        await bridge.publish(f"rustuya/event/state/sub/{dp}", value, 0, True)
+    hub = Hub([], il=IlTopics("il", "tuya"))
+    bridge_client = BridgeClient(bridge, "rustuya")
+    runner = Runner(hub, il, on_bridge_command=bridge_client.send_command)
+    bridge_client.runner = runner
+    await runner.start()
+    await bridge_client.start(timeout=1)
+    await settle(runner, bridge_client, bridge, il)
+    bridge_client.sync_devices([lamp("a"), lamp("sub")])
+    await reply(bridge, status_reply(["a", "sub"]))
+    await settle(runner, bridge_client, bridge, il)
+    try:
+        for device in ("a", "sub"):
+            assert [p for t, p, *_ in il.published if t == f"il/{device}/available"] == ["true"]
+            assert il.retained[f"il/{device}/brightness"].payload == "100"
+            assert il.retained[f"il/{device}/switch_led"].payload == "true"
+        gets = [t for t, *_ in bridge.published if t.startswith("rustuya/command/get/")]
+        assert gets == ["rustuya/command/get/a/-"]
+    finally:
+        await runner.stop()

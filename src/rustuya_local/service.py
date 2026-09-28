@@ -123,9 +123,13 @@ class Service:
         "failed"}`; None before the first."""
         self._pack_now = asyncio.Event()
         self._pack_running = False
+        self._offline = True                       # what the stop does with the presence (`stop(offline=...)`)
 
-    async def start(self) -> None:
+    async def start(self, resume: bool = False) -> None:
+        """`resume`: this follows a `stop(offline=False)` of the same producer (a restart), so a presence left `online`
+        that nobody answers is expected, not a stale Last Will to warn about."""
         s = self.settings
+        self._offline = True
         # tuya2ildevice reads its data files on first use; here, not in the event loop when the first device arrives
         await asyncio.to_thread(preload)
         async with contextlib.AsyncExitStack() as stack:
@@ -147,16 +151,18 @@ class Service:
             will = self.hub.presence(False)
             self.il = await self._connect_il((will.topic, will.payload, will.qos, will.retain))
             _close_later(stack, self.il)
-            # runs after the runner's stop (registered later, so run earlier): its `offline` reaches the broker first
+            # these run after the runner's stop (registered later, so run earlier): `offline` (unless a restart keeps
+            # the presence), then the flush that makes sure it reached the broker
             stack.push_async_callback(self._flush_il, f"{will.topic}/flush")
+            stack.push_async_callback(self._say_offline, will.topic)
 
-            await self._refuse_if_another_producer(will.topic)
+            await self._refuse_if_another_producer(will.topic, resume)
             self.runner = Runner(self.hub, self.il, on_bridge_command=self.bridge_client.send_command)
             self.bridge_client.runner = self.runner
             if self.override_watcher is not None:
                 self.override_watcher.runner = self.runner
             await self.runner.start()
-            stack.push_async_callback(self.runner.stop)
+            stack.push_async_callback(self.runner.stop, False)             # the presence is `_say_offline`'s
             await self.bridge_client.start()
             self.bridge_client.sync_devices(s.devices)
 
@@ -174,12 +180,15 @@ class Service:
             self._stack = stack.pop_all()
         _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s", len(s.devices), s.root)
 
-    async def _refuse_if_another_producer(self, presence_topic: str) -> None:
+    async def _refuse_if_another_producer(self, presence_topic: str, resume: bool = False) -> None:
         running = await producer_running(self.il, presence_topic)
         if running:
+            self._offline = False                   # the presence is the other producer's: leave it as it is
             raise AnotherProducer(f"another producer (the Home Assistant integration, the rustuya-manager plugin or a "
                                   f"daemon) is running for {presence_topic}; stop it, or give this one another IL source")
-        if running is None:
+        if running is None and resume:
+            _LOGGER.debug("%s still online from before the restart", presence_topic)
+        elif running is None:
             _LOGGER.warning("%s says online but no producer answers (a stale Last Will, or one on tuya2ildevice before "
                             "0.3.5): starting; if an older producer does run, stop it", presence_topic)
 
@@ -212,14 +221,26 @@ class Service:
         self._pack_now.set()
         return True
 
-    async def stop(self) -> None:
-        """Presence goes offline, pending bridge commands are sent, then both transports close. Idempotent."""
+    async def stop(self, offline: bool = True) -> None:
+        """Presence goes offline, pending bridge commands are sent, then both transports close. Idempotent.
+        `offline=False` is for a restart (`start(resume=True)` follows at once): the presence stays `online` and the
+        connection closes cleanly (no Last Will), so il consumers see no gap — every device staying available, where
+        going `unavailable` and back fires whatever follows their state (an event entity looks pressed again)."""
         stack, self._stack = self._stack, None
         if stack is None:
             return
+        self._offline = offline
         if self.bridge_client is not None:
             await self.bridge_client.drain()
         await stack.aclose()
+
+    async def _say_offline(self, topic: str) -> None:
+        if not self._offline:
+            return
+        try:
+            await self.il.publish(topic, "offline", 1, True)
+        except Exception as e:  # noqa: BLE001 -- a connection already gone: its Last Will says it
+            _LOGGER.debug("could not publish offline: %r", e)
 
     async def _flush_il(self, topic: str) -> None:
         try:

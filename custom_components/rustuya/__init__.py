@@ -63,6 +63,20 @@ class RuntimeData:
     service: Any
     embedded_bridge: Any | None
     options: dict[str, Any] | None = None       # what the service started with (a panel-only change needs no restart)
+    restarting: bool = False                    # the unload is a restart: the IL presence stays online across it
+
+
+RESUME = f"{DOMAIN}_resume"                     # hass.data: the next setup follows a restart that kept the presence
+
+
+def mark_restart(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """The coming unload is a restart onto the same broker and IL prefix / source (an options change): the service
+    stops without going offline and the next one resumes, so il consumers see every device stay available. Going
+    `unavailable` and back is a state change to them, and an automation that follows an event entity's state takes
+    it for a press."""
+    runtime: RuntimeData | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if runtime is not None:
+        runtime.restarting = True
 
 
 def _import_runtime() -> None:
@@ -147,7 +161,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                          "expose_unused": options.get(CONF_EXPOSE_UNUSED, False)})
         service = Service(settings, connect_bridge=lambda: connect("bridge"), connect_il=lambda will: connect("il", will))
         try:
-            await service.start()      # releases whatever it had connected if it fails
+            # releases whatever it had connected if it fails
+            await service.start(resume=hass.data.pop(RESUME, False))
         except AnotherProducer as e:   # retried by Home Assistant until the other one stops
             raise ConfigEntryNotReady(str(e)) from e
     except BaseException:
@@ -238,6 +253,7 @@ async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
         runtime.options = new
         await panel.async_setup(hass, entry)            # adds it, or removes it when the option is off
         return
+    mark_restart(hass, entry)
     await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -253,7 +269,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.disabled_by is not None:
         panel.async_remove(hass)
     runtime: RuntimeData = hass.data[DOMAIN].pop(entry.entry_id)
-    await runtime.service.stop()
+    restarting = getattr(runtime, "restarting", False) and entry.disabled_by is None
+    await runtime.service.stop(offline=not restarting)
+    if restarting:
+        hass.data[RESUME] = True
     if runtime.embedded_bridge:
         await runtime.embedded_bridge.stop()
     return True

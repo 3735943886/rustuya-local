@@ -306,7 +306,12 @@ async def _restart(hass: HomeAssistant, entry: Any, *, data: dict[str, Any] | No
                    options: dict[str, Any] | None = None, between: Callable[[], Any] | None = None) -> None:
     """Stop the entry, run `between`, store the new data / options, start it again — all awaited, so the panel's save
     answers once the restart is over (the page then reloads onto the restarted entry, not onto one about to go).
-    Stopped, the entry has no update listener, so storing does not start a second reload."""
+    Stopped, the entry has no update listener, so storing does not start a second reload. An options-only restart
+    keeps the IL presence online across it (`mark_restart`); new data may move the broker or the IL topics."""
+    if data is None:
+        from . import mark_restart
+
+        mark_restart(hass, entry)
     await hass.config_entries.async_unload(entry.entry_id)
     if between is not None:
         await between()

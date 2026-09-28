@@ -35,6 +35,7 @@ class Watcher:
 
     def __init__(self, port: int, registered: tuple[str, ...] = ()) -> None:
         self.last: dict[str, str] = {}
+        self.log: list[tuple[str, str]] = []             # every message, in order
         self.registered = list(registered)               # the devices the stand-in bridge "holds"
         self._c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="watcher")
         self._c.on_message = self._on_message
@@ -46,6 +47,7 @@ class Watcher:
     def _on_message(self, _c, _u, m) -> None:
         payload = m.payload.decode()
         self.last[m.topic] = payload
+        self.log.append((m.topic, payload))
         if m.topic == "rustuya/command" and payload and json.loads(payload).get("action") == "status":
             self._c.publish("rustuya/response/bridge", status_reply(self.registered), qos=1)
 
@@ -368,6 +370,48 @@ async def test_send_command_writes_a_raw_dp_and_refuses_a_lock(hass, broker, tmp
 
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
+    finally:
+        for topic in list(watcher.last):
+            watcher.publish(topic, "", retain=True)
+        await asyncio.sleep(0.1)
+        watcher.close()
+
+
+async def test_an_options_change_restarts_without_the_devices_going_away(hass, broker, tmp_path, socket_enabled):
+    """Changing an option restarts the service, but IL consumers see no gap: the presence stays `online` and no device
+    says `available: false` (an event entity coming back from `unavailable` looks pressed to an automation that
+    follows its state). Unloading for real still goes offline."""
+    devices_path = tmp_path / "tuyadevices.json"
+    devices_path.write_text(json.dumps([lamp("lamp1")]))
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
+        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
+        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
+    entry.add_to_hass(hass)
+    watcher = Watcher(broker, registered=("lamp1",))
+    try:
+        watcher.publish("rustuya/error/lamp1", '{"errorCode":0,"errorMsg":"Connection Successful"}', retain=True)
+        watcher.publish("rustuya/event/state/lamp1", '{"20":true,"22":1000,"23":0}', retain=True)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await until(lambda: watcher.last.get("il/lamp1/brightness") == "100")
+        await until(lambda: watcher.last.get("il/lamp1/available") == "true")
+        runtime = hass.data[DOMAIN][entry.entry_id]
+        watcher.log.clear()
+
+        hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_EXPOSE_UNUSED: True})
+        await hass.async_block_till_done()
+        await until(lambda: hass.data[DOMAIN].get(entry.entry_id) not in (None, runtime))
+        await until(lambda: any(t == "rustuya/command" for t, _ in watcher.log))          # the new one asked the bridge
+        await asyncio.sleep(1)
+        assert ("il/_producer/tuya", "offline") not in watcher.log
+        assert ("il/lamp1/available", "false") not in watcher.log
+        assert watcher.last["il/_producer/tuya"] == "online"
+
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await until(lambda: watcher.last.get("il/_producer/tuya") == "offline")
     finally:
         for topic in list(watcher.last):
             watcher.publish(topic, "", retain=True)

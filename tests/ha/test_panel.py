@@ -22,7 +22,7 @@ class FakeService:
     pack_on: bool = True
     hub: Any = None
 
-    async def stop(self) -> None:
+    async def stop(self, offline: bool = True) -> None:
         pass
 
     def sync_pack_now(self) -> bool:

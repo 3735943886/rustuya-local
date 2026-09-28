@@ -190,3 +190,32 @@ async def test_the_override_pack_is_synced_in_the_background(tmp_path, monkeypat
         await __import__("asyncio").sleep(0.02)
     assert "error" in service.pack_status and (conv / "00_pack_lamp.json").is_file()
     await service.stop()
+
+
+async def test_a_restart_keeps_the_presence_and_every_device_available(tmp_path, monkeypatch):
+    """`stop(offline=False)` then `start(resume=True)` (an options change in Home Assistant): the presence never says
+    `offline` and no device says `available: false`, so nothing downstream sees them go away and come back."""
+    t = Transports()
+    await _answer_status(t.bridge, ["lamp1"])
+    await t.bridge.publish("rustuya/error/lamp1", '{"errorCode":0,"errorMsg":"Connection Successful"}', 1, True)
+    await t.bridge.publish("rustuya/event/state/lamp1", '{"20":true,"22":1000,"23":0}', 1, True)
+    import rustuya_local.bridge_client as bc
+    orig = bc.BridgeClient.start
+    monkeypatch.setattr(bc.BridgeClient, "start", lambda self, timeout=0.05: orig(self, timeout))
+    first = _service(t, tmp_path)
+    await first.start()
+    await settle(first, t)
+    assert t.il.retained["il/lamp1/available"].payload == "true"
+    t.il.published.clear()
+
+    await first.stop(offline=False)
+    second = _service(t, tmp_path)
+    await second.start(resume=True)
+    await settle(second, t)
+    try:
+        assert not [p for p in t.il.published if p[0] == "il/_producer/tuya" and p[1] == "offline"]
+        assert [p[1] for p in t.il.published if p[0] == "il/lamp1/available"] in ([], ["true"])
+        assert t.il.retained["il/lamp1/brightness"].payload == "100"
+    finally:
+        await second.stop()
+    assert t.il.retained["il/_producer/tuya"].payload == "offline"            # a real stop still goes offline

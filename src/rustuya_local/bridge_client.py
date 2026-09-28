@@ -183,10 +183,10 @@ class BridgeClient:
             self._event_unsub()
         if self._message_unsub is not None:
             self._message_unsub()
+        self._templates = templates             # first: a broker may hand over the retained ones during `subscribe`
         self._event_unsub = await self.transport.subscribe(pb.tpl_to_wildcard(templates.event, root), self._on_message)
         self._message_unsub = await self.transport.subscribe(pb.tpl_to_wildcard(templates.message, root),
                                                              self._on_message)
-        self._templates = templates
         self._bootstrapped.set()
         if self._records is not None:
             self._request_status()
@@ -217,13 +217,20 @@ class BridgeClient:
         if self.runner is None or self._records is None or self._registered is None:
             return
         wanted = [rec for did, rec in self._records.items() if did in self._registered]
-        done = self.runner.sync_devices(wanted)
-        for device_id in (*done["added"], *done["changed"]):
-            if (conn := self._last_conn.get(device_id)) is not None:
-                self.runner.on_bridge_message(device_id, conn)
-            for (did, channel), dps in self._last_state.items():
-                if did == device_id:
-                    self.runner.on_bridge_message(device_id, Message(channel, dps), retained=True)
+        self.runner.sync_devices(wanted, seed=self._seed)
+
+    def _seed(self, device_id: str) -> list:
+        """What this client already heard of a device the Hub starts driving: its link state, then (unless the link is
+        down) its retained `state`, handed over before anything is published — so a device that is up goes out up,
+        with its values, and a restart shows il consumers no `available: false` (an event entity coming back from
+        `unavailable` looks like a press to an automation that follows its state). A sub-device has no link state of
+        its own, only its snapshot."""
+        conn = self._last_conn.get(device_id)
+        seed: list = [conn] if conn is not None else []
+        state = self._last_state.get((device_id, "state"))
+        if state and not isinstance(conn, Disconnected):
+            seed.append(Message("state", state))
+        return seed
 
     def _forget(self, device_id: str) -> None:
         self._last_conn.pop(device_id, None)
@@ -249,8 +256,9 @@ class BridgeClient:
         if not isinstance(dps, dict):
             _LOGGER.debug("could not extract dps from event payload for %s: %r", device_id, payload)
             return
-        if self._records is not None and vars_["type"] == "state":
-            self._last_state[(device_id, "state")] = dps
+        if vars_["type"] == "state":             # kept even before `sync_devices`: retained ones may come first
+            # merged: with a `{dp}` in the event topic every retained message carries one dp
+            self._last_state[(device_id, "state")] = {**self._last_state.get((device_id, "state"), {}), **dps}
         self.runner.on_bridge_message(device_id, Message(vars_["type"], dps), retained=retained)
 
     def _on_reply(self, vars_: dict[str, str], payload: str, retained: bool) -> None:
@@ -265,8 +273,7 @@ class BridgeClient:
         device_id = vars_.get("id") or parsed.get("id")
         if "errorCode" in parsed and device_id and device_id != "bridge":
             conn = Connected() if parsed.get("errorCode") == 0 else Disconnected()
-            if self._records is not None:
-                self._last_conn[device_id] = conn
+            self._last_conn[device_id] = conn
             self.runner.on_bridge_message(device_id, conn)
             return
         if self._records is None or retained:                # a retained reply is an old one; `status` is asked live
