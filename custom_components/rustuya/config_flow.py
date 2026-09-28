@@ -2,8 +2,10 @@
 through rustuya-manager's `Manager` — the Tuya Cloud QR login wizard and registering devices on the bridge
 (`architecture_device_management_via_manager`: this flow drives `Manager`, never rolls its own bridge protocol).
 
-The wizard step is optional: a user who already has a `tuyadevices.json` (from running rustuya-manager separately)
-can skip straight to the IL step and point at that file.
+Setup asks only for the bridge mode and the broker, then offers the (optional) cloud login. Everything else starts at
+its default — the bridge topic root, the IL prefix and source, the device file, the embedded bridge's state file and
+log level — and is changed later in the panel's Settings card. The one exception: an external bridge the check does
+not find on the default root gets the root field on the form, since it may simply run on another one.
 """
 
 from __future__ import annotations
@@ -66,15 +68,17 @@ def _qr_schema(qr_url: str) -> vol.Schema:
             data=qr_url, scale=5, error_correction_level=selector.QrErrorCorrectionLevel.QUARTILE))})
 
 
-def _broker_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
+def _broker_schema(defaults: dict[str, Any] | None = None, *, root: bool = False) -> vol.Schema:
     d = defaults or {}
-    return vol.Schema({
+    fields = {
         vol.Required(CONF_BROKER_HOST, default=d.get(CONF_BROKER_HOST, "localhost")): str,
         vol.Required(CONF_BROKER_PORT, default=d.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT)): int,
         vol.Optional(CONF_BROKER_USERNAME, default=d.get(CONF_BROKER_USERNAME, "")): str,
         vol.Optional(CONF_BROKER_PASSWORD, default=d.get(CONF_BROKER_PASSWORD, "")): str,
-        vol.Required(CONF_BRIDGE_ROOT, default=d.get(CONF_BRIDGE_ROOT, DEFAULT_BRIDGE_ROOT)): str,
-    })
+    }
+    if root:
+        fields[vol.Required(CONF_BRIDGE_ROOT, default=d.get(CONF_BRIDGE_ROOT, DEFAULT_BRIDGE_ROOT))] = str
+    return vol.Schema(fields)
 
 
 def _import_transport() -> None:
@@ -140,16 +144,31 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         return self.async_show_menu(step_id="user", menu_options=["external", "embedded"])
 
+    def _defaults(self, mode: str) -> dict[str, Any]:
+        """What setup no longer asks: each at its default, changed later in the panel's Settings card."""
+        data = {CONF_BRIDGE_MODE: mode, CONF_BRIDGE_ROOT: DEFAULT_BRIDGE_ROOT,
+                CONF_DEVICES_PATH: self.hass.config.path(DEFAULT_DEVICES_FILE),
+                CONF_IL_PREFIX: DEFAULT_IL_PREFIX, CONF_IL_SOURCE: DEFAULT_IL_SOURCE}
+        if mode == BRIDGE_EMBEDDED:
+            data.update({CONF_BRIDGE_STATE_FILE: self.hass.config.path(DEFAULT_BRIDGE_STATE_FILE),
+                         CONF_BRIDGE_LOG_LEVEL: "warn"})
+        return data
+
     async def async_step_external(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
+        ask_root = False
         if user_input is not None:
-            error = await _probe_bridge(self.hass, user_input)
+            data = {**self._defaults(BRIDGE_EXTERNAL), **user_input}
+            error = await _probe_bridge(self.hass, data)
             if error is None:
-                self._data.update(user_input, **{CONF_BRIDGE_MODE: BRIDGE_EXTERNAL})
-                return await self.async_step_devices()
+                self._data.update(data)
+                return await self.async_step_onboard()
             errors["base"] = error
+            # not on the default root: it may run on another one, so the form asks for it from now on
+            ask_root = error == "bridge_not_found" or CONF_BRIDGE_ROOT in user_input
         # what was typed stays on the form after an error, rather than falling back to the defaults
-        return self.async_show_form(step_id="external", data_schema=_broker_schema(user_input), errors=errors)
+        return self.async_show_form(step_id="external", data_schema=_broker_schema(user_input, root=ask_root),
+                                    errors=errors)
 
     async def async_step_embedded(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
@@ -158,30 +177,18 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if importlib.util.find_spec("pyrustuyabridge") is None:
                 errors["base"] = "pyrustuyabridge_missing"
             else:
-                self._data.update(user_input, **{CONF_BRIDGE_MODE: BRIDGE_EMBEDDED})
-                return await self.async_step_devices()
-        schema = _broker_schema().extend({
-            vol.Required(CONF_BRIDGE_STATE_FILE, default=self.hass.config.path(DEFAULT_BRIDGE_STATE_FILE)): str,
-            vol.Required(CONF_BRIDGE_LOG_LEVEL, default="warn"): vol.In(["error", "warn", "info", "debug"]),
-        })
-        return self.async_show_form(step_id="embedded", data_schema=schema, errors=errors)
+                self._data.update({**self._defaults(BRIDGE_EMBEDDED), **user_input})
+                return await self.async_step_onboard()
+        return self.async_show_form(step_id="embedded", data_schema=_broker_schema(user_input), errors=errors)
 
-    # ---- devices: onboard through Manager, or point at an existing file -------------
+    # ---- onboarding: the Tuya Cloud login through Manager, or not now ---------------
 
-    async def async_step_devices(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        if user_input is not None:
-            self._data[CONF_DEVICES_PATH] = user_input[CONF_DEVICES_PATH]
-            if user_input["onboard"] and manager_session.available():
-                return await self.async_step_cloud_wizard_start()
-            return await self.async_step_il()
-        default_path = self.hass.config.path(DEFAULT_DEVICES_FILE)
-        schema = vol.Schema({
-            vol.Required(CONF_DEVICES_PATH, default=default_path): str,
-            vol.Required("onboard", default=manager_session.available()): bool,
-        })
-        # every placeholder the description names must be given, even empty, or the frontend cannot format it
-        placeholders = {"warning": "" if manager_session.available() else "rustuya-manager is not installed"}
-        return self.async_show_form(step_id="devices", data_schema=schema, description_placeholders=placeholders)
+    async def async_step_onboard(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Log in now, or finish: the login is also in Configure later, and a device file rustuya-manager already
+        keeps elsewhere is pointed at from the panel's Settings card."""
+        if not manager_session.available():
+            return await self.async_step_finish()
+        return self.async_show_menu(step_id="onboard", menu_options=["cloud_wizard_start", "finish"])
 
     # ---- Tuya Cloud QR login wizard (rustuya_manager.Manager.wizard) ----------------
 
@@ -254,7 +261,7 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if user_input["retry"]:
                 return await self.async_step_cloud_wizard_start()
             await self._async_close_manager()
-            return await self.async_step_il()
+            return await self.async_step_finish()
         return self.async_show_form(
             step_id="cloud_wizard_error", data_schema=vol.Schema({vol.Required("retry", default=True): bool}),
             description_placeholders={"error": session.error or "unknown error"},
@@ -273,26 +280,19 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     step_id="sync_devices", data_schema=bridge_sync.schema(diff), errors={"base": "publish_failed"},
                     description_placeholders={**bridge_sync.placeholders(diff), "error": str(e)})
             await self._async_close_manager()
-            return await self.async_step_il()
+            return await self.async_step_finish()
         if not bridge_sync.has_changes(diff):
             await self._async_close_manager()
-            return await self.async_step_il()
+            return await self.async_step_finish()
         return self.async_show_form(step_id="sync_devices", data_schema=bridge_sync.schema(diff),
                                     description_placeholders={**bridge_sync.placeholders(diff), "error": ""})
 
-    # ---- IL side and finish ----------------------------------------------------------
+    # ---- finish --------------------------------------------------------------------
 
-    async def async_step_il(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        if user_input is not None:
-            self._data.update(user_input)
-            return self.async_create_entry(title="Rustuya", data=self._data, options={
-                CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True,
-            })
-        schema = vol.Schema({
-            vol.Required(CONF_IL_PREFIX, default=DEFAULT_IL_PREFIX): str,
-            vol.Required(CONF_IL_SOURCE, default=DEFAULT_IL_SOURCE): str,
+    async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        return self.async_create_entry(title="Rustuya", data=self._data, options={
+            CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True,
         })
-        return self.async_show_form(step_id="il", data_schema=schema)
 
     @callback
     def async_remove(self) -> None:

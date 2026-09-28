@@ -82,36 +82,73 @@ async def test_the_user_menu_offers_external_and_embedded(hass):
     assert result["type"] == "menu" and set(result["menu_options"]) == {"external", "embedded"}
 
 
-async def test_skipping_onboarding_goes_straight_to_il_and_creates_the_entry(hass, tmp_path):
-    devices_path = str(tmp_path / "tuyadevices.json")
-    result = await _start(hass)
-    r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
-    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
-        "broker_host": "h", "broker_port": 1883, "broker_username": "", "broker_password": "", "bridge_root": "rustuya",
-    })
-    assert r["step_id"] == "devices"
-    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"devices_path": devices_path, "onboard": False})
-    assert r["step_id"] == "il"
-    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"il_prefix": "il", "il_source": "tuya"})
+BROKER = {"broker_host": "h", "broker_port": 1883, "broker_username": "", "broker_password": ""}
+
+
+@pytest.mark.parametrize("manager_installed", [True, False])
+async def test_setup_asks_only_for_the_broker_and_uses_the_defaults(hass, manager_installed):
+    from custom_components.rustuya.const import CONF_IL_SOURCE
+
+    with patch("custom_components.rustuya.manager_session.available", return_value=manager_installed):
+        result = await _start(hass)
+        r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
+        assert {str(k) for k in r["data_schema"].schema} == set(BROKER)
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], BROKER)
+        if manager_installed:                        # the cloud login is offered, and can be left for later
+            assert r["type"] == "menu" and r["menu_options"] == ["cloud_wizard_start", "finish"]
+            r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "finish"})
     assert r["type"] == "create_entry"
-    assert r["data"][CONF_DEVICES_PATH] == devices_path and r["data"][CONF_BRIDGE_ROOT] == "rustuya"
+    assert r["data"] == {**BROKER, CONF_BRIDGE_MODE: "external", CONF_BRIDGE_ROOT: "rustuya",
+                         CONF_DEVICES_PATH: hass.config.path(".storage/rustuya/tuyadevices.json"),
+                         CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya"}
     assert r["options"] == {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True}
 
 
-@pytest.mark.parametrize("error", ["cannot_connect", "bridge_not_found"])
-async def test_an_external_bridge_that_is_not_there_keeps_the_form_open(hass, error):
-    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p",
-             "bridge_root": "rb"}
+async def test_embedded_setup_asks_only_for_the_broker(hass, monkeypatch):
+    import importlib.util
+
+    from custom_components.rustuya.const import (
+        CONF_BRIDGE_LOG_LEVEL,
+        CONF_BRIDGE_STATE_FILE,
+    )
+
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name: object() if name == "pyrustuyabridge" else real_find_spec(name))
+    with patch("custom_components.rustuya.manager_session.available", return_value=False):
+        result = await _start(hass)
+        r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "embedded"})
+        assert {str(k) for k in r["data_schema"].schema} == set(BROKER)
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], BROKER)
+    assert r["type"] == "create_entry" and r["data"][CONF_BRIDGE_MODE] == "embedded"
+    assert r["data"][CONF_BRIDGE_STATE_FILE] == hass.config.path(".storage/rustuya/bridge_state.json")
+    assert r["data"][CONF_BRIDGE_LOG_LEVEL] == "warn"
+
+
+async def test_an_unreachable_broker_keeps_the_form_open(hass):
+    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p"}
     result = await _start(hass)
     r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
-    with patch("custom_components.rustuya.config_flow._probe_bridge", return_value=error):
+    with patch("custom_components.rustuya.config_flow._probe_bridge", return_value="cannot_connect"):
         r = await hass.config_entries.flow.async_configure(r["flow_id"], typed)
-    assert r["type"] == "form" and r["step_id"] == "external" and r["errors"] == {"base": error}
-    # what was typed is kept on the re-shown form
-    defaults = {str(k): k.default() for k in r["data_schema"].schema}
-    assert defaults == typed
-    r = await hass.config_entries.flow.async_configure(r["flow_id"], typed)     # the bridge is up now
-    assert r["step_id"] == "devices"
+    assert r["type"] == "form" and r["step_id"] == "external" and r["errors"] == {"base": "cannot_connect"}
+    assert {str(k): k.default() for k in r["data_schema"].schema} == typed      # what was typed is kept
+
+
+async def test_a_bridge_not_on_the_default_root_asks_for_its_root(hass):
+    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p"}
+    result = await _start(hass)
+    r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
+    with patch("custom_components.rustuya.config_flow._probe_bridge", return_value="bridge_not_found") as probe:
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], typed)
+    assert probe.call_args.args[1][CONF_BRIDGE_ROOT] == "rustuya"
+    assert r["errors"] == {"base": "bridge_not_found"}
+    assert {str(k): k.default() for k in r["data_schema"].schema} == {**typed, CONF_BRIDGE_ROOT: "rustuya"}
+    with (patch("custom_components.rustuya.config_flow._probe_bridge", return_value=None) as probe,
+          patch("custom_components.rustuya.manager_session.available", return_value=False)):
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], {**typed, CONF_BRIDGE_ROOT: "rb"})
+    assert probe.call_args.args[1][CONF_BRIDGE_ROOT] == "rb"
+    assert r["type"] == "create_entry" and r["data"][CONF_BRIDGE_ROOT] == "rb"
 
 
 async def test_embedded_mode_without_pyrustuyabridge_shows_an_error(hass, monkeypatch):
@@ -122,14 +159,11 @@ async def test_embedded_mode_without_pyrustuyabridge_shows_an_error(hass, monkey
                         lambda name: None if name == "pyrustuyabridge" else real_find_spec(name))
     result = await _start(hass)
     r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "embedded"})
-    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
-        "broker_host": "h", "broker_port": 1883, "broker_username": "", "broker_password": "", "bridge_root": "rustuya",
-        "bridge_state_file": "/tmp/x.json", "bridge_log_level": "warn",
-    })
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], BROKER)
     assert r["type"] == "form" and r["errors"] == {"base": "pyrustuyabridge_missing"}
 
 
-async def test_a_successful_login_registers_only_the_selected_devices_then_reaches_il(hass, tmp_path, monkeypatch):
+async def test_a_successful_login_registers_only_the_selected_devices_then_finishes(hass, tmp_path, monkeypatch):
     manager = FakeManager(sync_result=FakeDiff(missing=[FakeDevice("a", "Plug"), FakeDevice("b", "Lamp")]))
     install(monkeypatch, manager)
     flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
@@ -140,19 +174,17 @@ async def test_a_successful_login_registers_only_the_selected_devices_then_reach
     assert r["step_id"] == "sync_devices"
     assert all(k.default() == [] for k in r["data_schema"].schema)     # nothing pre-selected
     r = await flow.async_step_sync_devices({"add": ["a"]})
-    assert r["step_id"] == "il" and manager.added == ["a"] and manager.closed
-    r = await flow.async_step_il({"il_prefix": "il", "il_source": "tuya"})
-    assert r["type"] == "create_entry"
+    assert r["type"] == "create_entry" and manager.added == ["a"] and manager.closed
 
 
-async def test_no_missing_devices_skips_straight_to_il(hass, tmp_path, monkeypatch):
+async def test_no_missing_devices_finishes_straight_away(hass, tmp_path, monkeypatch):
     manager = FakeManager(sync_result=FakeDiff())
     install(monkeypatch, manager)
     flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
     r = await flow.async_step_cloud_wizard_start({"user_code": ""})
     r["progress_task"].cancel()
     r = await _drain_progress(flow, manager)
-    assert r["step_id"] == "il" and manager.closed
+    assert r["type"] == "create_entry" and manager.closed
 
 
 async def test_a_failed_login_can_be_retried_or_skipped(hass, tmp_path, monkeypatch):
@@ -164,7 +196,7 @@ async def test_a_failed_login_can_be_retried_or_skipped(hass, tmp_path, monkeypa
     r = await _drain_progress(flow, manager)
     assert r["step_id"] == "cloud_wizard_error"
     r = await flow.async_step_cloud_wizard_error({"retry": False})
-    assert r["step_id"] == "il" and manager.closed
+    assert r["type"] == "create_entry" and manager.closed
 
 
 async def test_the_qr_step_shows_a_real_qr_selector(hass):
@@ -360,27 +392,6 @@ async def test_add_extra_for_a_sub_device_carries_cid_and_parent(hass):
     sub = FakeDevice("s", type="SubDevice", cid="c1", parent_id="p1")
     assert add_extra(sub) == {"cid": "c1", "parent_id": "p1"}
     assert add_extra(FakeDevice("w")) == {}
-
-
-@pytest.mark.parametrize("manager_installed", [True, False])
-async def test_the_devices_step_gives_every_placeholder_its_description_names(hass, manager_installed):
-    """The frontend cannot format a description whose placeholder was not given (`MISSING_VALUE`), so `{warning}`
-    is always passed, empty when there is nothing to warn about."""
-    import json
-    import pathlib
-    import re
-
-    strings = json.loads((pathlib.Path(__file__).resolve().parents[2] / "custom_components/rustuya/strings.json").read_text())
-    named = set(re.findall(r"\{(\w+)\}", strings["config"]["step"]["devices"]["description"]))
-    with patch("custom_components.rustuya.manager_session.available", return_value=manager_installed):
-        result = await _start(hass)
-        r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
-        r = await hass.config_entries.flow.async_configure(r["flow_id"], {
-            "broker_host": "h", "broker_port": 1883, "broker_username": "", "broker_password": "",
-            "bridge_root": "rustuya"})
-    assert r["step_id"] == "devices"
-    assert named <= set(r["description_placeholders"] or {})
-    assert bool(r["description_placeholders"]["warning"]) is not manager_installed
 
 
 async def test_the_panel_option_is_on_the_tuning_form(hass, tmp_path):

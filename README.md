@@ -47,7 +47,10 @@ another, stop the old one first.
 
 **The `rustuya` integration** (HACS: add this repository as a custom repository of type *Integration*, install
 **Rustuya**, restart, then *Add Integration* → **Rustuya**) is the service tied to a config entry, with the QR login
-wizard, bridge registration and an optional embedded bridge. It creates no entities itself. Deleting the integration
+wizard, bridge registration and an optional embedded bridge. It creates no entities itself. Setup asks only for the
+bridge mode and the broker (it checks an external bridge answers there, and asks for its topic root if it is not on
+the default one), then offers the Tuya Cloud login; the rest starts at its defaults and is changed in the panel's
+*Settings*. Deleting the integration
 takes its devices out of IL (so il-ha removes them); with the embedded bridge it also clears that bridge's retained
 topics and its state file. The device list and Tuya login it kept under `.storage/rustuya/` are deleted; a device file
 you pointed elsewhere, and everything on an external bridge, are left as they are.
@@ -73,7 +76,10 @@ In Home Assistant the files can be edited from a sidebar panel: turn on *Show th
 bridge's devices against the cloud list as rustuya-manager does (missing, orphan, mismatch, synced, each a filter you can
 turn off; sub-devices under their gateway; each device's bridge connection, live while the panel is open) with add /
 update / remove, lists the converter files with the pack's
-marked, edits and deletes them, and runs the pack sync on demand.
+marked, edits and deletes them (drop `*.json` / `*.py` files on it to copy them in), runs the pack sync on demand, and
+has the *Settings* setup leaves at their defaults: the bridge topic root, the IL prefix and source, the device file, and
+the embedded bridge's state file and log level. Saving restarts the integration; moving the IL prefix or source first
+clears what the old one left on the broker. *Hide panel* in its toolbar turns it off again.
 
 ## rustuya-manager plugin
 

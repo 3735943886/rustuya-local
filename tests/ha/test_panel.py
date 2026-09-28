@@ -284,3 +284,110 @@ async def test_live_links_refuse_when_off_or_unreachable(hass, loaded, hass_ws_c
     await ws.send_json({"id": 1, "type": "rustuya/subscribe_links"})
     r = await ws.receive_json()
     assert not r["success"] and r["error"]["code"] == "cannot_connect"
+
+
+async def test_settings_show_what_setup_left_at_its_defaults(hass, loaded, hass_client):
+    entry, _ = await loaded({CONF_PANEL: True})
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external", "il_prefix": "il",
+                                                        "il_source": "tuya"})
+    c = await hass_client()
+    r = await c.get("/api/rustuya/settings")
+    assert r.status == 200
+    assert await r.json() == {"mode": "external", "settings": {
+        "bridge_root": "rustuya", "il_prefix": "il", "il_source": "tuya", "devices_path": entry.data["devices_path"]}}
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "embedded",
+                                                        "bridge_state_file": "/s.json", "bridge_log_level": "warn"})
+    settings = (await (await c.get("/api/rustuya/settings")).json())["settings"]
+    assert settings["bridge_state_file"] == "/s.json" and settings["bridge_log_level"] == "warn"
+
+
+@pytest.mark.parametrize("body", [
+    {"il_prefix": "il/#"}, {"il_prefix": ""}, {"il_prefix": "a//b"}, {"il_source": "a/b"}, {"il_source": "_x"},
+    {"bridge_root": " rustuya"}, {"bridge_log_level": "warn"}, {"broker_host": "x"}, ["il"],
+])
+async def test_settings_refuse_what_cannot_work(hass, loaded, hass_client, monkeypatch, body):
+    entry, _ = await loaded({CONF_PANEL: True})
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external", "il_prefix": "il",
+                                                        "il_source": "tuya"})
+    applied = []
+    monkeypatch.setattr(panel, "_apply", lambda *a: applied.append(a))
+    c = await hass_client()
+    r = await c.put("/api/rustuya/settings", json=body)
+    assert r.status == 400 and not applied
+
+
+async def test_a_settings_change_restarts_with_the_new_ones(hass, loaded, hass_client, monkeypatch):
+    entry, _ = await loaded({CONF_PANEL: True})
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external", "il_prefix": "il",
+                                                        "il_source": "tuya"})
+    applied = []
+
+    async def fake_apply(_hass, e, old, data):
+        applied.append((e, old, data))
+
+    monkeypatch.setattr(panel, "_apply", fake_apply)
+    c = await hass_client()
+    r = await c.put("/api/rustuya/settings", json={"il_prefix": "il"})               # the same: nothing to do
+    assert await r.json() == {"restarting": False}
+    r = await c.put("/api/rustuya/settings", json={"il_prefix": "home/il", "devices_path": "my/tuyadevices.json"})
+    assert await r.json() == {"restarting": True}
+    await hass.async_block_till_done()
+    (e, old, data), = applied
+    assert e is entry and old["il_prefix"] == "il"
+    assert data["il_prefix"] == "home/il" and data["devices_path"] == hass.config.path("my/tuyadevices.json")
+    assert data["broker_host"] == "h"                                                # the rest kept
+
+
+async def test_a_new_root_for_an_external_bridge_is_checked(hass, loaded, hass_client, monkeypatch):
+    entry, _ = await loaded({CONF_PANEL: True})
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external", "il_prefix": "il",
+                                                        "il_source": "tuya"})
+    applied = []
+    monkeypatch.setattr(panel, "_apply", lambda *a: applied.append(a))
+    from custom_components.rustuya import config_flow
+
+    async def not_found(_hass, data):
+        assert data["bridge_root"] == "rb"
+        return "bridge_not_found"
+
+    monkeypatch.setattr(config_flow, "_probe_bridge", not_found)
+    c = await hass_client()
+    r = await c.put("/api/rustuya/settings", json={"bridge_root": "rb"})
+    assert r.status == 400 and "no rustuya-bridge answers on rb" in (await r.json())["message"] and not applied
+
+
+@pytest.mark.parametrize(("mode", "change", "cleared"), [
+    ("external", {"il_prefix": "home/il"}, {"il": True, "bridge": False}),
+    ("external", {"bridge_root": "rb"}, None),                          # an external bridge's topics are not ours
+    ("embedded", {"bridge_root": "rb"}, {"il": False, "bridge": True}),
+    ("embedded", {"devices_path": "/d.json"}, None),
+])
+async def test_apply_clears_the_old_topics_between_stop_and_start(hass, monkeypatch, mode, change, cleared):
+    import custom_components.rustuya as integration
+
+    old = {"bridge_mode": mode, "bridge_root": "rustuya", "il_prefix": "il", "il_source": "tuya",
+           "devices_path": "/t.json", "broker_host": "h", "broker_port": 1883}
+    entry = MockConfigEntry(domain=DOMAIN, data=old)
+    entry.add_to_hass(hass)
+    calls = []
+
+    async def unload(entry_id):
+        calls.append(("unload", dict(entry.data)))
+        return True
+
+    async def setup(entry_id):
+        calls.append(("setup", dict(entry.data)))
+        return True
+
+    async def clear(_hass, data, *, il, bridge):
+        calls.append(("clear", dict(data), {"il": il, "bridge": bridge}))
+
+    monkeypatch.setattr(hass.config_entries, "async_unload", unload)
+    monkeypatch.setattr(hass.config_entries, "async_setup", setup)
+    monkeypatch.setattr(integration, "async_clear_retained", clear)
+    await panel._apply(hass, entry, dict(old), {**old, **change})
+    expected = [("unload", old)]
+    if cleared:
+        expected.append(("clear", old, cleared))
+    expected.append(("setup", {**old, **change}))
+    assert calls == expected

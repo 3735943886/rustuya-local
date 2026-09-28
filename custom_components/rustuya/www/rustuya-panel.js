@@ -45,6 +45,13 @@ const STYLE = `
   button.primary { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
   button:disabled { opacity: .5; cursor: default; }
   .note { margin-top: 8px; }
+  .settings { display: grid; gap: 12px; margin-top: 12px; }
+  .setting { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 4px 12px; align-items: center; }
+  .setting > .muted { grid-column: 2; font-size: 12px; }
+  :host([narrow]) .setting { grid-template-columns: 1fr; }
+  :host([narrow]) .setting > .muted { grid-column: 1; }
+  select { font: inherit; color: var(--primary-text-color); background: var(--card-background-color);
+           border: 1px solid var(--divider-color); border-radius: 6px; padding: 6px 8px; }
   /* bridge devices: rustuya-manager's category colors (sky / rose / amber / emerald) */
   .cat-missing { --cat: #0ea5e9; } .cat-orphan { --cat: #f43f5e; } .cat-mismatch { --cat: #f59e0b; } .cat-synced { --cat: #10b981; }
   .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -406,6 +413,81 @@ class BridgeSection {
   }
 }
 
+// ---- settings: what setup leaves at its defaults (SettingsView) ---------------------------------------------------
+
+const SETTINGS = [
+  ["bridge_root", "Bridge topic root", "The MQTT root rustuya-bridge uses (its mqtt_root_topic)."],
+  ["il_prefix", "IL topic prefix", "Where the IL devices are published; il-ha reads il by default."],
+  ["il_source", "IL source name", "This producer's name on IL (one topic level)."],
+  ["devices_path", "Device file", "The tuyadevices.json rustuya-manager keeps; relative to the config directory."],
+  ["bridge_state_file", "Bridge state file", "Where the embedded bridge keeps its device registry."],
+  ["bridge_log_level", "Bridge log level", "error, warn, info or debug."],
+];
+
+class SettingsSection {
+  constructor(panel) {
+    this.panel = panel;
+    this.fields = {};
+    this.body = el("div", { class: "settings" }, el("div", { class: "muted" }, "…"));
+    this.save = el("button", { class: "primary", onclick: () => this.submit() }, "Save and restart");
+    this.root = el("div", { class: "card" },
+      el("h2", {}, "Settings"),
+      el("div", { class: "muted" },
+        "Set up with their defaults. Saving restarts the integration; moving the IL prefix or source clears what the ",
+        "old one left on the broker, so IL consumers drop those devices and see them again under the new one."),
+      this.body,
+      el("div", { class: "row note" }, this.save));
+  }
+
+  async load() {
+    let r;
+    try {
+      r = await this.panel._api("GET", "settings");
+    } catch (e) {
+      this.body.replaceChildren(el("div", { class: "error" }, `Cannot read the settings: ${message(e)}`));
+      this.save.disabled = true;
+      return;
+    }
+    this.current = r.settings;
+    this.fields = {};
+    this.body.replaceChildren(...SETTINGS.filter(([k]) => k in r.settings).map(([k, label, hint]) => {
+      const input = k === "bridge_log_level"
+        ? el("select", {}, ...["error", "warn", "info", "debug"].map((v) => el("option", { value: v }, v)))
+        : el("input", { spellcheck: "false" });
+      input.value = r.settings[k];
+      this.fields[k] = input;
+      return el("label", { class: "setting" }, el("span", {}, label), input, el("span", { class: "muted" }, hint));
+    }));
+    this.save.disabled = false;
+  }
+
+  async submit() {
+    const changed = Object.fromEntries(Object.entries(this.fields)
+      .map(([k, input]) => [k, input.value.trim()]).filter(([k, v]) => v !== this.current[k]));
+    if (!Object.keys(changed).length) {
+      this.panel._toast("Nothing changed");
+      return;
+    }
+    if (!confirm(`Save ${Object.keys(changed).join(", ")} and restart Rustuya?`)) return;
+    this.save.disabled = true;
+    try {
+      const r = await this.panel._api("PUT", "settings", changed);
+      if (!r.restarting) {
+        this.panel._toast("Nothing changed");
+        this.save.disabled = false;
+        return;
+      }
+    } catch (e) {
+      this.panel._toast(`Not saved: ${message(e)}`);
+      this.save.disabled = false;
+      return;
+    }
+    this.panel._toast("Saved; Rustuya is restarting");
+    // the restart takes the panel away and puts it back: reload the page once it is back
+    setTimeout(() => location.reload(), 4000);
+  }
+}
+
 class RustuyaPanel extends HTMLElement {
   constructor() {
     super();
@@ -453,6 +535,7 @@ class RustuyaPanel extends HTMLElement {
     this._menu.narrow = this.hasAttribute("narrow");
 
     this._bridge = new BridgeSection(this);
+    this._settings = new SettingsSection(this);
     this._pack = el("div", { class: "muted" }, "…");
     this._syncBtn = el("button", { onclick: () => this._syncPack() }, "Sync now");
     this._list = el("ul", { class: "files" });
@@ -500,8 +583,10 @@ class RustuyaPanel extends HTMLElement {
                 el("button", { class: "primary", onclick: () => this._save() }, "Save"),
                 el("button", { onclick: () => this._delete() }, "Delete")),
               this._origin,
-              this._text)))));
+              this._text))),
+        this._settings.root));
     this._acceptDrops(this._convertersCard);
+    this._settings.load();
   }
 
   // files dragged from the desktop: dropped on the converters card they are copied in (`_import`); dropped anywhere

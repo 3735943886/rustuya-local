@@ -27,12 +27,18 @@ from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
 from .const import (
+    BRIDGE_EMBEDDED,
+    CONF_BRIDGE_LOG_LEVEL,
+    CONF_BRIDGE_MODE,
     CONF_BRIDGE_ROOT,
+    CONF_BRIDGE_STATE_FILE,
     CONF_BROKER_HOST,
     CONF_BROKER_PASSWORD,
     CONF_BROKER_PORT,
     CONF_BROKER_USERNAME,
     CONF_DEVICES_PATH,
+    CONF_IL_PREFIX,
+    CONF_IL_SOURCE,
     CONF_PACK,
     CONF_PANEL,
     CONVERTERS_DIR,
@@ -51,7 +57,7 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
         hass.data[_VIEWS_KEY] = True
         await hass.http.async_register_static_paths(
             [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)])
-        for view in (ConvertersView, ConverterView, PackView, BridgeView, PanelView):
+        for view in (ConvertersView, ConverterView, PackView, BridgeView, PanelView, SettingsView):
             hass.http.register_view(view())
         websocket_api.async_register_command(hass, ws_subscribe_links)
     if entry.options.get(CONF_PANEL, False) and PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
@@ -159,6 +165,94 @@ class PanelView(_View):
         entry = found[0]
         request.app["hass"].config_entries.async_update_entry(entry, options={**entry.options, CONF_PANEL: False})
         return self.json({"panel": False})
+
+
+LOG_LEVELS = ("error", "warn", "info", "debug")
+
+
+def settings_of(data: Any) -> dict[str, Any]:
+    """The entry's settings the panel edits (setup leaves them at their defaults); the embedded bridge's only with it."""
+    keys = [CONF_BRIDGE_ROOT, CONF_IL_PREFIX, CONF_IL_SOURCE, CONF_DEVICES_PATH]
+    if data.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED:
+        keys += [CONF_BRIDGE_STATE_FILE, CONF_BRIDGE_LOG_LEVEL]
+    return {k: data.get(k) for k in keys}
+
+
+def validate_settings(hass: HomeAssistant, data: Any, body: Any) -> dict[str, Any]:
+    """`body` over the current settings, checked; raises ValueError with what is wrong."""
+    current = settings_of(data)
+    if not isinstance(body, dict) or set(body) - set(current):
+        raise ValueError(f"the settings are {sorted(current)}")
+    new = {**current, **body}
+    for key, value in new.items():
+        if not isinstance(value, str) or not value.strip() or value != value.strip():
+            raise ValueError(f"{key} is a non-empty text without surrounding spaces")
+    for key in (CONF_BRIDGE_ROOT, CONF_IL_PREFIX, CONF_IL_SOURCE):
+        levels = new[key].split("/")
+        if any(c in new[key] for c in "+#\0") or "" in levels:
+            raise ValueError(f"{key} is an MQTT topic without wildcards or empty levels")
+    if "/" in new[CONF_IL_SOURCE] or new[CONF_IL_SOURCE].startswith("_"):
+        raise ValueError(f"{CONF_IL_SOURCE} is one topic level, not starting with _")
+    for key in (CONF_DEVICES_PATH, CONF_BRIDGE_STATE_FILE):
+        if key in new:
+            new[key] = hass.config.path(new[key])       # relative to the config directory; an absolute path as is
+    if CONF_BRIDGE_LOG_LEVEL in new and new[CONF_BRIDGE_LOG_LEVEL] not in LOG_LEVELS:
+        raise ValueError(f"{CONF_BRIDGE_LOG_LEVEL} is one of {', '.join(LOG_LEVELS)}")
+    return new
+
+
+class SettingsView(_View):
+    """GET / PUT the settings setup leaves at their defaults: the bridge topic root, the IL prefix and source, the
+    device file, the embedded bridge's state file and log level. A change restarts the integration (`_apply`); a new
+    root for an external bridge is checked first, as setup does."""
+
+    url = "/api/rustuya/settings"
+    name = "api:rustuya:settings"
+
+    async def get(self, request: web.Request) -> web.Response:
+        found = self._loaded(request)
+        if isinstance(found, web.Response):
+            return found
+        data = found[0].data
+        return self.json({"mode": data.get(CONF_BRIDGE_MODE), "settings": settings_of(data)})
+
+    async def put(self, request: web.Request) -> web.Response:
+        found = self._loaded(request)
+        if isinstance(found, web.Response):
+            return found
+        hass, entry = request.app["hass"], found[0]
+        try:
+            new = validate_settings(hass, entry.data, await request.json())
+        except ValueError as e:
+            return self.json_message(str(e), HTTPStatus.BAD_REQUEST)
+        old = dict(entry.data)
+        if new == settings_of(old):
+            return self.json({"restarting": False})
+        external = old.get(CONF_BRIDGE_MODE) != BRIDGE_EMBEDDED
+        if external and new[CONF_BRIDGE_ROOT] != old[CONF_BRIDGE_ROOT]:
+            from .config_flow import _probe_bridge
+
+            error = await _probe_bridge(hass, {**old, **new})
+            if error is not None:
+                return self.json_message(
+                    f"no rustuya-bridge answers on {new[CONF_BRIDGE_ROOT]}" if error == "bridge_not_found"
+                    else "cannot connect to the broker", HTTPStatus.BAD_REQUEST)
+        hass.async_create_task(_apply(hass, entry, old, {**old, **new}))
+        return self.json({"restarting": True})
+
+
+async def _apply(hass: HomeAssistant, entry: Any, old: dict[str, Any], data: dict[str, Any]) -> None:
+    """Stop, clear what the old IL prefix / source (and an embedded bridge's old root) left retained, which would
+    otherwise stay on the broker, then start with the new settings."""
+    from . import async_clear_retained
+
+    il_moved = (old.get(CONF_IL_PREFIX), old.get(CONF_IL_SOURCE)) != (data[CONF_IL_PREFIX], data[CONF_IL_SOURCE])
+    bridge_moved = old.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED and old[CONF_BRIDGE_ROOT] != data[CONF_BRIDGE_ROOT]
+    await hass.config_entries.async_unload(entry.entry_id)
+    if il_moved or bridge_moved:
+        await async_clear_retained(hass, old, il=il_moved, bridge=bridge_moved)
+    hass.config_entries.async_update_entry(entry, data=data)
+    await hass.config_entries.async_setup(entry.entry_id)
 
 
 class PackView(_View):

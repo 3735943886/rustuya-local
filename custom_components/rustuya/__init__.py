@@ -184,25 +184,40 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     storage directory (the device list and the Tuya login). A path the user pointed elsewhere is left alone, as is
     everything on an external bridge. A broker that cannot be reached only leaves the retained topics behind; the
     removal goes on."""
+    data = entry.data
+    embedded = data.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED
+    await async_clear_retained(hass, data, il=True, bridge=embedded)
+    owned = [data.get(CONF_DEVICES_PATH)]
+    if data.get(CONF_DEVICES_PATH):
+        owned.append(os.path.join(os.path.dirname(data[CONF_DEVICES_PATH]), CREDS_FILE))
+    if embedded:
+        owned.append(data.get(CONF_BRIDGE_STATE_FILE))
+    await hass.async_add_executor_job(_remove_owned, hass.config.path(STORAGE_DIR), [p for p in owned if p])
+
+
+async def async_clear_retained(hass: HomeAssistant, data: dict[str, Any], *, il: bool, bridge: bool) -> None:
+    """With the service stopped, clear what `data` (an entry's data) left retained on its broker: its IL devices and
+    presence (`il`), and the whole bridge root (`bridge`, only for a bridge this entry owned). Used on delete, and when
+    the panel's Settings move the IL prefix / source or the embedded bridge's root away (the old topics would stay). A
+    broker that cannot be reached, or a producer / bridge still running there, leaves them and says so in the log."""
     await hass.async_add_import_executor_job(_import_runtime)
     from tuya2ildevice.host import MqttTransport
 
     from rustuya_local.service import AnotherProducer, purge_il, purge_retained
 
-    data = entry.data
     prefix, source = data.get(CONF_IL_PREFIX, "il"), data.get(CONF_IL_SOURCE, "tuya")
-    embedded = data.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED
     transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
-                              client_id=f"rustuya-remove-{secrets.token_hex(4)}",
+                              client_id=f"rustuya-clear-{secrets.token_hex(4)}",
                               username=data.get(CONF_BROKER_USERNAME) or None,
                               password=data.get(CONF_BROKER_PASSWORD) or None)
     try:
         await transport.connect()
-        try:
-            await purge_il(transport, prefix, source)
-        except AnotherProducer as e:
-            _LOGGER.warning("left the IL devices of %s/%s in place: %s", prefix, source, e)
-        if embedded:
+        if il:
+            try:
+                await purge_il(transport, prefix, source)
+            except AnotherProducer as e:
+                _LOGGER.warning("left the IL devices of %s/%s in place: %s", prefix, source, e)
+        if bridge:
             try:
                 await purge_retained(transport, data[CONF_BRIDGE_ROOT])
             except RuntimeError as e:
@@ -212,13 +227,6 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     finally:
         with contextlib.suppress(Exception):
             await transport.close()
-
-    owned = [data.get(CONF_DEVICES_PATH)]
-    if data.get(CONF_DEVICES_PATH):
-        owned.append(os.path.join(os.path.dirname(data[CONF_DEVICES_PATH]), CREDS_FILE))
-    if embedded:
-        owned.append(data.get(CONF_BRIDGE_STATE_FILE))
-    await hass.async_add_executor_job(_remove_owned, hass.config.path(STORAGE_DIR), [p for p in owned if p])
 
 
 def _remove_owned(storage: str, paths: list[str]) -> None:

@@ -9,7 +9,7 @@
       },
       "external": {
         "title": "Connect to rustuya-bridge",
-        "description": "The MQTT broker and topic root your running rustuya-bridge uses.",
+        "description": "The MQTT broker your running rustuya-bridge uses. Setup checks that the bridge answers there. The rest (topic root, IL prefix and source, device file) starts at its default; change it later in the Rustuya panel's Settings.",
         "data": {
           "broker_host": "Broker host",
           "broker_port": "Broker port",
@@ -20,23 +20,20 @@
       },
       "embedded": {
         "title": "Run rustuya-bridge here",
-        "description": "This still connects to a real MQTT broker; it just launches and owns the bridge process itself instead of you running one separately.",
+        "description": "This still connects to a real MQTT broker; it just launches and owns the bridge process itself instead of you running one separately. Its topic root, state file and log level start at their defaults; change them later in the Rustuya panel's Settings.",
         "data": {
           "broker_host": "Broker host",
           "broker_port": "Broker port",
           "broker_username": "Broker username (optional)",
-          "broker_password": "Broker password (optional)",
-          "bridge_root": "Bridge topic root",
-          "bridge_state_file": "Bridge state file path",
-          "bridge_log_level": "Bridge log level"
+          "broker_password": "Broker password (optional)"
         }
       },
-      "devices": {
-        "title": "Device list",
-        "description": "The tuyadevices.json rustuya-manager keeps. Only the Tuya Cloud login wizard (later in this flow) writes to it; once set up, this integration only reads it. {warning}",
-        "data": {
-          "devices_path": "Path to tuyadevices.json",
-          "onboard": "Log in to Tuya Cloud and register devices now"
+      "onboard": {
+        "title": "Devices",
+        "description": "Log in to Tuya Cloud now to fetch your device list and register devices on the bridge. You can also do it later from the integration's Configure, or point at a device file rustuya-manager already keeps from the Rustuya panel's Settings.",
+        "menu_options": {
+          "cloud_wizard_start": "Log in to Tuya Cloud now",
+          "finish": "Finish; do it later"
         }
       },
       "cloud_wizard_start": {
@@ -71,21 +68,13 @@
           "update": "Update on the bridge (push the cloud's settings)",
           "remove": "Remove from the bridge (any device it holds)"
         }
-      },
-      "il": {
-        "title": "IL output",
-        "description": "Where this integration publishes IL (il-ha, or any IL consumer, reads from here).",
-        "data": {
-          "il_prefix": "IL topic prefix",
-          "il_source": "IL source name"
-        }
       }
     },
     "progress": {
       "cloud_wizard_working": "{message}"
     },
     "error": {
-      "bridge_not_found": "The broker answers, but no rustuya-bridge is running on that topic root. Start the bridge (or fix the topic root) and try again.",
+      "bridge_not_found": "The broker answers, but no rustuya-bridge is running on that topic root. Start the bridge, or enter the topic root it runs on, and try again.",
       "cannot_connect": "Could not connect to the MQTT broker. Check the host, port and credentials.",
       "publish_failed": "Could not send the command to the bridge.",
       "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead"
