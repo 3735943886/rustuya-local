@@ -46,9 +46,16 @@ class FakeRuntime:
 
 
 @pytest.fixture
-async def loaded(hass, tmp_path):
+async def loaded(hass, tmp_path, monkeypatch):
     """A loaded entry with a fake runtime (no MQTT), config dir in tmp_path, and http up (the panel registry needs no
-    running frontend, which would need the hass_frontend package)."""
+    running frontend, which would need the hass_frontend package). Removing the entry skips the broker cleanup
+    (`async_remove_entry` connects to MQTT; test_init.py covers it against a real broker)."""
+    import custom_components.rustuya as integration
+
+    async def no_cleanup(_hass, _entry) -> None:
+        return None
+
+    monkeypatch.setattr(integration, "async_remove_entry", no_cleanup)
     hass.config.config_dir = str(tmp_path)
     assert await async_setup_component(hass, "http", {})
 
