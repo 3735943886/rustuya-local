@@ -8,6 +8,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import paho.mqtt.client as mqtt
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -229,4 +230,56 @@ async def test_deleting_the_entry_takes_its_devices_out_of_il(hass, broker, tmp_
         for topic in list(watcher.last):
             watcher.publish(topic, "", retain=True)
         await asyncio.sleep(0.1)
+        watcher.close()
+
+
+async def _remove_with(hass, broker, tmp_path, mode: str, devices_path: str):
+    from custom_components.rustuya.const import CONF_BRIDGE_STATE_FILE
+
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        CONF_BRIDGE_MODE: mode, "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
+        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: devices_path,
+        CONF_BRIDGE_STATE_FILE: hass.config.path(".storage/rustuya/bridge_state.json"),
+        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
+    }, options={CONF_PACK: False}, minor_version=2)
+    entry.add_to_hass(hass)
+    with patch("custom_components.rustuya.async_setup_entry", return_value=False):     # never loaded: remove only
+        await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_deleting_an_embedded_entry_clears_its_bridge_and_its_files(hass, broker, tmp_path, socket_enabled):
+    storage = Path(hass.config.path(".storage/rustuya"))
+    storage.mkdir(parents=True, exist_ok=True)
+    for name in ("tuyadevices.json", "tuyacreds.json", "bridge_state.json"):
+        (storage / name).write_text("{}")
+    watcher = Watcher(broker)
+    try:
+        watcher.publish("rustuya/error/dev1", '{"errorCode":905}', retain=True)
+        watcher.publish("rustuya/event/state/dev1", '{"20":true}', retain=True)
+        await _remove_with(hass, broker, tmp_path, "embedded", str(storage / "tuyadevices.json"))
+        await until(lambda: watcher.last.get("rustuya/error/dev1") == "" and
+                    watcher.last.get("rustuya/event/state/dev1") == "")
+        assert not storage.exists()
+    finally:
+        for topic in list(watcher.last):
+            watcher.publish(topic, "", retain=True)
+        watcher.close()
+
+
+async def test_deleting_an_external_entry_leaves_the_bridge_and_a_users_own_device_file(hass, broker, tmp_path,
+                                                                                       socket_enabled):
+    own = tmp_path / "tuyadevices.json"                  # the user pointed at rustuya-manager's own file
+    own.write_text("[]")
+    (tmp_path / "tuyacreds.json").write_text("{}")
+    watcher = Watcher(broker)
+    try:
+        watcher.publish("rustuya/error/dev1", '{"errorCode":905}', retain=True)
+        await _remove_with(hass, broker, tmp_path, "external", str(own))
+        await asyncio.sleep(0.3)
+        assert watcher.last["rustuya/error/dev1"] == '{"errorCode":905}'
+        assert own.exists() and (tmp_path / "tuyacreds.json").exists()
+    finally:
+        for topic in list(watcher.last):
+            watcher.publish(topic, "", retain=True)
         watcher.close()

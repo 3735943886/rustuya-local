@@ -32,6 +32,10 @@ it, with each device's cloud `category`/`function`/`status_range`/`local_strateg
 changes and never writes it. IL carries only the devices that are also registered on the bridge. The bridge's own
 topic templates are read from its retained `{root}/bridge/config`.
 
+Stopping the daemon only marks it `offline`; its devices stay in IL (retained) for the next start. To retire it, stop it
+and run `rustuya-local purge --config config.json`: the retained descriptors, values and presence of its IL prefix and
+source are cleared (other sources on the prefix are left alone), so IL consumers drop the devices.
+
 ## Home Assistant
 
 Coming from rustuya-homeassistant: [docs/MIGRATING.md](docs/MIGRATING.md).
@@ -43,7 +47,10 @@ another, stop the old one first.
 
 **The `rustuya` integration** (HACS: add this repository as a custom repository of type *Integration*, install
 **Rustuya**, restart, then *Add Integration* → **Rustuya**) is the service tied to a config entry, with the QR login
-wizard, bridge registration and an optional embedded bridge. It creates no entities itself.
+wizard, bridge registration and an optional embedded bridge. It creates no entities itself. Deleting the integration
+takes its devices out of IL (so il-ha removes them); with the embedded bridge it also clears that bridge's retained
+topics and its state file. The device list and Tuya login it kept under `.storage/rustuya/` are deleted; a device file
+you pointed elsewhere, and everything on an external bridge, are left as they are.
 
 ### Overrides for non-standard devices
 

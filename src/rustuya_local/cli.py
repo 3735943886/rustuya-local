@@ -11,7 +11,7 @@ import sys
 from tuya2ildevice.host import MqttTransport
 
 from .config import Config
-from .service import AnotherProducer, Service
+from .service import AnotherProducer, Service, purge_il
 
 log = logging.getLogger(__name__)
 
@@ -48,16 +48,33 @@ async def run(config: Config) -> None:
         await service.stop()
 
 
+async def purge(config: Config) -> None:
+    """Take this daemon's devices out of IL for good (run it after stopping the daemon, when retiring it): the retained
+    descriptors, values and presence of its IL prefix and source are cleared. The bridge is not touched."""
+    t = MqttTransport(config.il.host, config.il.port, client_id="rustuya-local-purge", username=config.il.username,
+                      password=config.il.password)
+    await t.connect()
+    try:
+        ids = await purge_il(t, config.prefix, config.source)
+    finally:
+        await t.close()
+    print(f"took {len(ids)} device(s) of {config.prefix}/_producer/{config.source} out of IL" +
+          (f": {', '.join(ids)}" if ids else ""))
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="rustuya-local")
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run", help="run the bridge-to-IL runner")
     r.add_argument("--config", required=True)
     r.add_argument("-v", "--verbose", action="store_true")
+    p = sub.add_parser("purge", help="clear this producer's retained IL devices (after stopping it for good)")
+    p.add_argument("--config", required=True)
+    p.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
     try:
-        asyncio.run(run(Config.from_file(args.config)))
+        asyncio.run((run if args.cmd == "run" else purge)(Config.from_file(args.config)))
     except AnotherProducer as e:
         log.error("%s", e)
         sys.exit(1)

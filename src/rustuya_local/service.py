@@ -222,25 +222,7 @@ async def purge_il(il: Transport, prefix: str, source: str, *, settle: float = 0
     presence = IlTopics(prefix, source).presence
     if await producer_running(il, presence):
         raise AnotherProducer(f"a producer is still running for {presence}; stop it before removing its devices")
-    retained: dict[str, bytes | str] = {}
-    last = asyncio.Event()
-
-    def on_message(msg) -> None:
-        if msg.retain:
-            retained[msg.topic] = msg.payload
-            last.set()
-
-    unsub = await il.subscribe(f"{prefix}/#", on_message)
-    try:
-        end = asyncio.get_running_loop().time() + timeout
-        while asyncio.get_running_loop().time() < end:       # the retained replay: done once it goes quiet
-            last.clear()
-            try:
-                await asyncio.wait_for(last.wait(), settle)
-            except TimeoutError:
-                break
-    finally:
-        unsub()
+    retained = await _retained(il, f"{prefix}/#", settle, timeout)
     ids = []
     for topic, payload in retained.items():
         device_id = topic[len(prefix) + 1:]                  # `<prefix>/#` only brings topics below the prefix
@@ -261,6 +243,48 @@ async def purge_il(il: Transport, prefix: str, source: str, *, settle: float = 0
     await _flush(il, f"{presence}/flush", timeout)
     _LOGGER.info("took %d device(s) of %s out of IL", len(ids), presence)
     return sorted(ids)
+
+
+async def purge_retained(transport: Transport, root: str, *, settle: float = 0.5, timeout: float = 5.0) -> list[str]:
+    """Clear every retained topic under `<root>/` (the topics themselves, not a template's guess at them). For a bridge
+    this integration owned (the embedded one) once it is gone for good: a stopped rustuya-bridge clears its own
+    `bridge/config`, but each device's last `error` / `event` stays retained. Returns the topics cleared.
+
+    Refuses (`RuntimeError`) while `bridge/config` is still there: a bridge is running on that root."""
+    retained = await _retained(transport, f"{root}/#", settle, timeout)
+    if retained.get(f"{root}/bridge/config"):
+        raise RuntimeError(f"a rustuya-bridge is still running on {root}; its topics are left in place")
+    topics = sorted(t for t, payload in retained.items() if payload)
+    for topic in topics:
+        await transport.publish(topic, "", 1, True)
+    await _flush(transport, f"{root}/_purge/flush", timeout)
+    _LOGGER.info("cleared %d retained topic(s) under %s/", len(topics), root)
+    return topics
+
+
+async def _retained(transport: Transport, topic_filter: str, settle: float, timeout: float) -> dict[str, bytes | str]:
+    """What the broker holds retained under `topic_filter`: its replay on subscribing, taken as done once no more has
+    come for `settle` seconds (or after `timeout`)."""
+    retained: dict[str, bytes | str] = {}
+    last = asyncio.Event()
+
+    def on_message(msg) -> None:
+        if msg.retain:
+            retained[msg.topic] = msg.payload
+            last.set()
+
+    unsub = await transport.subscribe(topic_filter, on_message)
+    try:
+        end = asyncio.get_running_loop().time() + timeout
+        while asyncio.get_running_loop().time() < end:
+            last.clear()
+            try:
+                await asyncio.wait_for(last.wait(), settle)
+            except TimeoutError:
+                break
+    finally:
+        unsub()
+    return retained
 
 
 async def _flush(il: Transport, topic: str, timeout: float) -> None:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import secrets
 from dataclasses import dataclass
 from typing import Any
@@ -177,27 +178,58 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Deleted, not just unloaded (which only says `offline`, keeping every descriptor for the next start): clear what
-    this producer left retained on IL, so il-ha and other IL consumers drop its devices. A broker that cannot be
-    reached only leaves them behind; the removal goes on."""
+    """Deleted, not just unloaded (which only says `offline`, keeping everything for the next start). Clears what this
+    entry leaves behind: its IL devices (retained descriptors and values, so il-ha and other IL consumers drop them),
+    with the embedded bridge also that bridge's retained topics and its state file, and the files it kept in its own
+    storage directory (the device list and the Tuya login). A path the user pointed elsewhere is left alone, as is
+    everything on an external bridge. A broker that cannot be reached only leaves the retained topics behind; the
+    removal goes on."""
     await hass.async_add_import_executor_job(_import_runtime)
     from tuya2ildevice.host import MqttTransport
 
-    from rustuya_local.service import AnotherProducer, purge_il
+    from rustuya_local.service import AnotherProducer, purge_il, purge_retained
 
     data = entry.data
     prefix, source = data.get(CONF_IL_PREFIX, "il"), data.get(CONF_IL_SOURCE, "tuya")
+    embedded = data.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED
     transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
                               client_id=f"rustuya-remove-{secrets.token_hex(4)}",
                               username=data.get(CONF_BROKER_USERNAME) or None,
                               password=data.get(CONF_BROKER_PASSWORD) or None)
     try:
         await transport.connect()
-        await purge_il(transport, prefix, source)
-    except AnotherProducer as e:
-        _LOGGER.warning("left the IL devices of %s/%s in place: %s", prefix, source, e)
+        try:
+            await purge_il(transport, prefix, source)
+        except AnotherProducer as e:
+            _LOGGER.warning("left the IL devices of %s/%s in place: %s", prefix, source, e)
+        if embedded:
+            try:
+                await purge_retained(transport, data[CONF_BRIDGE_ROOT])
+            except RuntimeError as e:
+                _LOGGER.warning("%s", e)
     except Exception as e:  # noqa: BLE001 -- broker down, refused credentials: nothing to clear it with
-        _LOGGER.warning("could not clear the IL devices of %s/%s from the broker: %s", prefix, source, e)
+        _LOGGER.warning("could not clear the retained topics of %s/%s from the broker: %s", prefix, source, e)
     finally:
         with contextlib.suppress(Exception):
             await transport.close()
+
+    owned = [data.get(CONF_DEVICES_PATH)]
+    if data.get(CONF_DEVICES_PATH):
+        owned.append(os.path.join(os.path.dirname(data[CONF_DEVICES_PATH]), CREDS_FILE))
+    if embedded:
+        owned.append(data.get(CONF_BRIDGE_STATE_FILE))
+    await hass.async_add_executor_job(_remove_owned, hass.config.path(STORAGE_DIR), [p for p in owned if p])
+
+
+def _remove_owned(storage: str, paths: list[str]) -> None:
+    """Delete `paths` that lie in this integration's own storage directory (then the directory, once empty)."""
+    root = os.path.realpath(storage)
+    for path in paths:
+        real = os.path.realpath(path)
+        if os.path.dirname(real) != root:
+            continue
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(real)
+            _LOGGER.info("removed %s", real)
+    with contextlib.suppress(OSError):
+        os.rmdir(root)
