@@ -144,5 +144,36 @@
     "error": {
       "publish_failed": "브리지에 명령을 보내지 못했습니다."
     }
+  },
+  "services": {
+    "send_command": {
+      "name": "명령 보내기",
+      "description": "IL을 거치지 않고 브리지로 Tuya 기기에 raw 데이터 포인트 하나를 씁니다. 보내고 끝: 값을 검사하거나 기기 응답을 기다리지 않습니다. 옵션에서 원격 제어를 허용하지 않으면 잠금장치·경보·차고문에는 거부됩니다.",
+      "fields": {
+        "device_id": {
+          "name": "기기 ID",
+          "description": "Tuya 기기 ID (기기 목록의 것), 또는 il-ha 같은 IL consumer가 만든 Home Assistant 기기 ID."
+        },
+        "dp": {
+          "name": "DP",
+          "description": "데이터 포인트 ID, 예: 1."
+        },
+        "value": {
+          "name": "값",
+          "description": "raw 값: true/false, 숫자 또는 문자열."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_running": {
+      "message": "Rustuya가 실행 중이 아닙니다."
+    },
+    "unknown_device": {
+      "message": "기기 {device_id}이(가) 브리지에 없습니다 (또는 기기 목록에 없음)."
+    },
+    "hazardous": {
+      "message": "기기 {device_id}은(는) 잠금장치·경보·차고문입니다. 명령을 보내려면 옵션에서 원격 제어를 허용하세요."
+    }
   }
 }

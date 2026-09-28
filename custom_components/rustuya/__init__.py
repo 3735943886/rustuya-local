@@ -13,9 +13,11 @@ import secrets
 from dataclasses import dataclass
 from typing import Any
 
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
+from homeassistant.helpers import config_validation as cv
 
 from .const import (
     BRIDGE_EMBEDDED,
@@ -46,6 +48,15 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+SERVICE_SEND_COMMAND = "send_command"
+SEND_COMMAND_SCHEMA = vol.Schema({
+    vol.Required("device_id"): cv.string,
+    vol.Required("dp"): vol.All(vol.Coerce(str), vol.Match(r"^\d+$")),
+    vol.Required("value"): vol.Any(bool, int, float, str),
+})
+
 
 @dataclass
 class RuntimeData:
@@ -59,6 +70,45 @@ def _import_runtime() -> None:
     import tuya2ildevice.host  # noqa: F401
 
     import rustuya_local.service  # noqa: F401
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    async def send_command(call: ServiceCall) -> None:
+        """One raw DP to a device, past the IL (`Service.send_dps`): fire and forget."""
+        device_id = call.data["device_id"]
+        runtime = next(iter(hass.data.get(DOMAIN, {}).values()), None)       # single_config_entry
+        if runtime is None:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="not_running",
+                                         translation_placeholders={"device_id": device_id})
+        # imported already (the service is running): no module load in the event loop
+        from rustuya_local.service import CommandRefused
+
+        try:
+            runtime.service.send_dps(_tuya_id(hass, runtime.service, device_id),
+                                     {call.data["dp"]: call.data["value"]})
+        except CommandRefused as e:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key=e.reason,
+                                         translation_placeholders={"device_id": device_id}) from e
+
+    hass.services.async_register(DOMAIN, SERVICE_SEND_COMMAND, send_command, schema=SEND_COMMAND_SCHEMA)
+    return True
+
+
+def _tuya_id(hass: HomeAssistant, service: Any, device_id: str) -> str:
+    """`device_id` as the Tuya device id: as given when the service drives it, else a Home Assistant device's. An IL
+    consumer registers a device with the IL id (the Tuya id) among its identifiers — il-ha as `("ildevice", id)`, under
+    whatever platform name it runs as — so any identifier value the service drives is taken, when there is exactly one.
+    Unresolved, it is returned as given (and refused as an unknown device)."""
+    from homeassistant.helpers import device_registry as dr
+
+    drivers = service.hub.drivers if service.hub is not None else {}
+    if device_id in drivers:
+        return device_id
+    device = dr.async_get(hass).async_get(device_id)
+    if device is None:
+        return device_id
+    found = {value for _domain, value in device.identifiers if value in drivers}
+    return found.pop() if len(found) == 1 else device_id
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

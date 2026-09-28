@@ -144,5 +144,36 @@
     "error": {
       "publish_failed": "Could not send the command to the bridge."
     }
+  },
+  "services": {
+    "send_command": {
+      "name": "Send a command",
+      "description": "Writes one raw data point to a Tuya device through the bridge, bypassing IL. Fire and forget: nothing checks the value or waits for the device. Locks, alarms and garage doors are refused unless their remote control is allowed in the options.",
+      "fields": {
+        "device_id": {
+          "name": "Device ID",
+          "description": "The Tuya device ID (as in the device list), or the Home Assistant device an IL consumer such as il-ha made of it."
+        },
+        "dp": {
+          "name": "DP",
+          "description": "The data point ID, e.g. 1."
+        },
+        "value": {
+          "name": "Value",
+          "description": "The raw value: true/false, a number or a string."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_running": {
+      "message": "Rustuya is not running."
+    },
+    "unknown_device": {
+      "message": "Device {device_id} is not on the bridge (or not in the device list)."
+    },
+    "hazardous": {
+      "message": "Device {device_id} is a lock, alarm or garage door; allow their remote control in the options to send it commands."
+    }
   }
 }

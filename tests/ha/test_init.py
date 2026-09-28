@@ -319,3 +319,57 @@ async def test_a_device_file_for_an_entry_that_is_not_running_restarts_it(hass, 
     monkeypatch.setattr(hass.config_entries, "async_schedule_reload", reloaded.append)
     await async_refresh_devices(hass, entry)
     assert reloaded == [entry.entry_id]
+
+
+async def test_send_command_writes_a_raw_dp_and_refuses_a_lock(hass, broker, tmp_path, socket_enabled):
+    """`rustuya.send_command`: one DP straight to the bridge, by Tuya id or Home Assistant device; a lock (by its Tuya category) is refused while remote
+    control of locks, alarms and garage doors is off, as is a device the bridge does not hold."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    devices_path = tmp_path / "tuyadevices.json"
+    devices_path.write_text(json.dumps([lamp("lamp1"), {**lamp("lock1"), "category": "ms"}]))
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
+        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
+        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
+    entry.add_to_hass(hass)
+    watcher = Watcher(broker, registered=("lamp1", "lock1"))
+    try:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await until(lambda: "il/lamp1" in watcher.last and "il/lock1" in watcher.last)
+
+        await hass.services.async_call(DOMAIN, "send_command", {"device_id": "lamp1", "dp": 20, "value": False},
+                                       blocking=True)
+        await until(lambda: json.loads(watcher.last.get("rustuya/command", "{}")).get("action") == "set")
+        assert json.loads(watcher.last["rustuya/command"]) == {"action": "set", "id": "lamp1", "dps": {"20": False}}
+
+        # a Home Assistant device, as il-ha registers one: the IL id (the Tuya id) among its identifiers
+        from homeassistant.helpers import device_registry as dr
+
+        il_ha = MockConfigEntry(domain="ildevice")
+        il_ha.add_to_hass(hass)
+        registry = dr.async_get(hass)
+        ha_lamp = registry.async_get_or_create(config_entry_id=il_ha.entry_id, identifiers={("ildevice", "lamp1")})
+        ha_lock = registry.async_get_or_create(config_entry_id=il_ha.entry_id, identifiers={("ildevice", "lock1")})
+        await hass.services.async_call(DOMAIN, "send_command", {"device_id": ha_lamp.id, "dp": "22", "value": 500},
+                                       blocking=True)
+        await until(lambda: json.loads(watcher.last["rustuya/command"]).get("dps") == {"22": 500})
+
+        for device_id, reason in (("lock1", "hazardous"), (ha_lock.id, "hazardous"), ("nope", "unknown_device")):
+            try:
+                await hass.services.async_call(DOMAIN, "send_command", {"device_id": device_id, "dp": "1",
+                                                                        "value": True}, blocking=True)
+            except ServiceValidationError as e:
+                assert e.translation_key == reason
+            else:
+                raise AssertionError(f"{device_id} was not refused")
+
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+    finally:
+        for topic in list(watcher.last):
+            watcher.publish(topic, "", retain=True)
+        await asyncio.sleep(0.1)
+        watcher.close()

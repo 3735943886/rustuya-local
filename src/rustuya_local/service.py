@@ -32,7 +32,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tuya2ildevice import Hub, IlTopics, preload
+from tuya2ildevice import BridgeCommand, Hub, IlTopics, preload
+from tuya2ildevice.assemble import HAZARDOUS_COVERS
 from tuya2ildevice.host import (
     DeviceWatcher,
     OverrideWatcher,
@@ -58,6 +59,32 @@ Will = tuple[str, str, int, bool]
 
 class AnotherProducer(RuntimeError):
     """Another producer serves this IL prefix and source; stop it first (or give this one another source)."""
+
+
+class CommandRefused(ValueError):
+    """`Service.send_dps` sent nothing. `reason`: `not_running`, `unknown_device` (the bridge does not hold it, so
+    nothing drives it) or `hazardous` (a lock, alarm or garage door while `allow_hazardous` is off)."""
+
+    def __init__(self, reason: str, device_id: str) -> None:
+        super().__init__(f"{reason}: {device_id}")
+        self.reason, self.device_id = reason, device_id
+
+
+# Tuya categories whose raw DPs open a door or disarm something: locks and safes, alarm hosts, garage doors and door
+# controllers. Most have no IL property that writes (Home Assistant core's tuya has no lock), so the descriptor alone
+# would not tell; `hazardous()` checks both.
+HAZARDOUS_CATEGORIES = frozenset({"ms", "jtmspro", "jtmsbh", "gyms", "hotelms", "videolock", "photolock", "bxx", "mk",
+                                  "mal", "ckmkzq", "mc"})
+
+
+def hazardous(record: dict, descriptor: dict) -> bool:
+    """A lock, an alarm or a garage door / gate (il.md S-1): by its Tuya category, or by what the Hub made of it (an
+    `alarm`, or a cover of a hazardous class, as the device's kind or one of its groups)."""
+    if record.get("category") in HAZARDOUS_CATEGORIES:
+        return True
+    kinds = [descriptor] + list((descriptor.get("groups") or {}).values())
+    return any(k.get("kind") == "alarm" or (k.get("kind") == "cover" and k.get("class") in HAZARDOUS_COVERS)
+               for k in kinds)
 
 
 @dataclass
@@ -199,6 +226,20 @@ class Service:
             await _flush(self.il, topic, 2.0)
         except Exception as e:  # noqa: BLE001 -- a connection already gone has nothing left to send
             _LOGGER.debug("could not flush the IL connection before closing it: %r", e)
+
+    def send_dps(self, device_id: str, dps: dict[str, Any]) -> None:
+        """Write raw DPs (`{dp id: value}`) to a device the bridge holds, past the IL: fire and forget, nothing checks
+        the values or waits for the device. Raises `CommandRefused` for a device nothing drives, or a hazardous one
+        (see `hazardous`) unless `allow_hazardous` is on."""
+        if self.hub is None or self.bridge_client is None or self._stack is None:
+            raise CommandRefused("not_running", device_id)
+        driver = self.hub.drivers.get(device_id)
+        if driver is None:
+            raise CommandRefused("unknown_device", device_id)
+        if not self.settings.hub_options.get("allow_hazardous") and hazardous(self.hub.records[device_id],
+                                                                                driver.descriptor):
+            raise CommandRefused("hazardous", device_id)
+        self.bridge_client.send_command(BridgeCommand(device_id, "set", {str(k): v for k, v in dps.items()}))
 
     def refresh_devices(self, records: list[dict] | None = None) -> None:
         """Apply the device file as it is now (or `records`), without restarting anything."""

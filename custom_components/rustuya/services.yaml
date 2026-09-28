@@ -1,0 +1,17 @@
+send_command:
+  fields:
+    device_id:
+      required: true
+      example: "bf0123456789abcdef"
+      selector:
+        text:
+    dp:
+      required: true
+      example: "1"
+      selector:
+        text:
+    value:
+      required: true
+      example: true
+      selector:
+        object:
