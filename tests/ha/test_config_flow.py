@@ -303,16 +303,30 @@ def _entry(hass, tmp_path):
     return entry
 
 
-async def test_the_panel_is_one_click_from_configure(hass, tmp_path):
+async def test_the_panel_is_one_click_from_configure(hass, tmp_path, monkeypatch):
     """Add turns it on (keeping the other options) and links to it; then Open links (Hide is in the panel itself)."""
+    from unittest.mock import AsyncMock
+
+    import custom_components.rustuya as integration
+    from custom_components.rustuya import panel
+    from homeassistant.config_entries import ConfigEntryState
+
     entry = _entry(hass, tmp_path)
     hass.config_entries.async_update_entry(entry, options={CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True,
                                                            CONF_PACK: False})
+    entry.mock_state(hass, ConfigEntryState.LOADED)
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = integration.RuntimeData(
+        service=None, embedded_bridge=None, options=dict(entry.options))
+    entry.async_on_unload(entry.add_update_listener(integration._async_reload))
+    setup_panel = AsyncMock()
+    monkeypatch.setattr(panel, "async_setup", setup_panel)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["menu_options"][0] == "panel_show"
     r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "panel_show"})
     assert r["type"] == "abort" and r["reason"] == "panel_shown" and r["description_placeholders"] == {"url": "/rustuya"}
     assert entry.options == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False, CONF_PANEL: True}
+    await hass.async_block_till_done()
+    setup_panel.assert_awaited_once_with(hass, entry)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["menu_options"][0] == "panel_open" and "panel_hide" not in result["menu_options"]
