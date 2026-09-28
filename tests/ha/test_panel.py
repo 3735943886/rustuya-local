@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -86,6 +88,9 @@ async def test_the_panel_follows_the_option(hass, loaded):
     p = hass.data[frontend.DATA_PANELS][panel.PANEL_URL]
     assert p.require_admin and p.sidebar_title == "Rustuya"
     assert p.config_panel_domain is None          # Configure stays the options flow, where the panel is turned off
+    # the file's hash in the URL: a changed file is never taken from a browser's cache (same release or not)
+    js = (Path(panel.__file__).parent / "www" / "rustuya-panel.js").read_bytes()
+    assert p.config["_panel_custom"]["module_url"].endswith("-" + hashlib.sha256(js).hexdigest()[:10])
     panel.async_remove(hass)
     assert panel.PANEL_URL not in hass.data[frontend.DATA_PANELS]
     panel.async_remove(hass)                                          # twice: no error

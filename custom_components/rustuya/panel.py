@@ -69,13 +69,21 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
         async_remove(hass)
         return
     if PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
-        version = (await async_get_integration(hass, DOMAIN)).version     # a new release is not served from cache
+        # the file's own hash, not only the release: a changed file is never served from a browser's cache
+        version = (await async_get_integration(hass, DOMAIN)).version
+        digest = await hass.async_add_executor_job(_digest, Path(__file__).parent / "www" / "rustuya-panel.js")
         await panel_custom.async_register_panel(
             hass, frontend_url_path=PANEL_URL, webcomponent_name="rustuya-panel",
-            module_url=f"{STATIC_URL}/rustuya-panel.js?v={version}",
+            module_url=f"{STATIC_URL}/rustuya-panel.js?v={version}-{digest}",
             sidebar_title="Rustuya", sidebar_icon="mdi:tune-variant", require_admin=True)
             # no `config_panel_domain`: it makes the integration's Configure open this panel instead of the options
             # flow, which is where the panel is turned back off
+
+
+def _digest(path: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:10]
 
 
 def async_remove(hass: HomeAssistant) -> None:
