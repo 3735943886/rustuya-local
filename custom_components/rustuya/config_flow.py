@@ -2,10 +2,11 @@
 through rustuya-manager's `Manager` — the Tuya Cloud QR login wizard and registering devices on the bridge
 (`architecture_device_management_via_manager`: this flow drives `Manager`, never rolls its own bridge protocol).
 
-Setup asks only for the bridge mode and the broker, then offers the (optional) cloud login. Everything else starts at
-its default — the bridge topic root, the IL prefix and source, the device file, the embedded bridge's state file and
-log level — and is changed later in the panel's Settings card. The one exception: an external bridge the check does
-not find on the default root gets the root field on the form, since it may simply run on another one.
+Setup asks only for the bridge mode, the broker and the IL prefix, then offers the (optional) cloud login; closing the
+window anywhere in the login finishes the setup without it (`async_remove`). Everything else starts at its default —
+the bridge topic root, the IL source, the device file, the embedded bridge's state file and log level — and is changed
+later in the panel's Settings card. The one exception: an external bridge the check does not find on the default root
+gets the root field on the form, since it may simply run on another one.
 """
 
 from __future__ import annotations
@@ -75,10 +76,16 @@ def _broker_schema(defaults: dict[str, Any] | None = None, *, root: bool = False
         vol.Required(CONF_BROKER_PORT, default=d.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT)): int,
         vol.Optional(CONF_BROKER_USERNAME, default=d.get(CONF_BROKER_USERNAME, "")): str,
         vol.Optional(CONF_BROKER_PASSWORD, default=d.get(CONF_BROKER_PASSWORD, "")): str,
+        vol.Required(CONF_IL_PREFIX, default=d.get(CONF_IL_PREFIX, DEFAULT_IL_PREFIX)): str,
     }
     if root:
         fields[vol.Required(CONF_BRIDGE_ROOT, default=d.get(CONF_BRIDGE_ROOT, DEFAULT_BRIDGE_ROOT))] = str
     return vol.Schema(fields)
+
+
+def _prefix_ok(prefix: str) -> bool:
+    """An IL prefix is an MQTT topic: no wildcards, no empty levels."""
+    return bool(prefix) and not any(c in prefix for c in "+#\0") and "" not in prefix.split("/")
 
 
 def _import_transport() -> None:
@@ -138,6 +145,7 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._data: dict[str, Any] = {}
         self._manager: Any = None
         self._wizard_task: asyncio.Task | None = None
+        self._in_login = False
 
     # ---- bridge mode ---------------------------------------------------------------
 
@@ -157,7 +165,11 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_external(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
         ask_root = False
-        if user_input is not None:
+        if user_input is not None and not _prefix_ok(user_input[CONF_IL_PREFIX].strip()):
+            errors[CONF_IL_PREFIX] = "invalid_prefix"
+            ask_root = CONF_BRIDGE_ROOT in user_input
+        elif user_input is not None:
+            user_input = {**user_input, CONF_IL_PREFIX: user_input[CONF_IL_PREFIX].strip()}
             data = {**self._defaults(BRIDGE_EXTERNAL), **user_input}
             error = await _probe_bridge(self.hass, data)
             if error is None:
@@ -174,10 +186,13 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             import importlib.util
-            if importlib.util.find_spec("pyrustuyabridge") is None:
+            if not _prefix_ok(user_input[CONF_IL_PREFIX].strip()):
+                errors[CONF_IL_PREFIX] = "invalid_prefix"
+            elif importlib.util.find_spec("pyrustuyabridge") is None:
                 errors["base"] = "pyrustuyabridge_missing"
             else:
-                self._data.update({**self._defaults(BRIDGE_EMBEDDED), **user_input})
+                self._data.update({**self._defaults(BRIDGE_EMBEDDED), **user_input,
+                                   CONF_IL_PREFIX: user_input[CONF_IL_PREFIX].strip()})
                 return await self.async_step_onboard()
         return self.async_show_form(step_id="embedded", data_schema=_broker_schema(user_input), errors=errors)
 
@@ -209,6 +224,7 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_cloud_wizard_start(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         manager = await self._async_open_manager()
+        self._in_login = True           # from here, closing the window finishes the setup without the login
         if user_input is not None:
             await manager.wizard.start(user_input.get("user_code") or None, scan=False)
             return await self.async_step_cloud_wizard_progress()
@@ -290,17 +306,28 @@ class RustuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # ---- finish --------------------------------------------------------------------
 
     async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        self._in_login = False
         return self.async_create_entry(title="Rustuya", data=self._data, options={
             CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True,
         })
 
+    async def async_step_import(self, data: dict[str, Any]) -> FlowResult:
+        """The setup a closed login window left: the broker and the rest were all given, only the login is skipped."""
+        self._data = dict(data)
+        return await self.async_step_finish()
+
     @callback
     def async_remove(self) -> None:
-        """Every path a flow leaves progress on calls this (HA's FlowHandler, a sync `@callback` despite the name);
-        close a Manager left open by an abandoned wizard so its MQTT connection does not leak (mirrors the legacy
-        flow's own guarantee)."""
+        """Every path a flow leaves progress on calls this (HA's FlowHandler, a sync `@callback` despite the name):
+        close a Manager left open by an abandoned wizard so its MQTT connection does not leak; and when the window was
+        closed during the login, finish the setup without it (an `import` flow with what was given), since the login
+        is optional and can be done later from Configure."""
         if self._manager is not None:
             self.hass.async_create_task(self._async_close_manager())
+        if self._in_login:
+            self._in_login = False
+            self.hass.async_create_task(self.hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=dict(self._data)))
 
     @staticmethod
     @callback

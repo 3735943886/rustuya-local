@@ -48,9 +48,9 @@ another, stop the old one first.
 **The `rustuya` integration** (HACS: add this repository as a custom repository of type *Integration*, install
 **Rustuya**, restart, then *Add Integration* → **Rustuya**) is the service tied to a config entry, with the QR login
 wizard, bridge registration and an optional embedded bridge. It creates no entities itself. Setup asks only for the
-bridge mode and the broker (it checks an external bridge answers there, and asks for its topic root if it is not on
-the default one), then offers the Tuya Cloud login; the rest starts at its defaults and is changed in the panel's
-*Settings*. Deleting the integration
+bridge mode, the broker and the IL prefix (it checks an external bridge answers there, and asks for its topic root if it
+is not on the default one), then offers the Tuya Cloud login, which closing its window skips (it is in *Configure*
+later); the rest starts at its defaults and is changed in the panel's *Settings*. Deleting the integration
 takes its devices out of IL (so il-ha removes them); with the embedded bridge it also clears that bridge's retained
 topics and its state file. The device list and Tuya login it kept under `.storage/rustuya/` are deleted; a device file
 you pointed elsewhere, and everything on an external bridge, are left as they are.

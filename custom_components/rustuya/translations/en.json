@@ -9,13 +9,17 @@
       },
       "external": {
         "title": "Connect to rustuya-bridge",
-        "description": "The MQTT broker your running rustuya-bridge uses. Setup checks that the bridge answers there. The rest (topic root, IL prefix and source, device file) starts at its default; change it later in the Rustuya panel's Settings.",
+        "description": "The MQTT broker your running rustuya-bridge uses, and the IL prefix to publish under. Setup checks that the bridge answers there. The rest (topic root, IL source, device file) starts at its default; change it later in the Rustuya panel's Settings.",
         "data": {
           "broker_host": "Broker host",
           "broker_port": "Broker port",
           "broker_username": "Broker username (optional)",
           "broker_password": "Broker password (optional)",
-          "bridge_root": "Bridge topic root"
+          "bridge_root": "Bridge topic root",
+          "il_prefix": "IL topic prefix"
+        },
+        "data_description": {
+          "il_prefix": "Where the devices are published for il-ha (or any IL consumer); il-ha reads il by default."
         }
       },
       "embedded": {
@@ -25,7 +29,11 @@
           "broker_host": "Broker host",
           "broker_port": "Broker port",
           "broker_username": "Broker username (optional)",
-          "broker_password": "Broker password (optional)"
+          "broker_password": "Broker password (optional)",
+          "il_prefix": "IL topic prefix"
+        },
+        "data_description": {
+          "il_prefix": "Where the devices are published for il-ha (or any IL consumer); il-ha reads il by default."
         }
       },
       "onboard": {
@@ -38,7 +46,7 @@
       },
       "cloud_wizard_start": {
         "title": "Log in to Tuya Cloud",
-        "description": "Leave the user code blank for a fresh QR login, or enter a saved one to skip scanning again.",
+        "description": "Leave the user code blank for a fresh QR login, or enter a saved one to skip scanning again. To set up without logging in, close this window: Rustuya is added, and the login is in its Configure later.",
         "data": {
           "user_code": "Saved user code (optional)"
         }
@@ -48,7 +56,7 @@
       },
       "cloud_wizard_scan": {
         "title": "Scan the QR code",
-        "description": "Scan with the Smart Life or Tuya Smart app, then submit.",
+        "description": "Scan with the Smart Life or Tuya Smart app, then submit. Close this window to finish the setup without the login.",
         "data": {
           "scanned": "I've scanned it"
         }
@@ -76,6 +84,7 @@
     "error": {
       "bridge_not_found": "The broker answers, but no rustuya-bridge is running on that topic root. Start the bridge, or enter the topic root it runs on, and try again.",
       "cannot_connect": "Could not connect to the MQTT broker. Check the host, port and credentials.",
+      "invalid_prefix": "An MQTT topic without wildcards (+, #) or empty levels, e.g. il or home/il.",
       "publish_failed": "Could not send the command to the bridge.",
       "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead"
     },
