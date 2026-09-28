@@ -356,14 +356,9 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             # merged over the current options, so any option not on the form keeps its value
             return self.async_create_entry(title="", data={**self.config_entry.options, **user_input})
+        # only the panel: the other options (hazardous control, unused data points, the pack) are in its Options card
         current = self.config_entry.options
-        fields = {
-            vol.Required(CONF_ALLOW_HAZARDOUS, default=current.get(CONF_ALLOW_HAZARDOUS, False)): bool,
-            vol.Required(CONF_EXPOSE_UNUSED, default=current.get(CONF_EXPOSE_UNUSED, False)): bool,
-            vol.Required(CONF_PACK, default=current.get(CONF_PACK, True)): bool,
-            # always offered: Home Assistant's `show_advanced_options` is deprecated and always true since 2026.9
-            vol.Required(CONF_PANEL, default=current.get(CONF_PANEL, False)): bool,
-        }
+        fields = {vol.Required(CONF_PANEL, default=current.get(CONF_PANEL, False)): bool}
         return self.async_show_form(step_id="tuning", data_schema=vol.Schema(fields))
 
     async def _async_manager(self):

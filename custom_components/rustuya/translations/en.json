@@ -98,17 +98,16 @@
     "step": {
       "init": {
         "menu_options": {
-          "tuning": "Tuning",
+          "tuning": "Rustuya panel",
           "cloud_wizard": "Log in to Tuya Cloud again",
           "bridge_sync": "Sync devices with the bridge"
         }
       },
       "tuning": {
+        "title": "Rustuya panel",
+        "description": "The sidebar panel: bridge devices, custom converters, options (remote control of locks and alarms, unused data points, the override pack) and settings. For administrators.",
         "data": {
-          "allow_hazardous": "Allow remote control of locks, alarms and garage doors",
-          "expose_unused": "Expose data points Home Assistant core would not classify",
-          "pack": "Download fixes for non-standard devices published between releases",
-          "panel": "Show the Rustuya panel in the sidebar (edit custom converters)"
+          "panel": "Show the Rustuya panel in the sidebar"
         }
       },
       "cloud_wizard": {

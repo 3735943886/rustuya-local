@@ -46,6 +46,8 @@ const STYLE = `
   button:disabled { opacity: .5; cursor: default; }
   .note { margin-top: 8px; }
   .settings { display: grid; gap: 12px; margin-top: 12px; }
+  .check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+  .check .muted { font-size: 12px; }
   .setting { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 4px 12px; align-items: center; }
   .setting > .muted { grid-column: 2; font-size: 12px; }
   :host([narrow]) .setting { grid-template-columns: 1fr; }
@@ -424,6 +426,68 @@ const SETTINGS = [
   ["bridge_log_level", "Bridge log level", "error, warn, info or debug."],
 ];
 
+// ---- options: the entry's options other than the panel itself (OptionsView) ------------------------------------
+
+const OPTIONS = [
+  ["allow_hazardous", "Allow remote control of locks, alarms and garage doors",
+   "Off: their state is shown, but IL refuses writes to them."],
+  ["expose_unused", "Expose data points Home Assistant core would not classify",
+   "Every data point the cloud schema lists, not only the ones a standard entity uses."],
+  ["pack", "Download fixes for non-standard devices published between releases",
+   "The override pack: copied into the converters directory at start and daily."],
+];
+
+class OptionsSection {
+  constructor(panel) {
+    this.panel = panel;
+    this.boxes = {};
+    this.body = el("div", { class: "settings" }, el("div", { class: "muted" }, "…"));
+    this.save = el("button", { class: "primary", onclick: () => this.submit() }, "Save and restart");
+    this.root = el("div", { class: "card" },
+      el("h2", {}, "Options"),
+      el("div", { class: "muted" }, "Saving restarts the integration."),
+      this.body,
+      el("div", { class: "row note" }, this.save));
+  }
+
+  async load() {
+    try {
+      this.current = await this.panel._api("GET", "options");
+    } catch (e) {
+      this.body.replaceChildren(el("div", { class: "error" }, `Cannot read the options: ${message(e)}`));
+      this.save.disabled = true;
+      return;
+    }
+    this.body.replaceChildren(...OPTIONS.map(([k, label, hint]) => {
+      const box = el("input", { type: "checkbox" });
+      box.checked = !!this.current[k];
+      this.boxes[k] = box;
+      return el("label", { class: "check" }, box,
+        el("span", {}, el("div", {}, label), el("div", { class: "muted" }, hint)));
+    }));
+    this.save.disabled = false;
+  }
+
+  async submit() {
+    const changed = Object.fromEntries(Object.entries(this.boxes)
+      .map(([k, box]) => [k, box.checked]).filter(([k, v]) => v !== this.current[k]));
+    if (!Object.keys(changed).length) {
+      this.panel._toast("Nothing changed");
+      return;
+    }
+    this.save.disabled = true;
+    try {
+      await this.panel._api("PUT", "options", changed);
+    } catch (e) {
+      this.panel._toast(`Not saved: ${message(e)}`);
+      this.save.disabled = false;
+      return;
+    }
+    this.panel._toast("Saved; Rustuya is restarting");
+    setTimeout(() => location.reload(), 4000);          // the restart takes the panel away and puts it back
+  }
+}
+
 class SettingsSection {
   constructor(panel) {
     this.panel = panel;
@@ -535,6 +599,7 @@ class RustuyaPanel extends HTMLElement {
     this._menu.narrow = this.hasAttribute("narrow");
 
     this._bridge = new BridgeSection(this);
+    this._options = new OptionsSection(this);
     this._settings = new SettingsSection(this);
     this._pack = el("div", { class: "muted" }, "…");
     this._syncBtn = el("button", { onclick: () => this._syncPack() }, "Sync now");
@@ -556,7 +621,7 @@ class RustuyaPanel extends HTMLElement {
     this.shadowRoot.replaceChildren(
       el("style", {}, STYLE),
       el("div", { class: "toolbar" }, this._menu, el("span", {}, "Rustuya"), el("span", { class: "spacer" }),
-        el("button", { title: "Remove this panel from the sidebar; Configure -> Tuning brings it back",
+        el("button", { title: "Remove this panel from the sidebar; Configure -> Rustuya panel brings it back",
                        onclick: () => this._hide() }, "Hide panel")),
       el("div", { class: "content" },
         this._bridge.root,
@@ -584,8 +649,10 @@ class RustuyaPanel extends HTMLElement {
                 el("button", { onclick: () => this._delete() }, "Delete")),
               this._origin,
               this._text))),
+        this._options.root,
         this._settings.root));
     this._acceptDrops(this._convertersCard);
+    this._options.load();
     this._settings.load();
   }
 
@@ -659,7 +726,7 @@ class RustuyaPanel extends HTMLElement {
   }
 
   async _hide() {
-    if (!confirm("Remove the Rustuya panel from the sidebar? Turn it back on in the integration's Configure -> Tuning.")) return;
+    if (!confirm("Remove the Rustuya panel from the sidebar? Turn it back on in the integration's Configure -> Rustuya panel.")) return;
     try {
       await this._api("DELETE", "panel");
     } catch (e) {
@@ -704,7 +771,7 @@ class RustuyaPanel extends HTMLElement {
       return;
     }
     if (!pack || !pack.enabled) {
-      this._pack.textContent = "Off. Turn it on in the integration's options (Tuning).";
+      this._pack.textContent = "Off. Turn it on in Options below.";
       this._pack.className = "muted";
       return;
     }

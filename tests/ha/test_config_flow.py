@@ -303,12 +303,14 @@ def _entry(hass, tmp_path):
     return entry
 
 
-async def test_tuning_updates_options(hass, tmp_path):
+async def test_tuning_is_only_the_panel_and_keeps_the_other_options(hass, tmp_path):
     entry = _entry(hass, tmp_path)
+    hass.config_entries.async_update_entry(entry, options={CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True,
+                                                           CONF_PACK: False})
     result = await hass.config_entries.options.async_init(entry.entry_id)
     r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tuning"})
-    r = await hass.config_entries.options.async_configure(
-        r["flow_id"], {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False, CONF_PANEL: True})
+    assert [str(k) for k in r["data_schema"].schema] == [CONF_PANEL]         # the rest is in the panel's Options
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {CONF_PANEL: True})
     assert r["type"] == "create_entry"
     assert r["data"] == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False, CONF_PANEL: True}
 
@@ -449,17 +451,6 @@ async def test_add_extra_for_a_sub_device_carries_cid_and_parent(hass):
     sub = FakeDevice("s", type="SubDevice", cid="c1", parent_id="p1")
     assert add_extra(sub) == {"cid": "c1", "parent_id": "p1"}
     assert add_extra(FakeDevice("w")) == {}
-
-
-async def test_the_panel_option_is_on_the_tuning_form(hass, tmp_path):
-    entry = _entry(hass, tmp_path)
-    hass.config_entries.async_update_entry(entry, options={CONF_PANEL: True})
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tuning"})
-    assert CONF_PANEL in r["data_schema"].schema
-    r = await hass.config_entries.options.async_configure(
-        r["flow_id"], {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True, CONF_PANEL: False})
-    assert r["data"][CONF_PANEL] is False
 
 
 async def test_a_second_instance_is_refused(hass, tmp_path):

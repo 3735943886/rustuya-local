@@ -391,3 +391,23 @@ async def test_apply_clears_the_old_topics_between_stop_and_start(hass, monkeypa
         expected.append(("clear", old, cleared))
     expected.append(("setup", {**old, **change}))
     assert calls == expected
+
+
+async def test_the_options_other_than_the_panel_are_in_the_panel(hass, loaded, hass_client):
+    entry, _ = await loaded({CONF_PANEL: True, CONF_PACK: False})
+    c = await hass_client()
+    r = await c.get("/api/rustuya/options")
+    assert await r.json() == {"allow_hazardous": False, "expose_unused": False, "pack": False}
+    r = await c.put("/api/rustuya/options", json={"pack": False})                  # the same: nothing to do
+    assert await r.json() == {"restarting": False}
+    r = await c.put("/api/rustuya/options", json={"allow_hazardous": True, "pack": True})
+    assert await r.json() == {"restarting": True}
+    assert entry.options == {CONF_PANEL: True, CONF_PACK: True, "allow_hazardous": True}
+
+
+@pytest.mark.parametrize("body", [{"panel": False}, {"pack": "yes"}, {"other": True}, [True]])
+async def test_the_options_api_takes_only_those_three(hass, loaded, hass_client, body):
+    entry, _ = await loaded({CONF_PANEL: True})
+    c = await hass_client()
+    assert (await c.put("/api/rustuya/options", json=body)).status == 400
+    assert entry.options == {CONF_PANEL: True}

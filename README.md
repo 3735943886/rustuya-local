@@ -68,16 +68,17 @@ config; integration: `<config>/rustuya_converters`; manager plugin: its data dir
 See tuya2ildevice's README ("User overrides") for the format. A curated set ships in tuya2ildevice, and fixes published
 between its releases (its [override pack](https://github.com/3735943886/tuya2ildevice/tree/master/pack)) are copied
 into the directory at start and daily, as `00_pack_*` files that your own files refine. Turn that off with `"pack":
-false` (daemon), the integration's *Tuning* options, or the plugin tab. The pack only replaces or removes the files it
+false` (daemon), the Rustuya panel's *Options* (integration), or the plugin tab. The pack only replaces or removes the files it
 put there, and leaves a file alone once you edit it.
 
 In Home Assistant the files can be edited from a sidebar panel: turn on *Show the Rustuya panel* in the integration's
-*Tuning* options. The panel is for administrators. It shows the
+*Configure* → *Rustuya panel*. The panel is for administrators. It shows the
 bridge's devices against the cloud list as rustuya-manager does (missing, orphan, mismatch, synced, each a filter you can
 turn off; sub-devices under their gateway; each device's bridge connection, live while the panel is open) with add /
 update / remove, lists the converter files with the pack's
-marked, edits and deletes them (drop `*.json` / `*.py` files on it to copy them in), runs the pack sync on demand, and
-has the *Settings* setup leaves at their defaults: the bridge topic root, the IL prefix and source, the device file, and
+marked, edits and deletes them (drop `*.json` / `*.py` files on it to copy them in), runs the pack sync on demand, has the
+*Options* (remote control of locks, alarms and garage doors; data points Home Assistant core would not classify; the
+override pack), and the *Settings* setup leaves at their defaults: the bridge topic root, the IL prefix and source, the device file, and
 the embedded bridge's state file and log level. Saving restarts the integration; moving the IL prefix or source first
 clears what the old one left on the broker. *Hide panel* in its toolbar turns it off again.
 

@@ -28,6 +28,7 @@ from homeassistant.loader import async_get_integration
 
 from .const import (
     BRIDGE_EMBEDDED,
+    CONF_ALLOW_HAZARDOUS,
     CONF_BRIDGE_LOG_LEVEL,
     CONF_BRIDGE_MODE,
     CONF_BRIDGE_ROOT,
@@ -37,6 +38,7 @@ from .const import (
     CONF_BROKER_PORT,
     CONF_BROKER_USERNAME,
     CONF_DEVICES_PATH,
+    CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
     CONF_PACK,
@@ -57,7 +59,7 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
         hass.data[_VIEWS_KEY] = True
         await hass.http.async_register_static_paths(
             [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)])
-        for view in (ConvertersView, ConverterView, PackView, BridgeView, PanelView, SettingsView):
+        for view in (ConvertersView, ConverterView, PackView, BridgeView, PanelView, SettingsView, OptionsView):
             hass.http.register_view(view())
         websocket_api.async_register_command(hass, ws_subscribe_links)
     if entry.options.get(CONF_PANEL, False) and PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
@@ -153,7 +155,7 @@ class ConverterView(_View):
 
 class PanelView(_View):
     """DELETE: turn the panel off from the panel itself (the `panel` option; the entry reloads and takes it away).
-    It comes back on from the integration's Configure -> Tuning."""
+    It comes back on from the integration's Configure -> Rustuya panel."""
 
     url = "/api/rustuya/panel"
     name = "api:rustuya:panel"
@@ -165,6 +167,42 @@ class PanelView(_View):
         entry = found[0]
         request.app["hass"].config_entries.async_update_entry(entry, options={**entry.options, CONF_PANEL: False})
         return self.json({"panel": False})
+
+
+OPTIONS = {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True}     # with their defaults
+
+
+class OptionsView(_View):
+    """GET / PUT the entry's options other than the panel (which stays in Configure, to turn the panel back on):
+    remote control of hazardous devices, exposing unused data points, the override pack. A change is an options
+    update, which reloads the entry as Configure's did."""
+
+    url = "/api/rustuya/options"
+    name = "api:rustuya:options"
+
+    async def get(self, request: web.Request) -> web.Response:
+        found = self._loaded(request)
+        if isinstance(found, web.Response):
+            return found
+        options = found[0].options
+        return self.json({k: bool(options.get(k, default)) for k, default in OPTIONS.items()})
+
+    async def put(self, request: web.Request) -> web.Response:
+        found = self._loaded(request)
+        if isinstance(found, web.Response):
+            return found
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict) or set(body) - set(OPTIONS) or not all(isinstance(v, bool) for v in body.values()):
+            return self.json_message(f"the options are {sorted(OPTIONS)}, each true or false", HTTPStatus.BAD_REQUEST)
+        entry = found[0]
+        options = {**entry.options, **body}
+        if options == dict(entry.options):
+            return self.json({"restarting": False})
+        request.app["hass"].config_entries.async_update_entry(entry, options=options)      # the entry reloads
+        return self.json({"restarting": True})
 
 
 LOG_LEVELS = ("error", "warn", "info", "debug")
