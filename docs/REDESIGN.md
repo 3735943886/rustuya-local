@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.35). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.36). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)
@@ -317,3 +317,5 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
   unavailable 에서 돌아오면 마지막 event_type 을 달고 있어 리모컨이 눌린 것처럼 보임)가 불·플러그·IR 을 움직였다. BridgeClient 가
   dp 별 retained `state` 를 합치고(마지막 dp 만 남던 버그) 연결 상태와 함께 Hub 에 seed 로 넘김(`set_device(device, seed)`),
   옵션만 바뀐 재시작은 `stop(offline=False)`/`start(resume=True)` 로 presence 를 online 으로 유지.
+- **2026-09-28 0.0.36** (tuya2ildevice 0.3.13): 재시작 때 기기마다 보내던 `get` 제거. seed 로 받는 브리지의 retained `state`
+  가 병합된 최신 사본이므로, `get` 은 live 재연결 또는 아직 state 가 없는 기기(새로 추가, retained snapshot 없음)에만 보냄.
