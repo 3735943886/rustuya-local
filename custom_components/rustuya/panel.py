@@ -153,11 +153,18 @@ class PackView(_View):
         return self.json({"started": found[1].service.sync_pack_now()})
 
 
+def _online(service: Any) -> dict[str, bool]:
+    """Whether the bridge has each device connected, as the running service follows it (live, unlike the manager
+    session opened per request): the devices both in the device file and on the bridge."""
+    hub = getattr(service, "hub", None)
+    return {device_id: bool(driver.linked) for device_id, driver in hub.drivers.items()} if hub is not None else {}
+
+
 class BridgeView(_View):
     """The cloud list against what the bridge holds, through a rustuya-manager session like the options flow's
     `bridge_sync` step (and sharing its lock: one session at a time). GET: every device with its category. POST
     `{"add": [...], "update": [...], "remove": [...]}`: those commands (only for ids the diff has in that category),
-    then the list again."""
+    then the list again. `online` is the running service's link state by id."""
 
     url = "/api/rustuya/bridge"
     name = "api:rustuya:bridge"
@@ -212,7 +219,8 @@ class BridgeView(_View):
             state = getattr(manager, "state", None)
             bridge = getattr(state, "bridge", None) if state is not None else None
             return self.json({"devices": bridge_sync.listing(diff, bridge), "sent": sent,
-                              "cloud_loaded": bool(getattr(state, "cloud", True))})
+                              "cloud_loaded": bool(getattr(state, "cloud", True)),
+                              "online": _online(found[1].service)})
         except RuntimeError as e:                                  # a publish failed
             return self.json_message(f"could not send the command to the bridge: {e}", HTTPStatus.BAD_GATEWAY)
         finally:

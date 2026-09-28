@@ -20,6 +20,7 @@ class FakeService:
     pack_status: dict[str, Any] | None = None
     syncs: list[int] = field(default_factory=list)
     pack_on: bool = True
+    hub: Any = None
 
     async def stop(self) -> None:
         pass
@@ -27,6 +28,16 @@ class FakeService:
     def sync_pack_now(self) -> bool:
         self.syncs.append(1)
         return self.pack_on
+
+
+@dataclass
+class FakeDriver:
+    linked: bool
+
+
+@dataclass
+class FakeHub:
+    drivers: dict[str, FakeDriver]
 
 
 @dataclass
@@ -130,8 +141,10 @@ async def test_the_bridge_list(hass, loaded, hass_client, monkeypatch):
 
     manager = FakeManager(sync_result=_diff())
     install(monkeypatch, manager)
-    await loaded({CONF_PANEL: True})
+    _, service = await loaded({CONF_PANEL: True})
     c = await hass_client()
+    assert (await (await c.get("/api/rustuya/bridge")).json())["online"] == {}      # the service not started yet
+    service.hub = FakeHub({"gw": FakeDriver(True), "fan": FakeDriver(False)})
 
     r = await c.get("/api/rustuya/bridge")
     assert r.status == 200
@@ -142,6 +155,7 @@ async def test_the_bridge_list(hass, loaded, hass_client, monkeypatch):
     assert by_id["sub1"]["cloud"]["parent_id"] == "gw" and by_id["sub1"]["bridge"] is None
     assert by_id["old"]["cloud"] is None and by_id["old"]["bridge"]["name"] == "Old plug"
     assert by_id["fan"]["reasons"] == ["IP: 10.0.0.1 -> 10.0.0.2"]
+    assert body["online"] == {"gw": True, "fan": False}
     assert manager.kwargs["broker"] == "mqtt://h:1883" and manager.closed and manager.commands == []
 
 

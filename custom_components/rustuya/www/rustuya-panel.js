@@ -65,6 +65,10 @@ const STYLE = `
   .dev { border: 1px solid var(--divider-color); border-left: 4px solid var(--cat); border-radius: 8px; padding: 8px 10px;
          background: color-mix(in srgb, var(--cat) 8%, var(--card-background-color)); cursor: pointer; }
   .dev.cat-synced { background: var(--card-background-color); }
+  .dev.cat-synced.offline { --cat: #94a3b8; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-sizing: border-box; }
+  .dot.online { background: #10b981; }
+  .dot.offline { border: 2px solid #94a3b8; }
   .dev.child { margin-left: 24px; }
   .dev .top { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .dev .name { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -138,6 +142,7 @@ class BridgeSection {
   constructor(panel) {
     this.panel = panel;
     this.devices = null;                                  // null until the first load
+    this.online = {};
     const f = stored("rustuya.filters", CATEGORIES);
     this.filters = new Set(Array.isArray(f) ? f.filter((c) => CATEGORIES.includes(c)) : CATEGORIES);
     this.sort = ["id", "name", "category"].includes(stored("rustuya.sort", "id")) ? stored("rustuya.sort", "id") : "id";
@@ -167,6 +172,7 @@ class BridgeSection {
     try {
       const r = selection ? await this.panel._api("POST", "bridge", selection) : await this.panel._api("GET", "bridge");
       this.devices = r.devices;
+      this.online = r.online || {};
       this.status.textContent = r.cloud_loaded ? "" : "No cloud device list yet: log in to Tuya Cloud from the integration's options.";
       if (selection) this.panel._toast(r.sent ? `Sent ${r.sent} command${r.sent === 1 ? "" : "s"} to the bridge` : "Nothing to send");
     } catch (e) {
@@ -277,12 +283,17 @@ class BridgeSection {
   card(d, child) {
     const s = d.cloud || d.bridge;
     const name = s.name && s.name !== "N/A" ? s.name : d.id;
-    const acts = el("span", { class: "acts" }, el("span", { class: `pill cat-${d.category}` }, d.category));
+    // the running service's link state; none for a device it does not follow (missing, orphan)
+    const live = d.id in this.online ? (this.online[d.id] ? "online" : "offline") : null;
+    const acts = el("span", { class: "acts" },
+      live ? el("span", { class: `dot ${live}`, title: live === "online" ? "Connected to the bridge" : "Not connected to the bridge" }) : "",
+      el("span", { class: `pill cat-${d.category}` }, d.category));
     const act = (label, cat, fn) => el("button", { class: `act cat-${cat}`, onclick: (e) => { e.stopPropagation(); fn(); } }, label);
     if (d.category === "missing") acts.append(act("Add", "missing", () => this.one("add", d)));
     if (d.category === "mismatch") acts.append(act("Update", "mismatch", () => this.one("update", d)));
     if (d.category !== "missing") acts.append(act("Remove", "orphan", () => this.one("remove", d)));
-    const card = el("div", { class: `dev cat-${d.category}${child ? " child" : ""}`, title: `${d.category} · ${s.type}`,
+    const card = el("div", { class: `dev cat-${d.category}${child ? " child" : ""}${live === "offline" ? " offline" : ""}`,
+      title: `${d.category} · ${s.type}${live ? ` · ${live}` : ""}`,
       onclick: () => { this.expanded.has(d.id) ? this.expanded.delete(d.id) : this.expanded.add(d.id); this.paint(); } },
       el("div", { class: "top" }, child ? el("span", { class: "tree" }, "└") : "", el("span", { class: "name" }, name), acts),
       name !== d.id ? el("div", { class: "id" }, d.id) : "");
