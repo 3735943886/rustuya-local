@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.26). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.27). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)
@@ -286,3 +286,8 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
   retained 를 모두 비움(il-ha 에서 기기 제거, 이전 실행이 남긴 기기 포함, 다른 소스는 유지). embedded 브리지면 그 root 의 retained 와
   상태 파일도 정리, `.storage/rustuya/` 의 기기 목록·Tuya 로그인 삭제. 데몬용 `rustuya-local purge`. 연결을 닫기 전에 왕복 flush 를
   해서 마지막 publish(삭제 때의 비움, 정지 때의 `offline`)가 버려지지 않게 함.
+- **2026-09-28 0.0.27**: HA 설정 간소화: 브리지 모드, 브로커, IL prefix 만 묻고 Tuya Cloud 로그인은 선택(로그인 창을 닫으면 로그인 없이
+  설정 완료, `import` 흐름). 토픽 root(external 브리지가 기본 root 에 없을 때만 설정에서 물음)·IL source·기기 파일·embedded 브리지의
+  상태 파일과 로그 레벨은 기본값으로 두고 패널의 Settings 카드에서 수정(저장 시 재시작, IL prefix/source 나 embedded root 를 옮기면
+  예전 retained 를 먼저 비움). 패널이 `config_panel_domain` 으로 등록돼 Configure 가 패널을 열던 것을 고침, 패널에 Hide panel 버튼.
+  커스텀 컨버터에 파일을 끌어다 놓으면 복사(HA 패널, 매니저 플러그인 탭).

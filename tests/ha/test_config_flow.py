@@ -184,15 +184,18 @@ async def test_closing_the_login_window_finishes_the_setup_without_it(hass, monk
     assert manager.closed
 
 
-async def test_finishing_the_login_adds_no_second_entry(hass, monkeypatch):
+async def test_finishing_the_login_adds_no_second_entry(hass, tmp_path, monkeypatch):
+    """A login that ends normally creates the entry itself; the `async_remove` that follows every finished flow must
+    not add another by an import. Driven by calling the steps (like `_wizard_flow`), so any entry is the import's."""
     manager = FakeManager(wizard_script=[WizardState.REQUESTING_QR, WizardState.ERROR])
-    r = await _to_login(hass, monkeypatch, manager)
-    flow = hass.config_entries.flow._progress[r["flow_id"]]
+    install(monkeypatch, manager)
+    flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
+    r = await flow.async_step_cloud_wizard_start({"user_code": ""})
+    r["progress_task"].cancel()
+    r = await _drain_progress(flow, manager)
     r = await flow.async_step_cloud_wizard_error({"retry": False})                  # skip it after a failure
     assert r["type"] == "create_entry"
-    # the manager removes a finished flow (calling `async_remove`); that must not add a second entry by an import (the
-    # step was called directly here, so the result above is not an entry itself: any entry would be the import's)
-    hass.config_entries.flow._async_remove_flow_progress(flow.flow_id)
+    flow.async_remove()
     await hass.async_block_till_done()
     assert not hass.config_entries.async_entries(DOMAIN)
 
