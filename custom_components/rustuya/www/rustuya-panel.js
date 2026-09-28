@@ -1155,4 +1155,6 @@ class RustuyaPanel extends HTMLElement {
   }
 }
 
-customElements.define("rustuya-panel", RustuyaPanel);
+// a page that had the previous version loaded imports the new one (another `?v=`) too: the first definition stays
+// until the page reloads, rather than an error
+if (!customElements.get("rustuya-panel")) customElements.define("rustuya-panel", RustuyaPanel);
