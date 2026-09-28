@@ -10,6 +10,8 @@ const ORIGIN = { pack: "pack", pack_edited: "pack, edited" };
 const STYLE = `
   :host { display: block; min-height: 100vh; background: var(--primary-background-color); color: var(--primary-text-color);
           font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif); }
+  .toolbar .spacer { flex: 1; }
+  .toolbar button { background: transparent; border-color: currentColor; color: inherit; }
   .toolbar { display: flex; align-items: center; gap: 4px; height: var(--header-height, 56px); padding: 0 12px;
              background: var(--app-header-background-color, var(--primary-color));
              color: var(--app-header-text-color, var(--text-primary-color)); font-size: 20px; }
@@ -470,7 +472,9 @@ class RustuyaPanel extends HTMLElement {
 
     this.shadowRoot.replaceChildren(
       el("style", {}, STYLE),
-      el("div", { class: "toolbar" }, this._menu, el("span", {}, "Rustuya")),
+      el("div", { class: "toolbar" }, this._menu, el("span", {}, "Rustuya"), el("span", { class: "spacer" }),
+        el("button", { title: "Remove this panel from the sidebar; Configure -> Tuning brings it back",
+                       onclick: () => this._hide() }, "Hide panel")),
       el("div", { class: "content" },
         this._bridge.root,
         el("div", { class: "card" },
@@ -567,6 +571,19 @@ class RustuyaPanel extends HTMLElement {
     const parts = [saved.length ? `Copied ${saved.join(", ")}` : "", failed.length ? `Not copied: ${failed.join("; ")}` : ""];
     const text = parts.filter(Boolean).join(". ");
     if (text) this._toast(text);
+  }
+
+  async _hide() {
+    if (!confirm("Remove the Rustuya panel from the sidebar? Turn it back on in the integration's Configure -> Tuning.")) return;
+    try {
+      await this._api("DELETE", "panel");
+    } catch (e) {
+      this._toast(`Not hidden: ${message(e)}`);
+      return;
+    }
+    // Home Assistant's own navigation (the frontend listens for location-changed), to the integration's page
+    history.replaceState(null, "", "/config/integrations/integration/rustuya");
+    window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: true } }));
   }
 
   async _refresh() {

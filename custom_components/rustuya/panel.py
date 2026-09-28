@@ -51,7 +51,7 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
         hass.data[_VIEWS_KEY] = True
         await hass.http.async_register_static_paths(
             [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)])
-        for view in (ConvertersView, ConverterView, PackView, BridgeView):
+        for view in (ConvertersView, ConverterView, PackView, BridgeView, PanelView):
             hass.http.register_view(view())
         websocket_api.async_register_command(hass, ws_subscribe_links)
     if entry.options.get(CONF_PANEL, False) and PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
@@ -59,8 +59,9 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
         await panel_custom.async_register_panel(
             hass, frontend_url_path=PANEL_URL, webcomponent_name="rustuya-panel",
             module_url=f"{STATIC_URL}/rustuya-panel.js?v={version}",
-            sidebar_title="Rustuya", sidebar_icon="mdi:tune-variant", require_admin=True,
-            config_panel_domain=DOMAIN)
+            sidebar_title="Rustuya", sidebar_icon="mdi:tune-variant", require_admin=True)
+            # no `config_panel_domain`: it makes the integration's Configure open this panel instead of the options
+            # flow, which is where the panel is turned back off
 
 
 def async_remove(hass: HomeAssistant) -> None:
@@ -142,6 +143,22 @@ class ConverterView(_View):
         from rustuya_local.manager_plugin.api import delete_converter
 
         return await self._files(request, delete_converter, name)
+
+
+class PanelView(_View):
+    """DELETE: turn the panel off from the panel itself (the `panel` option; the entry reloads and takes it away).
+    It comes back on from the integration's Configure -> Tuning."""
+
+    url = "/api/rustuya/panel"
+    name = "api:rustuya:panel"
+
+    async def delete(self, request: web.Request) -> web.Response:
+        found = self._loaded(request)
+        if isinstance(found, web.Response):
+            return found
+        entry = found[0]
+        request.app["hass"].config_entries.async_update_entry(entry, options={**entry.options, CONF_PANEL: False})
+        return self.json({"panel": False})
 
 
 class PackView(_View):

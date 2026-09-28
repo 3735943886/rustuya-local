@@ -84,6 +84,7 @@ async def test_the_panel_follows_the_option(hass, loaded):
     await loaded({CONF_PANEL: True})
     p = hass.data[frontend.DATA_PANELS][panel.PANEL_URL]
     assert p.require_admin and p.sidebar_title == "Rustuya"
+    assert p.config_panel_domain is None          # Configure stays the options flow, where the panel is turned off
     panel.async_remove(hass)
     assert panel.PANEL_URL not in hass.data[frontend.DATA_PANELS]
     panel.async_remove(hass)                                          # twice: no error
@@ -125,11 +126,21 @@ async def test_the_api_is_gone_with_the_panel_off(hass, loaded, hass_client):
     assert (await c.post("/api/rustuya/pack")).status == 404
 
 
+async def test_the_panel_turns_itself_off(hass, loaded, hass_client):
+    entry, _ = await loaded({CONF_PANEL: True, CONF_PACK: True})
+    c = await hass_client()
+    r = await c.delete("/api/rustuya/panel")
+    assert r.status == 200 and await r.json() == {"panel": False}
+    assert entry.options == {CONF_PANEL: False, CONF_PACK: True}
+    assert (await c.delete("/api/rustuya/panel")).status == 404        # off now: the API is gone with it
+
+
 async def test_the_api_is_for_administrators(hass, loaded, hass_client, hass_read_only_access_token):
     await loaded({CONF_PANEL: True})
     c = await hass_client(hass_read_only_access_token)
     assert (await c.get("/api/rustuya/converters")).status == 403
     assert (await c.put("/api/rustuya/converters/a.py", json={"content": "X = 1"})).status == 403
+    assert (await c.delete("/api/rustuya/panel")).status == 403
 
 
 def _diff():
