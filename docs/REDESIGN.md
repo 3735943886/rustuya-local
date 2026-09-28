@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.28). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.29). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)
@@ -293,3 +293,8 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
   커스텀 컨버터에 파일을 끌어다 놓으면 복사(HA 패널, 매니저 플러그인 탭).
 - **2026-09-28 0.0.28**: Configure 의 Tuning(→ "Rustuya panel")에는 패널 켜기/끄기만 남기고, 잠금·경보·차고문 원격 제어 허용,
   분류되지 않는 데이터 포인트 노출, 오버라이드 팩은 패널의 Options 카드로 옮김(저장 시 옵션 갱신으로 재시작).
+- **2026-09-28 0.0.29**: 설정·로그인 경로 수정. 기기 파일 없이 설정하면(로그인 생략) 시작에 실패하던 것 → 기기 없이 시작, Configure 의
+  로그인이 멈춘 entry 를 다시 시작. embedded 브리지는 설정 중에 없어 설정의 기기 추가가 사라지던 것 → 설정의 rustuya-manager 세션이 같은
+  상태 파일로 브리지를 직접 띄움. `progress_done` 이 넘기는 입력 때문에 QR 제출 후 기기 선택이 건너뛰어지고 즉시 실패한 로그인이
+  재시도 대신 오류가 되던 것 → 그 단계들은 자기 폼을 보인 뒤의 제출만 받음. `.storage/rustuya/` 가 없으면 Tuya 로그인이 저장되지 않던
+  것(0.0.25 회귀) → 세션 전에 디렉터리 생성. 게이트웨이 먼저 추가, Configure 로그인 후 기기 파일을 항상 entry 에 전달.
