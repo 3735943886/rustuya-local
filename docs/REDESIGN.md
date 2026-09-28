@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.27). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.28). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)
@@ -291,3 +291,5 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
   상태 파일과 로그 레벨은 기본값으로 두고 패널의 Settings 카드에서 수정(저장 시 재시작, IL prefix/source 나 embedded root 를 옮기면
   예전 retained 를 먼저 비움). 패널이 `config_panel_domain` 으로 등록돼 Configure 가 패널을 열던 것을 고침, 패널에 Hide panel 버튼.
   커스텀 컨버터에 파일을 끌어다 놓으면 복사(HA 패널, 매니저 플러그인 탭).
+- **2026-09-28 0.0.28**: Configure 의 Tuning(→ "Rustuya panel")에는 패널 켜기/끄기만 남기고, 잠금·경보·차고문 원격 제어 허용,
+  분류되지 않는 데이터 포인트 노출, 오버라이드 팩은 패널의 Options 카드로 옮김(저장 시 옵션 갱신으로 재시작).

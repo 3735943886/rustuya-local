@@ -1,6 +1,6 @@
 # 남은 일 (2026-09-28 기준)
 
-재설계(REDESIGN.md 9장)는 끝났다. 현재 배포: tuya2ildevice 0.3.11, rustuya-local 0.0.27(PyPI, HACS, 매니저 카탈로그 drop-in), rustuya-manager 0.2.1, pyrustuyabridge 0.4.0.dev2(PyPI).
+재설계(REDESIGN.md 9장)는 끝났다. 현재 배포: tuya2ildevice 0.3.11, rustuya-local 0.0.28(PyPI, HACS, 매니저 카탈로그 drop-in), rustuya-manager 0.2.1, pyrustuyabridge 0.4.0.dev2(PyPI).
 rustuya-homeassistant 는 폐기 안내만 푸시했다(아카이브 안 함). 2026-09-27 에 저장소 이름을 rustuya-homeassistant 로 바꿨다가 같은 날
 되돌렸다(HA 전용이 아니고 이름이 여러 개면 헷갈림): 저장소·PyPI·import·CLI·플러그인 id 모두 `rustuya-local`.
 아래는 그 뒤에 남은 것을 마일스톤 순서로 정리한 것이다. 저장소 표기: **T** tuya2ildevice, **L** rustuya-local, **H** il-ha,
