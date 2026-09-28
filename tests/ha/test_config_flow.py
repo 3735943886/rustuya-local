@@ -307,9 +307,10 @@ async def test_the_panel_is_one_click_from_configure(hass, tmp_path, monkeypatch
     """Add turns it on (keeping the other options) and links to it; then Open links (Hide is in the panel itself)."""
     from unittest.mock import AsyncMock
 
+    from homeassistant.config_entries import ConfigEntryState
+
     import custom_components.rustuya as integration
     from custom_components.rustuya import panel
-    from homeassistant.config_entries import ConfigEntryState
 
     entry = _entry(hass, tmp_path)
     hass.config_entries.async_update_entry(entry, options={CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True,
