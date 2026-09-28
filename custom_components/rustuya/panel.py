@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import secrets
 from collections.abc import Callable
 from http import HTTPStatus
@@ -349,6 +350,9 @@ class BridgeView(_View):
         if not manager_session.available():
             return self.json_message("rustuya-manager is not installed", HTTPStatus.NOT_IMPLEMENTED)
         data = found[0].data
+        # the device file's directory, as the flows make sure of (the Tuya login is saved beside it)
+        await request.app["hass"].async_add_executor_job(
+            lambda: os.makedirs(os.path.dirname(data[CONF_DEVICES_PATH]), exist_ok=True))
         try:
             manager = await manager_session.open_manager(
                 broker=f"mqtt://{data[CONF_BROKER_HOST]}:{data[CONF_BROKER_PORT]}", root=data[CONF_BRIDGE_ROOT],

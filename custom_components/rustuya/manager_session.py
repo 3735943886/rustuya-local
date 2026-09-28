@@ -43,7 +43,11 @@ def available() -> bool:
     return True
 
 
-async def open_manager(*, broker: str, root: str, devices_path: str, username: str | None, password: str | None):
+async def open_manager(*, broker: str, root: str, devices_path: str, username: str | None, password: str | None,
+                       bridge_state: str | None = None, bridge_log_level: str | None = None):
+    """`bridge_state`: run a bridge for the session (rustuya-manager's embedded one, on that state file) when none is
+    on `root` — the embedded mode before its entry runs one (setup, or an entry that failed to start), so what the
+    session registers reaches a bridge and is in the state file the entry's bridge starts from."""
     from rustuya_manager import Manager
 
     lock = _lock()
@@ -53,7 +57,8 @@ async def open_manager(*, broker: str, root: str, devices_path: str, username: s
         raise Busy from e
     try:
         manager = Manager(cloud_path=devices_path, broker=broker, root=root, client_id="rustuya-config",
-                          mqtt_user=username, mqtt_pass=password)
+                          mqtt_user=username, mqtt_pass=password, embed_bridge=bridge_state is not None,
+                          bridge_state=bridge_state, log_level=bridge_log_level)
         await manager.__aenter__()
     except BaseException:
         lock.release()

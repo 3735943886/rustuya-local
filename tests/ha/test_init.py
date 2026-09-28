@@ -283,3 +283,39 @@ async def test_deleting_an_external_entry_leaves_the_bridge_and_a_users_own_devi
         for topic in list(watcher.last):
             watcher.publish(topic, "", retain=True)
         watcher.close()
+
+
+async def test_setup_without_a_device_file_starts_with_no_devices(hass, broker, tmp_path, socket_enabled):
+    """Set up without the cloud login (closed, or left for later): no device file yet, and no failed entry."""
+    from homeassistant.config_entries import ConfigEntryState
+
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
+        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(tmp_path / "none" / "t.json"),
+        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
+    entry.add_to_hass(hass)
+    try:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.state is ConfigEntryState.LOADED
+    finally:
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        watcher = Watcher(broker)
+        watcher.publish("il/_producer/tuya", "", retain=True)
+        watcher.close()
+
+
+async def test_a_device_file_for_an_entry_that_is_not_running_restarts_it(hass, tmp_path, monkeypatch):
+    from homeassistant.config_entries import ConfigEntryState
+
+    from custom_components.rustuya import async_refresh_devices
+
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_DEVICES_PATH: str(tmp_path / "t.json")})
+    entry.add_to_hass(hass)
+    entry.mock_state(hass, ConfigEntryState.SETUP_ERROR)
+    reloaded = []
+    monkeypatch.setattr(hass.config_entries, "async_schedule_reload", reloaded.append)
+    await async_refresh_devices(hass, entry)
+    assert reloaded == [entry.entry_id]

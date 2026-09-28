@@ -457,3 +457,151 @@ async def test_a_second_instance_is_refused(hass, tmp_path):
     _entry(hass, tmp_path)
     r = await _start(hass)
     assert r["type"] == "abort" and r["reason"] == "single_instance_allowed"
+
+
+async def test_a_gateway_is_added_before_its_sub_devices(hass):
+    from custom_components.rustuya import bridge_sync
+
+    manager = FakeManager()
+    diff = FakeDiff(missing=[FakeDevice("sub1", "Button", type="SubDevice", cid="c1", parent_id="gw"),
+                             FakeDevice("gw", "Gateway"), FakeDevice("lamp", "Lamp")])
+    await bridge_sync.apply(manager, diff, {"add": ["sub1", "gw", "lamp"]})
+    assert manager.added == ["gw", "lamp", "sub1"]
+
+
+@pytest.mark.parametrize(("mode", "loaded", "embeds"), [
+    ("embedded", False, True),              # setup, or an entry that failed to start: no bridge runs yet
+    ("embedded", True, False),              # the entry's own bridge runs
+    ("external", False, False),
+])
+async def test_a_session_runs_the_embedded_bridge_only_while_the_entry_does_not(hass, tmp_path, monkeypatch, mode,
+                                                                                 loaded, embeds):
+    from homeassistant.config_entries import ConfigEntryState
+
+    from custom_components.rustuya import config_flow
+    from custom_components.rustuya.const import CONF_BRIDGE_STATE_FILE
+
+    manager = FakeManager()
+    install(monkeypatch, manager)
+    data = {CONF_BRIDGE_MODE: mode, "broker_host": "h", "broker_port": 1883, CONF_BRIDGE_ROOT: "rustuya",
+            CONF_DEVICES_PATH: str(tmp_path / "tuyadevices.json"),
+            CONF_BRIDGE_STATE_FILE: str(tmp_path / "state" / "bridge_state.json")}
+    await config_flow._open(hass, data, bridge_running=loaded)
+    assert ("bridge_state" in manager.kwargs) is embeds
+    if embeds:
+        assert manager.kwargs["bridge_state"] == str(tmp_path / "state" / "bridge_state.json")
+        assert (tmp_path / "state").is_dir()                # the bridge can write its state file there
+
+    entry = _entry(hass, tmp_path)
+    hass.config_entries.async_update_entry(entry, data={**entry.data, **data})
+    entry.mock_state(hass, ConfigEntryState.LOADED if loaded else ConfigEntryState.SETUP_ERROR)
+    manager.kwargs = {}
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "cloud_wizard"})
+    assert ("bridge_state" in manager.kwargs) is embeds
+
+
+async def test_closing_the_login_closes_the_session_before_the_entry_is_added(hass, monkeypatch):
+    order = []
+    manager = FakeManager()
+
+    async def closing(*exc):
+        order.append("closed")
+        manager.closed = True
+
+    manager.__aexit__ = closing
+    r = await _to_login(hass, monkeypatch, manager)
+    real_init = hass.config_entries.flow.async_init
+
+    async def init(*a, **kw):
+        order.append("import")
+        return await real_init(*a, **kw)
+
+    monkeypatch.setattr(hass.config_entries.flow, "async_init", init)
+    hass.config_entries.flow.async_abort(r["flow_id"])
+    await hass.async_block_till_done()
+    assert order == ["closed", "import"]
+    assert hass.config_entries.async_entries(DOMAIN)
+
+
+@pytest.mark.parametrize("ending", ["close", "no_devices"])
+async def test_a_login_in_configure_is_handed_to_the_entry_however_the_flow_ends(hass, tmp_path, monkeypatch, ending):
+    """After a login the device step may be closed, or have nothing to show: the new device file still reaches the
+    entry (`async_refresh_devices`), after the session closed."""
+    import custom_components.rustuya as integration
+
+    handed = []
+
+    async def refresh(_hass, entry):
+        handed.append(manager.closed)
+
+    monkeypatch.setattr(integration, "async_refresh_devices", refresh)
+    manager = FakeManager(sync_result=FakeDiff() if ending == "no_devices" else FakeDiff(missing=[FakeDevice("a")]),
+                          wizard_script=[WizardState.DONE])
+    install(monkeypatch, manager)
+    entry = _entry(hass, tmp_path)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "cloud_wizard"})
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"user_code": ""})
+    if r["type"] == "progress_done":                                          # on to the devices
+        r = await hass.config_entries.options.async_configure(r["flow_id"])
+    if ending == "no_devices":
+        assert r["type"] == "abort" and r["reason"] == "no_devices"
+    else:
+        assert r["type"] == "form" and r["step_id"] == "bridge_sync"
+        hass.config_entries.options.async_abort(r["flow_id"])                # closing the window
+    await hass.async_block_till_done()
+    assert handed == [True]
+
+
+@pytest.mark.parametrize("flow_kind", ["config", "options"])
+async def test_submitting_the_qr_after_the_login_finished_shows_the_devices(hass, tmp_path, monkeypatch, flow_kind):
+    """The QR form's (empty) submit when the login has already finished: Home Assistant hands that input on through
+    `progress_done` to the device step, which must show its list, not take it as "nothing selected" and finish."""
+    manager = FakeManager(sync_result=FakeDiff(missing=[FakeDevice("a", "Plug")]),
+                          wizard_script=[WizardState.AWAITING_SCAN, WizardState.DONE])
+    install(monkeypatch, manager)
+    if flow_kind == "config":
+        r = await _to_login(hass, monkeypatch, manager)
+        flows, device_step = hass.config_entries.flow, "sync_devices"
+    else:
+        entry = _entry(hass, tmp_path)
+        flows, device_step = hass.config_entries.options, "bridge_sync"
+        r = await flows.async_init(entry.entry_id)
+        r = await flows.async_configure(r["flow_id"], {"next_step_id": "cloud_wizard"})
+    r = await flows.async_configure(r["flow_id"], {"user_code": ""})
+    while r["type"] in ("progress", "progress_done"):
+        r = await flows.async_configure(r["flow_id"])
+    assert r["type"] == "form" and r["step_id"] == "cloud_wizard_scan"
+    manager.wizard.advance()                                        # scanned: the login finishes
+    r = await flows.async_configure(r["flow_id"], {})
+    assert r["type"] == "form" and r["step_id"] == device_step
+    assert manager.added == []
+
+
+async def test_a_login_that_fails_at_once_shows_the_retry_form(hass, monkeypatch):
+    """The wizard errs straight away (a bad user code, no network): the user-code submit is handed on to the error
+    step, which must show its retry form rather than read a `retry` that is not there."""
+    manager = FakeManager(wizard_script=[WizardState.ERROR])
+    r = await _to_login(hass, monkeypatch, manager)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"user_code": "bad"})
+    assert r["type"] == "form" and r["step_id"] == "cloud_wizard_error"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"retry": True})    # and again
+    assert r["type"] == "form" and r["step_id"] == "cloud_wizard_start"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"user_code": "bad"})
+    assert r["type"] == "form" and r["step_id"] == "cloud_wizard_error"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"retry": False})
+    assert r["type"] == "create_entry"
+
+
+async def test_the_login_directory_exists_before_the_session(hass, tmp_path, monkeypatch):
+    """The Tuya login is saved beside the device file by a library that does not create the directory: without it
+    the save fails and every login asks again."""
+    from custom_components.rustuya import config_flow
+
+    manager = FakeManager()
+    install(monkeypatch, manager)
+    devices = tmp_path / "not" / "yet" / "tuyadevices.json"
+    await config_flow._open(hass, {CONF_BRIDGE_MODE: "external", "broker_host": "h", "broker_port": 1883,
+                                   CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices)}, bridge_running=True)
+    assert devices.parent.is_dir()

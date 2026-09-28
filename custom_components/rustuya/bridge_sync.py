@@ -84,11 +84,11 @@ async def apply(manager: Any, diff: Any, user_input: dict[str, Any]) -> int:
     on_bridge = ({d.id for d in diff.orphaned} | {d.id for d, _ in diff.mismatched}
                  | {d.id for d in diff.synced})
     sent = 0
-    for device_id in user_input.get(ADD, []):
+    for device_id in parents_first(list(user_input.get(ADD, [])), diff):     # a gateway before its sub-devices
         if device_id in missing:
             await _register(manager, missing[device_id])
             sent += 1
-    for device_id in user_input.get(UPDATE, []):
+    for device_id in parents_first(list(user_input.get(UPDATE, [])), diff):
         if device_id in mismatched:
             await _register(manager, mismatched[device_id])
             sent += 1

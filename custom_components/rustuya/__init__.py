@@ -13,7 +13,7 @@ import secrets
 from dataclasses import dataclass
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
@@ -63,7 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from pathlib import Path
 
     await hass.async_add_import_executor_job(_import_runtime)
-    from tuya2ildevice.host import MqttTransport, load_devices
+    from tuya2ildevice.host import MqttTransport
 
     from rustuya_local.service import AnotherProducer, Service, Settings
 
@@ -86,7 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                          data.get(CONF_BRIDGE_LOG_LEVEL, "warn"), username, password)
         await embedded_bridge.start()
     try:
-        devices = await hass.async_add_executor_job(load_devices, data[CONF_DEVICES_PATH])
+        devices = await hass.async_add_executor_job(_load_devices_or_none, data[CONF_DEVICES_PATH])
         # the device file is not polled here: the config/options flow writes it and calls async_refresh_devices
         settings = Settings(root=data[CONF_BRIDGE_ROOT], prefix=data.get(CONF_IL_PREFIX, "il"),
                             source=data.get(CONF_IL_SOURCE, "tuya"), devices=devices,
@@ -111,6 +111,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s (bridge: %s)", len(devices),
                  data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE])
     return True
+
+
+def _load_devices_or_none(path: str) -> list[dict]:
+    """The device file's records; none yet when there is no file (set up without the cloud login: the login in
+    Configure writes it, and `async_refresh_devices` hands it over)."""
+    from tuya2ildevice.host import load_devices
+
+    if not os.path.exists(path):
+        _LOGGER.info("no device file at %s yet; log in to Tuya Cloud from the integration's Configure", path)
+        return []
+    return load_devices(path)
 
 
 def _ensure_parent(path: str) -> None:
@@ -153,12 +164,14 @@ async def async_refresh_devices(hass: HomeAssistant, entry: ConfigEntry) -> None
     """Hand the running service the device file as it is now: devices in it that the bridge holds get their descriptor
     published, ones that dropped out get every retained IL topic cleared (empty retained payloads), and no connection
     is restarted. A reload would not do that last part — a fresh Hub has no memory of what the old one published."""
-    from tuya2ildevice.host import load_devices
-
     runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if runtime is None:
+        # not running (it failed to start, e.g. without a device file before the first login): start it now, with the
+        # file as it is
+        if entry.state is not ConfigEntryState.LOADED:
+            hass.config_entries.async_schedule_reload(entry.entry_id)
         return
-    records = await hass.async_add_executor_job(load_devices, entry.data[CONF_DEVICES_PATH])
+    records = await hass.async_add_executor_job(_load_devices_or_none, entry.data[CONF_DEVICES_PATH])
     runtime.service.refresh_devices(records)
 
 
