@@ -81,7 +81,8 @@ marked, edits and deletes them (drop `*.json` / `*.py` files on it to copy them 
 *Options* (remote control of locks, alarms and garage doors; data points Home Assistant core would not classify; the
 override pack), and the *Settings* setup leaves at their defaults: the bridge topic root, the IL prefix and source, the device file, and
 the embedded bridge's state file and log level. Saving restarts the integration; moving the IL prefix or source first
-clears what the old one left on the broker. *Hide panel* in its toolbar turns it off again.
+clears what the old one left on the broker. *Hide panel* in its toolbar turns it off again. The integration and the panel follow Home Assistant's
+language: Korean, or English.
 
 ## rustuya-manager plugin
 

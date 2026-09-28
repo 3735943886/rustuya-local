@@ -5,7 +5,7 @@
 // Home Assistant sets `hass`, `narrow` and `panel` on the element; every call goes through hass.callApi, which carries
 // the user's token. The views are for administrators only (converters run code in Home Assistant's process).
 
-const ORIGIN = { pack: "pack", pack_edited: "pack, edited" };
+const ORIGIN = { pack: "origin_pack", pack_edited: "origin_pack_edited" };      // I18N keys
 
 const STYLE = `
   :host { display: block; min-height: 100vh; background: var(--primary-background-color); color: var(--primary-text-color);
@@ -129,6 +129,165 @@ function el(tag, attrs = {}, ...children) {
 // hass.callApi rejects with {error, body} (the view's json_message in body.message)
 const message = (e) => (e && e.body && e.body.message) || (e && (e.message || e.error)) || String(e);
 
+// ---- text in the user's Home Assistant language (hass.language): Korean, else English -----------------------------
+
+const I18N = {
+  en: {
+    origin_pack: "pack", origin_pack_edited: "pack, edited",
+    cat_all: "all", cat_missing: "missing", cat_orphan: "orphan", cat_mismatch: "mismatch", cat_synced: "synced",
+    plan_mismatch_title: "Update on the bridge", plan_mismatch_button: "Update mismatch",
+    plan_missing_title: "Add to the bridge", plan_missing_button: "Add missing",
+    plan_orphan_title: "Remove from the bridge", plan_orphan_button: "Remove orphan",
+    cloud_code: "User code (only for a new login)", cloud_fetch: "Fetch", cancel: "Cancel",
+    cloud_qr_alt: "QR code to scan with the Smart Life or Tuya Smart app",
+    cloud_intro: "A saved Tuya login is reused. Without one (or when it has expired) a QR code to scan follows; the user code is only needed for that first login (Smart Life → Me → Settings → Account and Security).",
+    cloud_done: "Fetched the device list from Tuya Cloud", cloud_failed: "Not fetched: {error}",
+    cloud_state_requesting_qr: "Connecting to Tuya…", cloud_state_awaiting_scan: "Scan the QR code with the Smart Life or Tuya Smart app",
+    cloud_state_logged_in: "Logged in; fetching the devices…", cloud_state_fetching: "Fetching the devices…",
+    cloud_state_finishing: "Fetching the devices…", cloud_state_cancelled: "Cancelled",
+    refresh: "Refresh", fetch_title: "Fetch the device list from Tuya Cloud (a saved login is reused)",
+    fetch_button: "Fetch from Tuya Cloud", sort_title: "Sort devices",
+    sort_id: "sort by id", sort_name: "sort by name", sort_category: "sort by category",
+    bridge_title: "Bridge devices", bridge_intro: "The cloud device list against what rustuya-bridge holds.",
+    bridge_sending: "Sending to the bridge…", bridge_reading: "Reading the bridge…",
+    bridge_no_cloud: "No cloud device list yet: fetch it with Fetch from Tuya Cloud.",
+    bridge_sent_one: "Sent 1 command to the bridge", bridge_sent_many: "Sent {n} commands to the bridge",
+    bridge_nothing: "Nothing to send", apply_all: "Apply all",
+    no_category: "No category is selected.", no_device_in_categories: "No device in the selected categories.",
+    no_devices: "No devices in the cloud list or on the bridge.",
+    missing_gateway: "missing gateway",
+    missing_gateway_note: "Sub-devices below name this gateway, which is in neither the cloud list nor the bridge.",
+    link_online: "Connected to the bridge", link_offline: "Not connected to the bridge",
+    act_add: "Add", act_update: "Update", act_remove: "Remove",
+    confirm_remove_device: "Remove {who} from the bridge?",
+    apply_n: "Apply {n}", apply: "Apply", sync_title: "Sync with the bridge",
+    set_bridge_root: "Bridge topic root", set_bridge_root_hint: "The MQTT root rustuya-bridge uses (its mqtt_root_topic).",
+    set_il_prefix: "IL topic prefix", set_il_prefix_hint: "Where the IL devices are published; il-ha reads il by default.",
+    set_il_source: "IL source name", set_il_source_hint: "This producer's name on IL (one topic level).",
+    set_devices_path: "Device file", set_devices_path_hint: "The tuyadevices.json rustuya-manager keeps; relative to the config directory.",
+    set_bridge_state_file: "Bridge state file", set_bridge_state_file_hint: "Where the embedded bridge keeps its device registry.",
+    set_bridge_log_level: "Bridge log level", set_bridge_log_level_hint: "error, warn, info or debug.",
+    opt_allow_hazardous: "Allow remote control of locks, alarms and garage doors",
+    opt_allow_hazardous_hint: "Off: their state is shown, but IL refuses writes to them.",
+    opt_expose_unused: "Expose data points Home Assistant core would not classify",
+    opt_expose_unused_hint: "Every data point the cloud schema lists, not only the ones a standard entity uses.",
+    opt_pack: "Download fixes for non-standard devices published between releases",
+    opt_pack_hint: "The override pack: copied into the converters directory at start and daily.",
+    save_restart: "Save and restart", options_title: "Options", options_intro: "Saving restarts the integration.",
+    options_unreadable: "Cannot read the options: {error}", nothing_changed: "Nothing changed",
+    saving_restarting: "Saving; Rustuya is restarting…", not_saved: "Not saved: {error}",
+    settings_title: "Settings",
+    settings_intro: "Set up with their defaults. Saving restarts the integration; moving the IL prefix or source clears what the old one left on the broker, so IL consumers drop those devices and see them again under the new one.",
+    settings_unreadable: "Cannot read the settings: {error}", confirm_settings: "Save {names} and restart Rustuya?",
+    sync_now: "Sync now", hide_title: "Remove this panel from the sidebar; the integration's Configure adds it back",
+    hide: "Hide panel", pack_title: "Override pack",
+    pack_intro: "Fixes for non-standard devices, published between releases and copied into the converters directory.",
+    converters_title: "Custom converters",
+    converters_intro: "Override blocks (*.json) and code converters (*.py) in rustuya_converters/. Saved files apply within seconds. Code converters run inside Home Assistant. See tuya2ildevice's README, \"User overrides\". Drop files here to copy them in.",
+    new_file: "New file", save: "Save", delete: "Delete",
+    only_converters: "{name} (only *.json and *.py files are converters)",
+    confirm_replace_pack: "{name} comes from the override pack. Replaced, it is yours: the pack no longer updates or removes it.",
+    confirm_replace: "{name} already exists. Replace it?",
+    copied: "Copied {names}", not_copied: "Not copied: {names}",
+    confirm_hide_unsaved: "Unsaved changes in {names} will be lost. Remove the Rustuya panel from the sidebar anyway?",
+    and: " and ", not_hidden: "Not hidden: {error}", files_unreadable: "Cannot list the files: {error}",
+    no_files: "No files yet. Built-in fixes apply without any.",
+    pack_syncing: "Syncing…", pack_off: "Off. Turn it on in Options below.", pack_never: "Not synced yet.",
+    pack_added: "added", pack_updated: "updated", pack_removed: "removed", pack_kept: "kept",
+    pack_failed: "; failed: {list}", pack_error: "Not synced ({error}), {when}", pack_synced: "Synced {when}",
+    origin_note_pack: "From the override pack: the next sync updates it. Saving an edit makes it yours.",
+    origin_note_pack_edited: "An edited pack file: the pack no longer updates it. Delete it to get the pack's copy back at the next sync.",
+    name_first: "Name the file first (*.json or *.py)",
+    confirm_edit_pack: "{name} comes from the override pack. Once edited it is yours: the pack no longer updates or removes it.",
+    saved: "Saved {name}", confirm_delete: "Delete {name}?", deleted: "Deleted {name}", not_deleted: "Not deleted: {error}",
+    pack_is_off: "The pack is off", cannot_sync: "Cannot sync: {error}", pack_changed: "The pack changed the converter files",
+  },
+  ko: {
+    origin_pack: "팩", origin_pack_edited: "팩, 수정됨",
+    cat_all: "전체", cat_missing: "없음", cat_orphan: "고아", cat_mismatch: "불일치", cat_synced: "일치",
+    plan_mismatch_title: "브리지에서 갱신", plan_mismatch_button: "불일치 갱신",
+    plan_missing_title: "브리지에 추가", plan_missing_button: "없는 기기 추가",
+    plan_orphan_title: "브리지에서 삭제", plan_orphan_button: "고아 삭제",
+    cloud_code: "사용자 코드 (새 로그인일 때만)", cloud_fetch: "가져오기", cancel: "취소",
+    cloud_qr_alt: "Smart Life 또는 Tuya Smart 앱으로 스캔할 QR 코드",
+    cloud_intro: "저장된 Tuya 로그인이 있으면 그대로 씁니다. 없거나 만료됐으면 스캔할 QR 코드가 이어서 나옵니다. 사용자 코드는 그 첫 로그인에만 필요합니다(Smart Life → 나 → 설정 → 계정 및 보안).",
+    cloud_done: "Tuya Cloud에서 기기 목록을 가져왔습니다", cloud_failed: "가져오지 못했습니다: {error}",
+    cloud_state_requesting_qr: "Tuya에 연결하는 중…", cloud_state_awaiting_scan: "Smart Life 또는 Tuya Smart 앱으로 QR 코드를 스캔하세요",
+    cloud_state_logged_in: "로그인했습니다. 기기를 가져오는 중…", cloud_state_fetching: "기기를 가져오는 중…",
+    cloud_state_finishing: "기기를 가져오는 중…", cloud_state_cancelled: "취소됨",
+    refresh: "새로 고침", fetch_title: "Tuya Cloud에서 기기 목록 가져오기 (저장된 로그인 재사용)",
+    fetch_button: "Tuya Cloud에서 가져오기", sort_title: "기기 정렬",
+    sort_id: "ID순", sort_name: "이름순", sort_category: "분류순",
+    bridge_title: "브리지 기기", bridge_intro: "클라우드 기기 목록과 rustuya-bridge가 가진 기기를 비교합니다.",
+    bridge_sending: "브리지에 보내는 중…", bridge_reading: "브리지를 읽는 중…",
+    bridge_no_cloud: "아직 클라우드 기기 목록이 없습니다. 'Tuya Cloud에서 가져오기'로 가져오세요.",
+    bridge_sent_one: "브리지에 명령 1개를 보냈습니다", bridge_sent_many: "브리지에 명령 {n}개를 보냈습니다",
+    bridge_nothing: "보낼 것이 없습니다", apply_all: "모두 적용",
+    no_category: "선택한 분류가 없습니다.", no_device_in_categories: "선택한 분류에 기기가 없습니다.",
+    no_devices: "클라우드 목록에도 브리지에도 기기가 없습니다.",
+    missing_gateway: "게이트웨이 없음",
+    missing_gateway_note: "아래 서브 기기들이 가리키는 게이트웨이가 클라우드 목록에도 브리지에도 없습니다.",
+    link_online: "브리지에 연결됨", link_offline: "브리지에 연결되지 않음",
+    act_add: "추가", act_update: "갱신", act_remove: "삭제",
+    confirm_remove_device: "{who}을(를) 브리지에서 삭제할까요?",
+    apply_n: "{n}개 적용", apply: "적용", sync_title: "브리지와 동기화",
+    set_bridge_root: "브리지 토픽 root", set_bridge_root_hint: "rustuya-bridge가 쓰는 MQTT root(mqtt_root_topic).",
+    set_il_prefix: "IL 토픽 prefix", set_il_prefix_hint: "IL 기기를 게시하는 곳. il-ha는 기본으로 il을 읽습니다.",
+    set_il_source: "IL source 이름", set_il_source_hint: "IL에서 이 생산자의 이름(토픽 한 단계).",
+    set_devices_path: "기기 파일", set_devices_path_hint: "rustuya-manager가 관리하는 tuyadevices.json. config 디렉터리 기준 상대 경로.",
+    set_bridge_state_file: "브리지 상태 파일", set_bridge_state_file_hint: "내장 브리지가 기기 목록을 저장하는 곳.",
+    set_bridge_log_level: "브리지 로그 레벨", set_bridge_log_level_hint: "error, warn, info, debug 중 하나.",
+    opt_allow_hazardous: "잠금장치·경보·차고문 원격 제어 허용",
+    opt_allow_hazardous_hint: "끄면 상태는 보이지만 IL이 쓰기를 거부합니다.",
+    opt_expose_unused: "Home Assistant core가 분류하지 않는 데이터 포인트도 노출",
+    opt_expose_unused_hint: "표준 엔티티가 쓰는 것만이 아니라 클라우드 스키마의 모든 데이터 포인트.",
+    opt_pack: "릴리즈 사이에 나온 비표준 기기 수정 다운로드",
+    opt_pack_hint: "오버라이드 팩: 시작할 때와 매일 컨버터 디렉터리에 복사됩니다.",
+    save_restart: "저장하고 재시작", options_title: "옵션", options_intro: "저장하면 통합구성요소가 재시작됩니다.",
+    options_unreadable: "옵션을 읽을 수 없습니다: {error}", nothing_changed: "바뀐 것이 없습니다",
+    saving_restarting: "저장하는 중. Rustuya를 재시작합니다…", not_saved: "저장하지 못했습니다: {error}",
+    settings_title: "설정",
+    settings_intro: "설정 과정에서 기본값으로 정해진 값들입니다. 저장하면 통합구성요소가 재시작됩니다. IL prefix나 source를 옮기면 예전 값으로 브로커에 남은 것을 지워서, IL 소비자가 그 기기를 지우고 새 값으로 다시 보게 됩니다.",
+    settings_unreadable: "설정을 읽을 수 없습니다: {error}", confirm_settings: "{names}을(를) 저장하고 Rustuya를 재시작할까요?",
+    sync_now: "지금 동기화", hide_title: "사이드바에서 이 패널을 없앱니다. 통합구성요소의 구성(Configure)에서 다시 추가할 수 있습니다",
+    hide: "패널 숨기기", pack_title: "오버라이드 팩",
+    pack_intro: "릴리즈 사이에 나온 비표준 기기 수정으로, 컨버터 디렉터리에 복사됩니다.",
+    converters_title: "커스텀 컨버터",
+    converters_intro: "rustuya_converters/ 안의 오버라이드 블록(*.json)과 코드 컨버터(*.py). 저장한 파일은 몇 초 안에 적용됩니다. 코드 컨버터는 Home Assistant 안에서 실행됩니다. tuya2ildevice README의 \"User overrides\"를 참고하세요. 여기에 파일을 끌어다 놓으면 복사됩니다.",
+    new_file: "새 파일", save: "저장", delete: "삭제",
+    only_converters: "{name} (*.json과 *.py 파일만 컨버터입니다)",
+    confirm_replace_pack: "{name}은(는) 오버라이드 팩의 파일입니다. 바꾸면 내 파일이 되어 팩이 더 이상 갱신하거나 지우지 않습니다.",
+    confirm_replace: "{name}이(가) 이미 있습니다. 바꿀까요?",
+    copied: "{names} 복사함", not_copied: "복사하지 못함: {names}",
+    confirm_hide_unsaved: "{names}의 저장하지 않은 변경이 사라집니다. 그래도 사이드바에서 Rustuya 패널을 없앨까요?",
+    and: ", ", not_hidden: "숨기지 못했습니다: {error}", files_unreadable: "파일 목록을 읽을 수 없습니다: {error}",
+    no_files: "아직 파일이 없습니다. 기본 수정은 파일 없이도 적용됩니다.",
+    pack_syncing: "동기화하는 중…", pack_off: "꺼져 있습니다. 아래 옵션에서 켜세요.", pack_never: "아직 동기화하지 않았습니다.",
+    pack_added: "추가", pack_updated: "갱신", pack_removed: "삭제", pack_kept: "유지",
+    pack_failed: "; 실패: {list}", pack_error: "동기화하지 못함 ({error}), {when}", pack_synced: "{when}에 동기화함",
+    origin_note_pack: "오버라이드 팩의 파일입니다. 다음 동기화 때 갱신됩니다. 수정해서 저장하면 내 파일이 됩니다.",
+    origin_note_pack_edited: "수정한 팩 파일입니다. 팩이 더 이상 갱신하지 않습니다. 지우면 다음 동기화 때 팩의 파일이 다시 들어옵니다.",
+    name_first: "먼저 파일 이름을 정하세요 (*.json 또는 *.py)",
+    confirm_edit_pack: "{name}은(는) 오버라이드 팩의 파일입니다. 수정하면 내 파일이 되어 팩이 더 이상 갱신하거나 지우지 않습니다.",
+    saved: "{name} 저장함", confirm_delete: "{name}을(를) 삭제할까요?", deleted: "{name} 삭제함", not_deleted: "삭제하지 못했습니다: {error}",
+    pack_is_off: "팩이 꺼져 있습니다", cannot_sync: "동기화할 수 없습니다: {error}", pack_changed: "팩이 컨버터 파일을 바꿨습니다",
+  },
+};
+
+let LANG = "en";
+
+// the language to show: Korean when Home Assistant's is, else English (the fallback for any key too)
+function setLanguage(hass) {
+  const lang = String((hass && ((hass.locale && hass.locale.language) || hass.language)) || "en").toLowerCase();
+  LANG = lang.startsWith("ko") ? "ko" : "en";
+  return LANG;
+}
+
+function t(key, vars = {}) {
+  const text = (I18N[LANG] && I18N[LANG][key]) ?? I18N.en[key] ?? key;
+  return text.replace(/\{(\w+)\}/g, (_, k) => (k in vars ? String(vars[k]) : `{${k}}`));
+}
+
 
 // ---- bridge devices ------------------------------------------------------------------------------------------------
 
@@ -136,9 +295,9 @@ const CATEGORIES = ["missing", "orphan", "mismatch", "synced"];     // rustuya-m
 const RANK = { missing: 0, orphan: 1, mismatch: 2, synced: 3 };
 const PLAN_ORDER = ["mismatch", "missing", "orphan"];               // the manager's sync dialog groups
 const PLAN = {
-  mismatch: { title: "Update on the bridge", verb: "update", button: "Update mismatch" },
-  missing: { title: "Add to the bridge", verb: "add", button: "Add missing" },
-  orphan: { title: "Remove from the bridge", verb: "remove", button: "Remove orphan" },
+  mismatch: { verb: "update" },          // title / button: t(`plan_${category}_title` / `_button`)
+  missing: { verb: "add" },
+  orphan: { verb: "remove" },
 };
 
 function stored(key, fallback) {
@@ -163,16 +322,14 @@ class CloudFetchBox {
     this.panel = panel;
     this.onDone = onDone;
     this.timer = null;
-    this.code = el("input", { placeholder: "User code (only for a new login)", spellcheck: "false" });
-    this.startBtn = el("button", { class: "primary", onclick: () => this.start() }, "Fetch");
-    this.cancelBtn = el("button", { onclick: () => this.cancel() }, "Cancel");
+    this.code = el("input", { placeholder: t("cloud_code"), spellcheck: "false" });
+    this.startBtn = el("button", { class: "primary", onclick: () => this.start() }, t("cloud_fetch"));
+    this.cancelBtn = el("button", { onclick: () => this.cancel() }, t("cancel"));
     this.msg = el("div", { class: "muted" });
-    this.qr = el("img", { class: "qr", alt: "QR code to scan with the Smart Life or Tuya Smart app" });
+    this.qr = el("img", { class: "qr", alt: t("cloud_qr_alt") });
     this.form = el("div", { class: "row" }, this.code, this.startBtn);
     this.root = el("div", { class: "cloud", hidden: true },
-      el("div", { class: "muted" },
-        "A saved Tuya login is reused. Without one (or when it has expired) a QR code to scan follows; the user code ",
-        "is only needed for that first login (Smart Life → Me → Settings → Account and Security)."),
+      el("div", { class: "muted" }, t("cloud_intro")),
       this.form, this.msg, this.qr, el("div", { class: "row note" }, this.cancelBtn));
     this.qr.hidden = true;
   }
@@ -220,7 +377,7 @@ class CloudFetchBox {
     if (running) {
       this.schedule();
     } else if (r.state === "done") {
-      this.panel._toast("Fetched the device list from Tuya Cloud");
+      this.panel._toast(t("cloud_done"));
       this.close();
       this.onDone();
     }
@@ -228,7 +385,9 @@ class CloudFetchBox {
 
   show(r) {
     this.msg.className = r.state === "error" ? "error" : "muted";
-    this.msg.textContent = r.state === "error" ? `Not fetched: ${r.error || r.message}` : r.message || "…";
+    // the state in the user's language; rustuya-manager's own words (English) only for an error's detail
+    this.msg.textContent = r.state === "error" ? t("cloud_failed", { error: r.error || r.message })
+      : I18N.en[`cloud_state_${r.state}`] ? t(`cloud_state_${r.state}`) : r.message || "…";
     this.qr.hidden = !r.qr;
     if (r.qr) this.qr.src = r.qr;
     if (r.state === "error" || r.state === "cancelled") this.form.hidden = false;
@@ -268,17 +427,16 @@ class BridgeSection {
     this.chips = el("div", { class: "chips" });
     this.syncbar = el("div", { class: "syncbar" });
     this.list = el("div", { class: "devices" });
-    this.refreshBtn = el("button", { onclick: () => this.load() }, "Refresh");
+    this.refreshBtn = el("button", { onclick: () => this.load() }, t("refresh"));
     this.cloud = new CloudFetchBox(panel, () => this.load());
-    this.fetchBtn = el("button", { title: "Fetch the device list from Tuya Cloud (a saved login is reused)",
-                                   onclick: () => this.cloud.open() }, "Fetch from Tuya Cloud");
-    const sort = el("select", { title: "Sort devices", onchange: (e) => { this.sort = e.target.value; store("rustuya.sort", this.sort); this.paint(); } },
-      ...["id", "name", "category"].map((k) => el("option", { value: k, selected: k === this.sort }, `sort by ${k}`)));
+    this.fetchBtn = el("button", { title: t("fetch_title"), onclick: () => this.cloud.open() }, t("fetch_button"));
+    const sort = el("select", { title: t("sort_title"), onchange: (e) => { this.sort = e.target.value; store("rustuya.sort", this.sort); this.paint(); } },
+      ...["id", "name", "category"].map((k) => el("option", { value: k, selected: k === this.sort }, t(`sort_${k}`))));
     this.dialog = el("dialog");
     this.root = el("div", { class: "card" },
-      el("div", { class: "head" }, el("h2", {}, "Bridge devices"),
+      el("div", { class: "head" }, el("h2", {}, t("bridge_title")),
         el("div", { class: "end" }, sort, this.fetchBtn, this.refreshBtn)),
-      el("div", { class: "muted" }, "The cloud device list against what rustuya-bridge holds."),
+      el("div", { class: "muted" }, t("bridge_intro")),
       this.cloud.root,
       this.chips, this.syncbar, this.status, this.list, this.dialog);
   }
@@ -288,13 +446,13 @@ class BridgeSection {
     this.busy = true;
     this.refreshBtn.disabled = true;
     this.status.className = "muted";
-    this.status.textContent = selection ? "Sending to the bridge…" : "Reading the bridge…";
+    this.status.textContent = selection ? t("bridge_sending") : t("bridge_reading");
     try {
       const r = selection ? await this.panel._api("POST", "bridge", selection) : await this.panel._api("GET", "bridge");
       this.devices = r.devices;
       this.online = r.online || {};
-      this.status.textContent = r.cloud_loaded ? "" : "No cloud device list yet: fetch it with Fetch from Tuya Cloud.";
-      if (selection) this.panel._toast(r.sent ? `Sent ${r.sent} command${r.sent === 1 ? "" : "s"} to the bridge` : "Nothing to send");
+      this.status.textContent = r.cloud_loaded ? "" : t("bridge_no_cloud");
+      if (selection) this.panel._toast(!r.sent ? t("bridge_nothing") : r.sent === 1 ? t("bridge_sent_one") : t("bridge_sent_many", { n: r.sent }));
     } catch (e) {
       this.status.className = "error";
       this.status.textContent = message(e);
@@ -353,14 +511,14 @@ class BridgeSection {
       onclick: () => this.toggle(key),
     }, label, el("span", { class: "n" }, n || ""));
     this.chips.replaceChildren(
-      chip("all", "all", (this.devices || []).length, all),
-      ...CATEGORIES.map((c) => chip(c, c, this.count(c), this.filters.has(c))));
+      chip("all", t("cat_all"), (this.devices || []).length, all),
+      ...CATEGORIES.map((c) => chip(c, t(`cat_${c}`), this.count(c), this.filters.has(c))));
 
     const pending = PLAN_ORDER.filter((c) => this.count(c));
     this.syncbar.replaceChildren(...(pending.length ? [
       ...["missing", "orphan", "mismatch"].filter((c) => this.count(c)).map((c) =>
-        el("button", { class: `cat-${c}`, onclick: () => this.openPlan(c) }, PLAN[c].button)),
-      el("button", { class: "all", onclick: () => this.openPlan("all") }, "Apply all")] : []));
+        el("button", { class: `cat-${c}`, onclick: () => this.openPlan(c) }, t(`plan_${c}_button`))),
+      el("button", { class: "all", onclick: () => this.openPlan("all") }, t("apply_all"))] : []));
 
     if (!this.devices) {
       this.list.replaceChildren();
@@ -369,8 +527,7 @@ class BridgeSection {
     const entries = this.tree();
     if (!entries.length) {
       this.list.replaceChildren(el("div", { class: "muted" },
-        !this.filters.size ? "No category is selected." : this.devices.length ? "No device in the selected categories."
-          : "No devices in the cloud list or on the bridge."));
+        !this.filters.size ? t("no_category") : this.devices.length ? t("no_device_in_categories") : t("no_devices")));
       return;
     }
     const nodes = [];
@@ -433,8 +590,8 @@ class BridgeSection {
 
   placeholder(id) {
     return el("div", { class: "placeholder" },
-      el("div", { class: "row" }, el("span", { class: "id" }, id), el("span", { class: "pill cat-missing" }, "missing gateway")),
-      el("div", { class: "muted" }, "Sub-devices below name this gateway, which is in neither the cloud list nor the bridge."));
+      el("div", { class: "row" }, el("span", { class: "id" }, id), el("span", { class: "pill cat-missing" }, t("missing_gateway"))),
+      el("div", { class: "muted" }, t("missing_gateway_note")));
   }
 
   card(d, child) {
@@ -444,14 +601,14 @@ class BridgeSection {
     const ln = d.category === "missing" ? null : this.link(d.id);
     const live = ln ? (ln.online ? "online" : "offline") : null;
     const acts = el("span", { class: "acts" },
-      live ? el("span", { class: `dot ${live}`, title: live === "online" ? "Connected to the bridge" : "Not connected to the bridge" }) : "",
-      el("span", { class: `pill cat-${d.category}` }, d.category));
+      live ? el("span", { class: `dot ${live}`, title: live === "online" ? t("link_online") : t("link_offline") }) : "",
+      el("span", { class: `pill cat-${d.category}` }, t(`cat_${d.category}`)));
     const act = (label, cat, fn) => el("button", { class: `act cat-${cat}`, onclick: (e) => { e.stopPropagation(); fn(); } }, label);
-    if (d.category === "missing") acts.append(act("Add", "missing", () => this.one("add", d)));
-    if (d.category === "mismatch") acts.append(act("Update", "mismatch", () => this.one("update", d)));
-    if (d.category !== "missing") acts.append(act("Remove", "orphan", () => this.one("remove", d)));
+    if (d.category === "missing") acts.append(act(t("act_add"), "missing", () => this.one("add", d)));
+    if (d.category === "mismatch") acts.append(act(t("act_update"), "mismatch", () => this.one("update", d)));
+    if (d.category !== "missing") acts.append(act(t("act_remove"), "orphan", () => this.one("remove", d)));
     const card = el("div", { class: `dev cat-${d.category}${child ? " child" : ""}${live === "offline" ? " offline" : ""}`,
-      title: `${d.category} · ${s.type}${live ? ` · ${live}` : ""}`,
+      title: `${t(`cat_${d.category}`)} · ${s.type}${live ? ` · ${live === "online" ? t("link_online") : t("link_offline")}` : ""}`,
       onclick: () => { this.expanded.has(d.id) ? this.expanded.delete(d.id) : this.expanded.add(d.id); this.paint(); } },
       el("div", { class: "top" }, child ? el("span", { class: "tree" }, "└") : "", el("span", { class: "name" }, name), acts),
       name !== d.id ? el("div", { class: "id" }, d.id) : "");
@@ -474,7 +631,7 @@ class BridgeSection {
   async one(verb, d) {
     const s = d.cloud || d.bridge;
     const who = s.name && s.name !== "N/A" ? `${s.name} (${d.id})` : d.id;
-    if (verb === "remove" && !confirm(`Remove ${who} from the bridge?`)) return;
+    if (verb === "remove" && !confirm(t("confirm_remove_device", { who }))) return;
     await this.load({ [verb]: [d.id] });
   }
 
@@ -495,12 +652,12 @@ class BridgeSection {
           el("span", { class: "id" }, ` ${d.id}`), d.reasons.length ? el("div", { class: "muted" }, d.reasons.join("; ")) : ""));
       });
       all.addEventListener("change", () => { for (const b of mine) b.firstChild.checked = all.checked; update(); });
-      body.push(el("label", { class: `group cat-${c}` }, all, el("span", { class: "pill" }, PLAN[c].title)), ...mine);
+      body.push(el("label", { class: `group cat-${c}` }, all, el("span", { class: "pill" }, t(`plan_${c}_title`))), ...mine);
     }
     const apply = el("button", { class: "primary" });
     const update = () => {
       const n = boxes.filter((b) => b.checked).length;
-      apply.textContent = n ? `Apply ${n}` : "Apply";
+      apply.textContent = n ? t("apply_n", { n }) : t("apply");
       apply.disabled = !n;
     };
     for (const b of boxes) b.addEventListener("change", update);
@@ -512,44 +669,31 @@ class BridgeSection {
     });
     update();
     this.dialog.replaceChildren(
-      el("h3", {}, scope === "all" ? "Sync with the bridge" : PLAN[scope].title),
+      el("h3", {}, scope === "all" ? t("sync_title") : t(`plan_${scope}_title`)),
       el("div", { class: "plan" }, ...body),
-      el("div", { class: "foot" }, el("button", { onclick: () => this.dialog.close() }, "Cancel"), apply));
+      el("div", { class: "foot" }, el("button", { onclick: () => this.dialog.close() }, t("cancel")), apply));
     this.dialog.showModal();
   }
 }
 
 // ---- settings: what setup leaves at its defaults (SettingsView) ---------------------------------------------------
 
-const SETTINGS = [
-  ["bridge_root", "Bridge topic root", "The MQTT root rustuya-bridge uses (its mqtt_root_topic)."],
-  ["il_prefix", "IL topic prefix", "Where the IL devices are published; il-ha reads il by default."],
-  ["il_source", "IL source name", "This producer's name on IL (one topic level)."],
-  ["devices_path", "Device file", "The tuyadevices.json rustuya-manager keeps; relative to the config directory."],
-  ["bridge_state_file", "Bridge state file", "Where the embedded bridge keeps its device registry."],
-  ["bridge_log_level", "Bridge log level", "error, warn, info or debug."],
-];
+const SETTINGS = ["bridge_root", "il_prefix", "il_source", "devices_path", "bridge_state_file", "bridge_log_level"];
+// label and hint: t(`set_${key}`), t(`set_${key}_hint`)
 
 // ---- options: the entry's options other than the panel itself (OptionsView) ------------------------------------
 
-const OPTIONS = [
-  ["allow_hazardous", "Allow remote control of locks, alarms and garage doors",
-   "Off: their state is shown, but IL refuses writes to them."],
-  ["expose_unused", "Expose data points Home Assistant core would not classify",
-   "Every data point the cloud schema lists, not only the ones a standard entity uses."],
-  ["pack", "Download fixes for non-standard devices published between releases",
-   "The override pack: copied into the converters directory at start and daily."],
-];
+const OPTIONS = ["allow_hazardous", "expose_unused", "pack"];      // label and hint: t(`opt_${key}`), t(`opt_${key}_hint`)
 
 class OptionsSection {
   constructor(panel) {
     this.panel = panel;
     this.boxes = {};
     this.body = el("div", { class: "settings" }, el("div", { class: "muted" }, "…"));
-    this.save = el("button", { class: "primary", onclick: () => this.submit() }, "Save and restart");
+    this.save = el("button", { class: "primary", onclick: () => this.submit() }, t("save_restart"));
     this.root = el("div", { class: "card" },
-      el("h2", {}, "Options"),
-      el("div", { class: "muted" }, "Saving restarts the integration."),
+      el("h2", {}, t("options_title")),
+      el("div", { class: "muted" }, t("options_intro")),
       this.body,
       el("div", { class: "row note" }, this.save));
   }
@@ -558,16 +702,16 @@ class OptionsSection {
     try {
       this.current = await this.panel._api("GET", "options");
     } catch (e) {
-      this.body.replaceChildren(el("div", { class: "error" }, `Cannot read the options: ${message(e)}`));
+      this.body.replaceChildren(el("div", { class: "error" }, t("options_unreadable", { error: message(e) })));
       this.save.disabled = true;
       return;
     }
-    this.body.replaceChildren(...OPTIONS.map(([k, label, hint]) => {
+    this.body.replaceChildren(...OPTIONS.map((k) => {
       const box = el("input", { type: "checkbox", onchange: () => this.updateSave() });
       box.checked = !!this.current[k];
       this.boxes[k] = box;
       return el("label", { class: "check" }, box,
-        el("span", {}, el("div", {}, label), el("div", { class: "muted" }, hint)));
+        el("span", {}, el("div", {}, t(`opt_${k}`)), el("div", { class: "muted" }, t(`opt_${k}_hint`))));
     }));
     this.updateSave();
   }
@@ -588,15 +732,15 @@ class OptionsSection {
   async submit() {
     const changed = this.changed();
     if (!Object.keys(changed).length) {
-      this.panel._toast("Nothing changed");
+      this.panel._toast(t("nothing_changed"));
       return;
     }
     this.save.disabled = true;
-    this.panel._toast("Saving; Rustuya is restarting…");
+    this.panel._toast(t("saving_restarting"));
     try {
       await this.panel._api("PUT", "options", changed);     // answered once the restart is over
     } catch (e) {
-      this.panel._toast(`Not saved: ${message(e)}`);
+      this.panel._toast(t("not_saved", { error: message(e) }));
       this.updateSave();
       return;
     }
@@ -610,12 +754,10 @@ class SettingsSection {
     this.panel = panel;
     this.fields = {};
     this.body = el("div", { class: "settings" }, el("div", { class: "muted" }, "…"));
-    this.save = el("button", { class: "primary", onclick: () => this.submit() }, "Save and restart");
+    this.save = el("button", { class: "primary", onclick: () => this.submit() }, t("save_restart"));
     this.root = el("div", { class: "card" },
-      el("h2", {}, "Settings"),
-      el("div", { class: "muted" },
-        "Set up with their defaults. Saving restarts the integration; moving the IL prefix or source clears what the ",
-        "old one left on the broker, so IL consumers drop those devices and see them again under the new one."),
+      el("h2", {}, t("settings_title")),
+      el("div", { class: "muted" }, t("settings_intro")),
       this.body,
       el("div", { class: "row note" }, this.save));
   }
@@ -625,20 +767,21 @@ class SettingsSection {
     try {
       r = await this.panel._api("GET", "settings");
     } catch (e) {
-      this.body.replaceChildren(el("div", { class: "error" }, `Cannot read the settings: ${message(e)}`));
+      this.body.replaceChildren(el("div", { class: "error" }, t("settings_unreadable", { error: message(e) })));
       this.save.disabled = true;
       return;
     }
     this.current = r.settings;
     this.fields = {};
-    this.body.replaceChildren(...SETTINGS.filter(([k]) => k in r.settings).map(([k, label, hint]) => {
+    this.body.replaceChildren(...SETTINGS.filter((k) => k in r.settings).map((k) => {
       const input = k === "bridge_log_level"
         ? el("select", { onchange: () => this.updateSave() },
           ...["error", "warn", "info", "debug"].map((v) => el("option", { value: v }, v)))
         : el("input", { spellcheck: "false", oninput: () => this.updateSave() });
       input.value = r.settings[k];
       this.fields[k] = input;
-      return el("label", { class: "setting" }, el("span", {}, label), input, el("span", { class: "muted" }, hint));
+      return el("label", { class: "setting" }, el("span", {}, t(`set_${k}`)), input,
+        el("span", { class: "muted" }, t(`set_${k}_hint`)));
     }));
     this.updateSave();
   }
@@ -659,21 +802,21 @@ class SettingsSection {
   async submit() {
     const changed = this.changed();
     if (!Object.keys(changed).length) {
-      this.panel._toast("Nothing changed");
+      this.panel._toast(t("nothing_changed"));
       return;
     }
-    if (!confirm(`Save ${Object.keys(changed).join(", ")} and restart Rustuya?`)) return;
+    if (!confirm(t("confirm_settings", { names: Object.keys(changed).map((k) => t(`set_${k}`)).join(", ") }))) return;
     this.save.disabled = true;
-    this.panel._toast("Saving; Rustuya is restarting…");
+    this.panel._toast(t("saving_restarting"));
     try {
       const r = await this.panel._api("PUT", "settings", changed);     // answered once the restart is over
       if (!r.restarting) {
-        this.panel._toast("Nothing changed");
+        this.panel._toast(t("nothing_changed"));
         this.updateSave();
         return;
       }
     } catch (e) {
-      this.panel._toast(`Not saved: ${message(e)}`);
+      this.panel._toast(t("not_saved", { error: message(e) }));
       this.updateSave();
       return;
     }
@@ -693,6 +836,12 @@ class RustuyaPanel extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (this._menu) this._menu.hass = hass;
+    const before = LANG;
+    if (setLanguage(hass) !== before && this._built) {
+      // the user switched Home Assistant's language: build the page again in it
+      if (this._bridge) this._bridge.unwatch();
+      this._built = false;
+    }
     if (!this._built) {
       this._built = true;
       this._build();
@@ -732,7 +881,7 @@ class RustuyaPanel extends HTMLElement {
     this._options = new OptionsSection(this);
     this._settings = new SettingsSection(this);
     this._pack = el("div", { class: "muted" }, "…");
-    this._syncBtn = el("button", { onclick: () => this._syncPack() }, "Sync now");
+    this._syncBtn = el("button", { onclick: () => this._syncPack() }, t("sync_now"));
     this._list = el("ul", { class: "files" });
     this._warnings = el("div", { class: "warn note" });
     this._name = el("input", { placeholder: "10_mine.json", spellcheck: "false" });
@@ -751,32 +900,27 @@ class RustuyaPanel extends HTMLElement {
     this.shadowRoot.replaceChildren(
       el("style", {}, STYLE),
       el("div", { class: "toolbar" }, this._menu, el("span", {}, "Rustuya"), el("span", { class: "spacer" }),
-        el("button", { title: "Remove this panel from the sidebar; the integration's Configure adds it back",
-                       onclick: () => this._hide() }, "Hide panel")),
+        el("button", { title: t("hide_title"), onclick: () => this._hide() }, t("hide"))),
       el("div", { class: "content" },
         this._bridge.root,
         el("div", { class: "card" },
-          el("h2", {}, "Override pack"),
-          el("div", { class: "muted" },
-            "Fixes for non-standard devices, published between releases and copied into the converters directory."),
+          el("h2", {}, t("pack_title")),
+          el("div", { class: "muted" }, t("pack_intro")),
           el("div", { class: "row note" }, this._pack, this._syncBtn)),
         this._convertersCard = el("div", { class: "card" },
-          el("h2", {}, "Custom converters"),
-          el("div", { class: "muted" },
-            "Override blocks (*.json) and code converters (*.py) in rustuya_converters/. Saved files apply within ",
-            "seconds. Code converters run inside Home Assistant. See tuya2ildevice's README, \"User overrides\". ",
-            "Drop files here to copy them in."),
+          el("h2", {}, t("converters_title")),
+          el("div", { class: "muted" }, t("converters_intro")),
           this._warnings,
           el("div", { class: "split" },
             el("div", {},
               el("div", { class: "row", style: "margin-bottom:8px" },
-                el("button", { onclick: () => this._new() }, "New file")),
+                el("button", { onclick: () => this._new() }, t("new_file"))),
               this._list),
             el("div", {},
               el("div", { class: "row" },
                 this._name,
-                el("button", { class: "primary", onclick: () => this._save() }, "Save"),
-                el("button", { onclick: () => this._delete() }, "Delete")),
+                el("button", { class: "primary", onclick: () => this._save() }, t("save")),
+                el("button", { onclick: () => this._delete() }, t("delete"))),
               this._origin,
               this._text))),
         this._options.root,
@@ -831,13 +975,11 @@ class RustuyaPanel extends HTMLElement {
     for (const file of files) {
       const name = file.name;
       if (!/\.(json|py)$/.test(name)) {
-        failed.push(`${name} (only *.json and *.py files are converters)`);
+        failed.push(t("only_converters", { name }));
         continue;
       }
       const f = this._files.find((x) => x.name === name);
-      if (f && !confirm(f.origin === "pack"
-        ? `${name} comes from the override pack. Replaced, it is yours: the pack no longer updates or removes it.`
-        : `${name} already exists. Replace it?`)) continue;
+      if (f && !confirm(f.origin === "pack" ? t("confirm_replace_pack", { name }) : t("confirm_replace", { name }))) continue;
       try {
         await this._api("PUT", `converters/${encodeURIComponent(name)}`, { content: await file.text() });
         saved.push(name);
@@ -850,19 +992,21 @@ class RustuyaPanel extends HTMLElement {
       if (saved.length === 1) await this._open(saved[0]);
     }
     // one notification: Home Assistant shows only the latest
-    const parts = [saved.length ? `Copied ${saved.join(", ")}` : "", failed.length ? `Not copied: ${failed.join("; ")}` : ""];
+    const parts = [saved.length ? t("copied", { names: saved.join(", ") }) : "",
+      failed.length ? t("not_copied", { names: failed.join("; ") }) : ""];
     const text = parts.filter(Boolean).join(". ");
     if (text) this._toast(text);
   }
 
   async _hide() {
-    const unsaved = [["Options", this._options], ["Settings", this._settings]].filter(([, x]) => x.dirty()).map(([n]) => n);
+    const unsaved = [["options_title", this._options], ["settings_title", this._settings]].filter(([, x]) => x.dirty())
+      .map(([key]) => t(key));
     // asked only when something would be lost; otherwise it just goes (Configure adds it back)
-    if (unsaved.length && !confirm(`Unsaved changes in ${unsaved.join(" and ")} will be lost. Remove the Rustuya panel from the sidebar anyway?`)) return;
+    if (unsaved.length && !confirm(t("confirm_hide_unsaved", { names: unsaved.join(t("and")) }))) return;
     try {
       await this._api("DELETE", "panel");
     } catch (e) {
-      this._toast(`Not hidden: ${message(e)}`);
+      this._toast(t("not_hidden", { error: message(e) }));
       return;
     }
     // Home Assistant's own navigation (the frontend listens for location-changed), to the integration's page
@@ -875,7 +1019,7 @@ class RustuyaPanel extends HTMLElement {
     try {
       r = await this._api("GET", "converters");
     } catch (e) {
-      this._list.replaceChildren(el("li", { class: "error" }, `Cannot list the files: ${message(e)}`));
+      this._list.replaceChildren(el("li", { class: "error" }, t("files_unreadable", { error: message(e) })));
       return null;
     }
     this._files = r.files;
@@ -887,47 +1031,45 @@ class RustuyaPanel extends HTMLElement {
 
   _paintList() {
     if (!this._files.length) {
-      this._list.replaceChildren(el("li", { class: "muted" }, "No files yet. Built-in fixes apply without any."));
+      this._list.replaceChildren(el("li", { class: "muted" }, t("no_files")));
       return;
     }
     this._list.replaceChildren(...this._files.map((f) =>
       el("li", { class: f.name === this._selected ? "sel" : "", onclick: () => this._open(f.name) },
-        el("span", {}, f.name), ORIGIN[f.origin] ? el("span", { class: "tag" }, ORIGIN[f.origin]) : "")));
+        el("span", {}, f.name), ORIGIN[f.origin] ? el("span", { class: "tag" }, t(ORIGIN[f.origin])) : "")));
   }
 
   _paintPack(pack) {
     this._syncBtn.disabled = this._syncing || !pack || !pack.enabled;
     if (this._syncing) {
-      this._pack.textContent = "Syncing…";
+      this._pack.textContent = t("pack_syncing");
       this._pack.className = "muted";
       return;
     }
     if (!pack || !pack.enabled) {
-      this._pack.textContent = "Off. Turn it on in Options below.";
+      this._pack.textContent = t("pack_off");
       this._pack.className = "muted";
       return;
     }
     const p = pack.status;
     if (!p) {
-      this._pack.textContent = "Not synced yet.";
+      this._pack.textContent = t("pack_never");
       this._pack.className = "muted";
       return;
     }
-    const when = new Date(p.at * 1000).toLocaleString();
+    const when = new Date(p.at * 1000).toLocaleString(LANG);
     const changes = ["added", "updated", "removed", "kept"].filter((k) => p[k] && p[k].length)
-      .map((k) => `${k} ${p[k].join(", ")}`);
-    const failed = (p.failed || []).length ? `; failed: ${p.failed.join("; ")}` : "";
-    this._pack.textContent = p.error ? `Not synced (${p.error}), ${when}`
-      : `Synced ${when}${changes.length ? `: ${changes.join("; ")}` : ""}${failed}`;
+      .map((k) => `${t(`pack_${k}`)} ${p[k].join(", ")}`);
+    const failed = (p.failed || []).length ? t("pack_failed", { list: p.failed.join("; ") }) : "";
+    this._pack.textContent = p.error ? t("pack_error", { error: p.error, when })
+      : `${t("pack_synced", { when })}${changes.length ? `: ${changes.join("; ")}` : ""}${failed}`;
     this._pack.className = p.error || failed ? "warn" : "muted";
   }
 
   _originNote(name) {
     const f = this._files.find((x) => x.name === name);
     const o = f && f.origin;
-    this._origin.textContent = o === "pack" ? "From the override pack: the next sync updates it. Saving an edit makes it yours."
-      : o === "pack_edited" ? "An edited pack file: the pack no longer updates it. Delete it to get the pack's copy back at the next sync."
-      : "";
+    this._origin.textContent = o === "pack" ? t("origin_note_pack") : o === "pack_edited" ? t("origin_note_pack_edited") : "";
   }
 
   async _open(name) {
@@ -955,36 +1097,36 @@ class RustuyaPanel extends HTMLElement {
   async _save() {
     const name = this._name.value.trim();
     if (!name) {
-      this._toast("Name the file first (*.json or *.py)");
+      this._toast(t("name_first"));
       return;
     }
     const f = this._files.find((x) => x.name === name);
     if (f && f.origin === "pack" &&
-        !confirm(`${name} comes from the override pack. Once edited it is yours: the pack no longer updates or removes it.`)) return;
-    if (f && name !== this._selected && !confirm(`${name} already exists. Replace it?`)) return;
+        !confirm(t("confirm_edit_pack", { name }))) return;
+    if (f && name !== this._selected && !confirm(t("confirm_replace", { name }))) return;
     try {
       const r = await this._api("PUT", `converters/${encodeURIComponent(name)}`, { content: this._text.value });
       this._selected = name;
       await this._refresh();
       this._warnings.replaceChildren(...(r.warnings || []).map((w) => el("div", {}, w)));
       this._originNote(name);
-      this._toast(`Saved ${name}`);
+      this._toast(t("saved", { name }));
     } catch (e) {
-      this._toast(`Not saved: ${message(e)}`);
+      this._toast(t("not_saved", { error: message(e) }));
     }
   }
 
   async _delete() {
     const name = this._name.value.trim();
     if (!name || !this._files.some((x) => x.name === name)) return;
-    if (!confirm(`Delete ${name}?`)) return;
+    if (!confirm(t("confirm_delete", { name }))) return;
     try {
       await this._api("DELETE", `converters/${encodeURIComponent(name)}`);
       this._new();
       await this._refresh();
-      this._toast(`Deleted ${name}`);
+      this._toast(t("deleted", { name }));
     } catch (e) {
-      this._toast(`Not deleted: ${message(e)}`);
+      this._toast(t("not_deleted", { error: message(e) }));
     }
   }
 
@@ -994,11 +1136,11 @@ class RustuyaPanel extends HTMLElement {
     try {
       const r = await this._api("POST", "pack");
       if (!r.started) {
-        this._toast("The pack is off");
+        this._toast(t("pack_is_off"));
         return;
       }
     } catch (e) {
-      this._toast(`Cannot sync: ${message(e)}`);
+      this._toast(t("cannot_sync", { error: message(e) }));
       return;
     }
     this._syncing = true;
@@ -1009,7 +1151,7 @@ class RustuyaPanel extends HTMLElement {
     }
     this._syncing = false;
     await this._refresh();
-    if (this._files.length !== before) this._toast("The pack changed the converter files");
+    if (this._files.length !== before) this._toast(t("pack_changed"));
   }
 }
 

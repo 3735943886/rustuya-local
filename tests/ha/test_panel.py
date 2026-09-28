@@ -543,3 +543,23 @@ async def test_a_reload_keeps_the_panel_and_disabling_removes_it(hass, loaded, d
         entry.disabled_by = ConfigEntryDisabler.USER
     await integration.async_unload_entry(hass, entry)
     assert (panel.PANEL_URL in hass.data.get(frontend.DATA_PANELS, {})) is kept
+
+
+def test_the_panel_has_every_text_in_korean_too():
+    """The panel's own texts (www/rustuya-panel.js, I18N): Korean has every English key, with the same placeholders,
+    and every `t("key")` the page uses exists (a missing one would show the raw key)."""
+    import pathlib
+    import re
+
+    src = (pathlib.Path(__file__).resolve().parents[2] / "custom_components/rustuya/www/rustuya-panel.js").read_text()
+    block = src[src.index("const I18N = {"):src.index("let LANG")]
+    en_block, ko_block = block.split("\n  ko: {")
+
+    def entries(text):
+        return {k: set(re.findall(r"\{(\w+)\}", v)) for k, v in re.findall(r'\b(\w+): "((?:[^"\\]|\\.)*)"', text)}
+
+    en, ko = entries(en_block), entries(ko_block)
+    assert len(en) > 100 and en.keys() == ko.keys()
+    assert {k for k in en if en[k] != ko[k]} == set()
+    used = set(re.findall(r'\bt\("(\w+)"', src))
+    assert used <= en.keys()
