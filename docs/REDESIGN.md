@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.24). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.25). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)
@@ -277,3 +277,7 @@ rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery
 - **2026-09-27 0.0.22**: tuya2ildevice 0.3.9 을 요구한다. 커버 위치를 뒤집지 않는다(브리지 값 그대로, 뒤집을 기기는 `remap.invert`). 값이 바뀐 실시간 passive 는 기기 푸시로 본다(passive 로만 보고하는 커튼도 opening/closing).
 - **2026-09-27 0.0.23**: tuya2ildevice 0.3.10 을 요구한다. 브리지의 `state`(active/passive 를 합친 뷰) 사본이 커튼 움직임을 바로 stopped 로 끝내던 것을 고침.
 - **2026-09-27 0.0.24**: tuya2ildevice 0.3.11 을 요구한다. 이벤트(버튼 누름 등)는 rustuya-homeassistant 처럼 `active` 에서만 발생.
+- **2026-09-28 0.0.25**: HA 통합에 사이드바 패널(Tuning 옵션, 고급 모드에서 켬, 관리자 전용). 브리지 기기를 매니저처럼
+  missing/orphan/mismatch/synced 로 보여 주고(카테고리 필터, 게이트웨이 아래 서브 기기, 패널이 열린 동안 실시간 연결 상태) 추가·갱신·삭제,
+  컨버터 파일 편집(팩 파일 표시), 팩 즉시 동기화. 통합은 한 인스턴스만. 기본 파일은 `.storage/rustuya/` 로 옮김(entry 1.2 마이그레이션,
+  `tuyacreds.json` 포함). 매니저 플러그인 탭도 컨버터 파일의 팩 출처를 표시.
