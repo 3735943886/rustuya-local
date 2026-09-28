@@ -6,7 +6,9 @@ and user overrides from `<config>/rustuya_converters`. It creates no entities an
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import secrets
 from dataclasses import dataclass
 from typing import Any
 
@@ -172,3 +174,30 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if runtime.embedded_bridge:
         await runtime.embedded_bridge.stop()
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Deleted, not just unloaded (which only says `offline`, keeping every descriptor for the next start): clear what
+    this producer left retained on IL, so il-ha and other IL consumers drop its devices. A broker that cannot be
+    reached only leaves them behind; the removal goes on."""
+    await hass.async_add_import_executor_job(_import_runtime)
+    from tuya2ildevice.host import MqttTransport
+
+    from rustuya_local.service import AnotherProducer, purge_il
+
+    data = entry.data
+    prefix, source = data.get(CONF_IL_PREFIX, "il"), data.get(CONF_IL_SOURCE, "tuya")
+    transport = MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT],
+                              client_id=f"rustuya-remove-{secrets.token_hex(4)}",
+                              username=data.get(CONF_BROKER_USERNAME) or None,
+                              password=data.get(CONF_BROKER_PASSWORD) or None)
+    try:
+        await transport.connect()
+        await purge_il(transport, prefix, source)
+    except AnotherProducer as e:
+        _LOGGER.warning("left the IL devices of %s/%s in place: %s", prefix, source, e)
+    except Exception as e:  # noqa: BLE001 -- broker down, refused credentials: nothing to clear it with
+        _LOGGER.warning("could not clear the IL devices of %s/%s from the broker: %s", prefix, source, e)
+    finally:
+        with contextlib.suppress(Exception):
+            await transport.close()

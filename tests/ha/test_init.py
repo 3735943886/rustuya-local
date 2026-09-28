@@ -185,3 +185,48 @@ async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(ha
             watcher.publish(topic, "", retain=True)
         await asyncio.sleep(0.1)
         watcher.close()
+
+
+async def test_deleting_the_entry_takes_its_devices_out_of_il(hass, broker, tmp_path, socket_enabled):
+    """Unloading keeps the descriptors (the producer comes back); deleting clears every retained topic this source
+    left, including a device an earlier run published that the current one no longer drives, and nothing of another
+    source on the same prefix."""
+    devices_path = tmp_path / "tuyadevices.json"
+    devices_path.write_text(json.dumps([lamp("lamp1")]))
+    entry = MockConfigEntry(domain=DOMAIN, data={
+        CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
+        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
+        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
+    entry.add_to_hass(hass)
+    watcher = Watcher(broker, registered=("lamp1",))
+    try:
+        watcher.publish("il/stale1", json.dumps({"il": 1, "id": "stale1", "source": "tuya", "props": {}}), retain=True)
+        watcher.publish("il/stale1/power", "true", retain=True)
+        watcher.publish("il/zb1", json.dumps({"il": 1, "id": "zb1", "source": "zigbee", "props": {}}), retain=True)
+        watcher.publish("il/zb1/power", "true", retain=True)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await until(lambda: "il/lamp1" in watcher.last)
+        watcher.publish("rustuya/event/state/lamp1", '{"20":true,"22":1000,"23":0}', retain=True)
+        await until(lambda: watcher.last.get("il/lamp1/brightness") == "100")
+
+        await hass.config_entries.async_remove(entry.entry_id)
+        await hass.async_block_till_done()
+
+        for topic in ("il/lamp1", "il/lamp1/brightness", "il/stale1", "il/stale1/power", "il/_producer/tuya"):
+            try:
+                await until(lambda t=topic: watcher.last.get(t) == "")
+            except AssertionError:
+                raise AssertionError((topic, dict(watcher.last)))
+        assert watcher.last["il/zb1/power"] == "true" and json.loads(watcher.last["il/zb1"])["source"] == "zigbee"
+        # nothing is left retained for it: a fresh subscriber sees none of those topics
+        late = Watcher(broker)
+        await asyncio.sleep(0.5)
+        late.close()
+        assert not [t for t, p in late.last.items() if p and t.startswith(("il/lamp1", "il/stale1", "il/_producer"))]
+    finally:
+        for topic in list(watcher.last):
+            watcher.publish(topic, "", retain=True)
+        await asyncio.sleep(0.1)
+        watcher.close()

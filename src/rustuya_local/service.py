@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
+import secrets
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -118,6 +120,8 @@ class Service:
             will = self.hub.presence(False)
             self.il = await self._connect_il((will.topic, will.payload, will.qos, will.retain))
             _close_later(stack, self.il)
+            # runs after the runner's stop (registered later, so run earlier): its `offline` reaches the broker first
+            stack.push_async_callback(self._flush_il, f"{will.topic}/flush")
 
             await self._refuse_if_another_producer(will.topic)
             self.runner = Runner(self.hub, self.il, on_bridge_command=self.bridge_client.send_command)
@@ -190,6 +194,12 @@ class Service:
             await self.bridge_client.drain()
         await stack.aclose()
 
+    async def _flush_il(self, topic: str) -> None:
+        try:
+            await _flush(self.il, topic, 2.0)
+        except Exception as e:  # noqa: BLE001 -- a connection already gone has nothing left to send
+            _LOGGER.debug("could not flush the IL connection before closing it: %r", e)
+
     def refresh_devices(self, records: list[dict] | None = None) -> None:
         """Apply the device file as it is now (or `records`), without restarting anything."""
         if self.bridge_client is None:
@@ -199,3 +209,76 @@ class Service:
                 return
             records = load_devices(self.settings.devices_path)
         self.bridge_client.sync_devices(records)
+
+
+async def purge_il(il: Transport, prefix: str, source: str, *, settle: float = 0.5, timeout: float = 5.0) -> list[str]:
+    """Take a producer out of IL for good (the integration deleted, not just stopped): every retained topic it left is
+    cleared, so IL consumers drop its devices. `stop()` only says `offline`; the descriptors and values stay retained on
+    purpose then, since the producer is expected back. What is cleared is found on the broker, not in a Hub: every
+    descriptor `<prefix>/<id>` whose `source` is this one (devices published by an earlier run included), each retained
+    topic below it, and the presence `<prefix>/_producer/<source>`. Returns the device ids taken out.
+
+    Refuses (`AnotherProducer`) while a producer still answers on that presence: it would publish them all again."""
+    presence = IlTopics(prefix, source).presence
+    if await producer_running(il, presence):
+        raise AnotherProducer(f"a producer is still running for {presence}; stop it before removing its devices")
+    retained: dict[str, bytes | str] = {}
+    last = asyncio.Event()
+
+    def on_message(msg) -> None:
+        if msg.retain:
+            retained[msg.topic] = msg.payload
+            last.set()
+
+    unsub = await il.subscribe(f"{prefix}/#", on_message)
+    try:
+        end = asyncio.get_running_loop().time() + timeout
+        while asyncio.get_running_loop().time() < end:       # the retained replay: done once it goes quiet
+            last.clear()
+            try:
+                await asyncio.wait_for(last.wait(), settle)
+            except TimeoutError:
+                break
+    finally:
+        unsub()
+    ids = []
+    for topic, payload in retained.items():
+        device_id = topic[len(prefix) + 1:]                  # `<prefix>/#` only brings topics below the prefix
+        if "/" in device_id or device_id.startswith("_"):
+            continue
+        try:
+            desc = json.loads(payload)
+        except ValueError:
+            continue
+        if isinstance(desc, dict) and desc.get("source") == source:
+            ids.append(device_id)
+    descriptors = {f"{prefix}/{i}" for i in ids}
+    clear = [t for t in retained if t[len(prefix) + 1:].split("/", 1)[0] in ids]
+    # values first, each descriptor last (M-11), and the presence once its devices are gone
+    for topic in sorted(clear, key=lambda t: (t in descriptors, t)):
+        await il.publish(topic, "", 1, True)
+    await il.publish(presence, "", 1, True)
+    await _flush(il, f"{presence}/flush", timeout)
+    _LOGGER.info("took %d device(s) of %s out of IL", len(ids), presence)
+    return sorted(ids)
+
+
+async def _flush(il: Transport, topic: str, timeout: float) -> None:
+    """Wait until the broker has taken everything published so far: a transport's `publish` may only queue, and a
+    `close()` right after can drop what is still queued. A broker handles one client's messages in order, so this
+    client's own later message coming back means the earlier ones went through (`topic` is not retained, and below
+    `_producer/+`, so IL consumers do not see it)."""
+    nonce = secrets.token_hex(8)
+    back = asyncio.Event()
+
+    def on_message(msg) -> None:
+        payload = msg.payload.decode("utf-8", "replace") if isinstance(msg.payload, bytes) else msg.payload
+        if payload == nonce:
+            back.set()
+
+    unsub = await il.subscribe(topic, on_message)
+    try:
+        await il.publish(topic, nonce, 1, False)
+        await asyncio.wait_for(back.wait(), timeout)
+    finally:
+        unsub()
