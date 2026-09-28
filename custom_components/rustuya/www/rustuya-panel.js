@@ -16,6 +16,7 @@ const STYLE = `
   .content { max-width: 1100px; margin: 0 auto; padding: 16px; box-sizing: border-box; }
   .card { background: var(--card-background-color); border-radius: var(--ha-card-border-radius, 12px);
           border: 1px solid var(--divider-color); padding: 16px; margin-bottom: 16px; }
+  .card.drop { outline: 2px dashed var(--primary-color); outline-offset: -6px; }
   h2 { font-size: 18px; font-weight: 500; margin: 0 0 8px; }
   .muted { color: var(--secondary-text-color); font-size: 14px; }
   .warn { color: var(--warning-color, #b58100); font-size: 14px; }
@@ -477,11 +478,12 @@ class RustuyaPanel extends HTMLElement {
           el("div", { class: "muted" },
             "Fixes for non-standard devices, published between releases and copied into the converters directory."),
           el("div", { class: "row note" }, this._pack, this._syncBtn)),
-        el("div", { class: "card" },
+        this._convertersCard = el("div", { class: "card" },
           el("h2", {}, "Custom converters"),
           el("div", { class: "muted" },
             "Override blocks (*.json) and code converters (*.py) in rustuya_converters/. Saved files apply within ",
-            "seconds. Code converters run inside Home Assistant. See tuya2ildevice's README, \"User overrides\"."),
+            "seconds. Code converters run inside Home Assistant. See tuya2ildevice's README, \"User overrides\". ",
+            "Drop files here to copy them in."),
           this._warnings,
           el("div", { class: "split" },
             el("div", {},
@@ -495,6 +497,76 @@ class RustuyaPanel extends HTMLElement {
                 el("button", { onclick: () => this._delete() }, "Delete")),
               this._origin,
               this._text)))));
+    this._acceptDrops(this._convertersCard);
+  }
+
+  // files dragged from the desktop: dropped on the converters card they are copied in (`_import`); dropped anywhere
+  // else on the panel they are ignored, rather than the browser leaving Home Assistant to open the file
+  _acceptDrops(target) {
+    const hasFiles = (e) => e.dataTransfer && [...e.dataTransfer.types].includes("Files");
+    let depth = 0;                                                    // enter/leave fire for every child crossed
+    const done = () => {
+      depth = 0;
+      target.classList.remove("drop");
+    };
+    target.addEventListener("dragenter", (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth += 1;
+      target.classList.add("drop");
+    });
+    target.addEventListener("dragleave", (e) => {
+      if (hasFiles(e) && --depth <= 0) done();
+    });
+    target.addEventListener("dragover", (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    });
+    target.addEventListener("drop", (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      done();
+      this._import([...e.dataTransfer.files]);
+    });
+    for (const type of ["dragover", "drop"]) {
+      this.shadowRoot.addEventListener(type, (e) => {
+        if (!hasFiles(e) || e.composedPath().includes(target)) return;
+        e.preventDefault();
+        if (type === "dragover") e.dataTransfer.dropEffect = "none";
+      });
+    }
+  }
+
+  // each file saved under its own name through the same API and checks as Save (a *.json must parse)
+  async _import(files) {
+    const saved = [], failed = [];
+    for (const file of files) {
+      const name = file.name;
+      if (!/\.(json|py)$/.test(name)) {
+        failed.push(`${name} (only *.json and *.py files are converters)`);
+        continue;
+      }
+      const f = this._files.find((x) => x.name === name);
+      if (f && !confirm(f.origin === "pack"
+        ? `${name} comes from the override pack. Replaced, it is yours: the pack no longer updates or removes it.`
+        : `${name} already exists. Replace it?`)) continue;
+      try {
+        await this._api("PUT", `converters/${encodeURIComponent(name)}`, { content: await file.text() });
+        saved.push(name);
+      } catch (e) {
+        failed.push(`${name} (${message(e)})`);
+      }
+    }
+    if (saved.length) {
+      await this._refresh();
+      if (saved.length === 1) await this._open(saved[0]);
+    }
+    // one notification: Home Assistant shows only the latest
+    const parts = [saved.length ? `Copied ${saved.join(", ")}` : "", failed.length ? `Not copied: ${failed.join("; ")}` : ""];
+    const text = parts.filter(Boolean).join(". ");
+    if (text) this._toast(text);
   }
 
   async _refresh() {

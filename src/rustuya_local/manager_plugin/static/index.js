@@ -162,10 +162,66 @@ async function convertersBox(ctx) {
       ctx.toast && ctx.toast(`Not deleted: ${e.message}`, "error");
     }
   };
+  // each dropped file saved under its own name through the same API and checks as Save (a *.json must parse)
+  const importFiles = async (files) => {
+    const saved = [];
+    for (const file of files) {
+      const fname = file.name;
+      if (!/\.(json|py)$/.test(fname)) {
+        ctx.toast && ctx.toast(`${fname}: only *.json and *.py files are converters`, "error");
+        continue;
+      }
+      if (fname in origins && ctx.confirm && !(await ctx.confirm(origins[fname] === "pack"
+        ? { title: `Replace ${fname}?`, body: "It comes from the override pack. Replaced, it is yours: the pack no longer updates or removes it." }
+        : { title: `Replace ${fname}?`, body: "A file of that name is already in custom_converters." }))) continue;
+      try {
+        await ctx.api(`${API}/converters/${encodeURIComponent(fname)}`, { method: "PUT", body: { content: await file.text() } });
+        saved.push(fname);
+      } catch (e) {
+        ctx.toast && ctx.toast(`${fname} not copied: ${e.message}`, "error");
+      }
+    }
+    if (!saved.length) return;
+    await refresh();
+    if (saved.length === 1) await open(saved[0]);
+    ctx.toast && ctx.toast(`Copied ${saved.join(", ")}; the service picks them up within seconds`, "ok");
+  };
+  // files dragged from the desktop onto this box are copied in; the outline is inline style, not a Tailwind class the
+  // manager's stylesheet may not carry
+  const hasFiles = (e) => e.dataTransfer && [...e.dataTransfer.types].includes("Files");
+  let depth = 0;                                                      // enter/leave fire for every child crossed
+  const highlight = (on) => {
+    box.style.outline = on ? "2px dashed #3b82f6" : "";
+    box.style.outlineOffset = on ? "4px" : "";
+  };
+  box.addEventListener("dragenter", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth += 1;
+    highlight(true);
+  });
+  box.addEventListener("dragleave", (e) => {
+    if (hasFiles(e) && --depth <= 0) {
+      depth = 0;
+      highlight(false);
+    }
+  });
+  box.addEventListener("dragover", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  });
+  box.addEventListener("drop", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth = 0;
+    highlight(false);
+    importFiles([...e.dataTransfer.files]);
+  });
   box.append(
     el("p", { class: "text-sm text-gray-500 mb-2" },
       "Override blocks (*.json) and code converters (*.py, run in the manager's process) for non-standard devices. ",
-      "See tuya2ildevice's README, \"User overrides\"."),
+      "See tuya2ildevice's README, \"User overrides\". Drop files here to copy them in."),
     list, warnings,
     el("div", { class: "flex gap-2 mb-2 items-center" }, el("label", {}, "File ", name),
       el("button", { class: BTN, onclick: save }, "Save"), el("button", { class: BTN, onclick: remove }, "Delete"),
