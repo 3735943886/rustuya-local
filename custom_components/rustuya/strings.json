@@ -100,7 +100,6 @@
         "menu_options": {
           "panel_show": "Add the Rustuya panel to the sidebar",
           "panel_open": "Open the Rustuya panel",
-          "panel_hide": "Remove the Rustuya panel from the sidebar",
           "cloud_wizard": "Fetch devices from Tuya Cloud",
           "bridge_sync": "Sync devices with the bridge"
         }
@@ -140,8 +139,7 @@
       "no_devices": "There are no devices in the cloud list or on the bridge.",
       "manager_busy": "Another Tuya Cloud fetch or device sync window is still open. Close it and try again.",
       "panel_shown": "The Rustuya panel was added to the sidebar: [open it]({url}). Its Options hold remote control of locks, alarms and garage doors, unused data points and the override pack.",
-      "panel_open": "[Open the Rustuya panel]({url}).",
-      "panel_hidden": "The Rustuya panel was removed from the sidebar. Configure adds it back."
+      "panel_open": "[Open the Rustuya panel]({url})."
     },
     "error": {
       "publish_failed": "Could not send the command to the bridge."

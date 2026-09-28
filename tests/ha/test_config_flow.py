@@ -304,7 +304,7 @@ def _entry(hass, tmp_path):
 
 
 async def test_the_panel_is_one_click_from_configure(hass, tmp_path):
-    """Show turns it on (keeping the other options) and links to it; then Open links, Hide turns it off."""
+    """Add turns it on (keeping the other options) and links to it; then Open links (Hide is in the panel itself)."""
     entry = _entry(hass, tmp_path)
     hass.config_entries.async_update_entry(entry, options={CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True,
                                                            CONF_PACK: False})
@@ -315,12 +315,9 @@ async def test_the_panel_is_one_click_from_configure(hass, tmp_path):
     assert entry.options == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False, CONF_PANEL: True}
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["menu_options"][:2] == ["panel_open", "panel_hide"]
+    assert result["menu_options"][0] == "panel_open" and "panel_hide" not in result["menu_options"]
     r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "panel_open"})
     assert r["reason"] == "panel_open" and entry.options[CONF_PANEL] is True
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "panel_hide"})
-    assert r["reason"] == "panel_hidden" and entry.options[CONF_PANEL] is False
 
 
 async def test_a_session_still_open_elsewhere_aborts_with_a_hint(hass, tmp_path, monkeypatch):
@@ -613,3 +610,26 @@ async def test_the_login_directory_exists_before_the_session(hass, tmp_path, mon
     await config_flow._open(hass, {CONF_BRIDGE_MODE: "external", "broker_host": "h", "broker_port": 1883,
                                    CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices)}, bridge_running=True)
     assert devices.parent.is_dir()
+
+
+def test_every_translation_has_the_strings_keys_and_placeholders():
+    """A translation missing a key shows it blank (or as the raw key); one missing a placeholder the code passes, or
+    naming one it does not, breaks the message."""
+    import json
+    import pathlib
+    import re
+
+    base = pathlib.Path(__file__).resolve().parents[2] / "custom_components/rustuya"
+
+    def leaves(node, path=()):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                yield from leaves(v, (*path, k))
+        else:
+            yield path, set(re.findall(r"\{(\w+)\}", node))
+
+    strings = dict(leaves(json.loads((base / "strings.json").read_text())))
+    for file in sorted((base / "translations").glob("*.json")):
+        translated = dict(leaves(json.loads(file.read_text())))
+        assert translated.keys() == strings.keys(), file.name
+        assert {p: v for p, v in translated.items() if v != strings[p]} == {}, file.name

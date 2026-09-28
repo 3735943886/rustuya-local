@@ -1,0 +1,148 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "menu_options": {
+          "external": "외부 rustuya-bridge (이미 실행 중)",
+          "embedded": "Home Assistant 안에서 rustuya-bridge 실행"
+        }
+      },
+      "external": {
+        "title": "rustuya-bridge에 연결",
+        "description": "실행 중인 rustuya-bridge가 쓰는 MQTT 브로커와, 기기를 게시할 IL prefix를 입력하세요. 설정 중에 그 브로커에서 브리지가 응답하는지 확인합니다. 나머지(토픽 root, IL source, 기기 파일)는 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다.",
+        "data": {
+          "broker_host": "브로커 호스트",
+          "broker_port": "브로커 포트",
+          "broker_username": "브로커 사용자 이름 (선택)",
+          "broker_password": "브로커 비밀번호 (선택)",
+          "bridge_root": "브리지 토픽 root",
+          "il_prefix": "IL 토픽 prefix"
+        },
+        "data_description": {
+          "il_prefix": "il-ha(또는 다른 IL 소비자)가 읽을 기기를 게시하는 곳입니다. il-ha는 기본으로 il을 읽습니다."
+        }
+      },
+      "embedded": {
+        "title": "여기서 rustuya-bridge 실행",
+        "description": "실제 MQTT 브로커에는 그대로 연결하되, 브리지를 따로 실행하는 대신 이 통합구성요소가 직접 띄우고 관리합니다. 토픽 root, 상태 파일, 로그 레벨은 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다.",
+        "data": {
+          "broker_host": "브로커 호스트",
+          "broker_port": "브로커 포트",
+          "broker_username": "브로커 사용자 이름 (선택)",
+          "broker_password": "브로커 비밀번호 (선택)",
+          "il_prefix": "IL 토픽 prefix"
+        },
+        "data_description": {
+          "il_prefix": "il-ha(또는 다른 IL 소비자)가 읽을 기기를 게시하는 곳입니다. il-ha는 기본으로 il을 읽습니다."
+        }
+      },
+      "onboard": {
+        "title": "기기",
+        "description": "지금 Tuya Cloud에서 기기 목록을 가져와 브리지에 등록합니다(저장된 로그인이 있으면 그대로 쓰고, 없으면 QR 코드로 로그인). 나중에 통합구성요소의 구성(Configure)에서 해도 되고, rustuya-manager가 이미 관리하는 기기 파일을 Rustuya 패널의 Settings에서 지정해도 됩니다.",
+        "menu_options": {
+          "cloud_wizard_start": "지금 Tuya Cloud에서 기기 가져오기",
+          "finish": "완료 (나중에 하기)"
+        }
+      },
+      "cloud_wizard_start": {
+        "title": "Tuya Cloud에서 기기 가져오기",
+        "description": "저장된 Tuya 로그인이 있으면 그대로 씁니다. 없거나 만료됐으면 스캔할 QR 코드가 이어서 나옵니다. 사용자 코드는 그 첫 로그인에만 필요하며, Smart Life → 나 → 설정 → 계정 및 보안에서 확인할 수 있습니다. 가져오지 않고 설정을 마치려면 이 창을 닫으세요. Rustuya는 추가되고, 가져오기는 나중에 구성(Configure)에서 할 수 있습니다.",
+        "data": {
+          "user_code": "사용자 코드 (새 로그인일 때만)"
+        }
+      },
+      "cloud_wizard_progress": {
+        "title": "Tuya Cloud"
+      },
+      "cloud_wizard_scan": {
+        "title": "QR 코드 스캔",
+        "description": "저장된 Tuya 로그인이 없거나 만료됐습니다. Smart Life 또는 Tuya Smart 앱으로 스캔한 뒤 확인을 누르세요. 가져오지 않고 설정을 마치려면 이 창을 닫으세요.",
+        "data": {
+          "scanned": "스캔했습니다"
+        }
+      },
+      "cloud_wizard_error": {
+        "title": "Tuya Cloud에서 가져오지 못했습니다",
+        "description": "{error}",
+        "data": {
+          "retry": "다시 시도"
+        }
+      },
+      "sync_devices": {
+        "title": "브리지와 기기 동기화",
+        "description": "클라우드 목록과 브리지가 가진 기기 비교: 일치 {synced}개, 브리지에 없음 {missing}개, 설정이 다름 {mismatched}개, 브리지에만 있음 {orphaned}개. 모든 기기가 상태와 함께 표시되며, 선택한 것만 바뀝니다. {error}",
+        "data": {
+          "add": "브리지에 추가",
+          "update": "브리지에서 갱신 (클라우드 설정 적용)",
+          "remove": "브리지에서 삭제 (브리지가 가진 모든 기기)"
+        }
+      }
+    },
+    "progress": {
+      "cloud_wizard_working": "{message}"
+    },
+    "error": {
+      "bridge_not_found": "브로커는 응답하지만 그 토픽 root에서 실행 중인 rustuya-bridge가 없습니다. 브리지를 시작하거나, 브리지가 쓰는 토픽 root를 입력한 뒤 다시 시도하세요.",
+      "cannot_connect": "MQTT 브로커에 연결할 수 없습니다. 호스트, 포트, 계정 정보를 확인하세요.",
+      "invalid_prefix": "와일드카드(+, #)나 빈 단계가 없는 MQTT 토픽이어야 합니다. 예: il, home/il",
+      "publish_failed": "브리지에 명령을 보내지 못했습니다.",
+      "pyrustuyabridge_missing": "pyrustuyabridge가 설치되어 있지 않습니다. 외부 브리지를 선택하세요."
+    },
+    "abort": {
+      "already_configured": "이미 설정되어 있습니다.",
+      "manager_busy": "다른 Tuya Cloud 가져오기 또는 기기 동기화 창이 아직 열려 있습니다. 그 창을 닫고 다시 시도하세요.",
+      "single_instance_allowed": "Rustuya는 이미 설정되어 있습니다. 하나만 실행할 수 있습니다."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "menu_options": {
+          "panel_show": "사이드바에 Rustuya 패널 추가",
+          "panel_open": "Rustuya 패널 열기",
+          "cloud_wizard": "Tuya Cloud에서 기기 가져오기",
+          "bridge_sync": "브리지와 기기 동기화"
+        }
+      },
+      "cloud_wizard": {
+        "title": "Tuya Cloud에서 기기 가져오기",
+        "data": {
+          "user_code": "사용자 코드 (새 로그인일 때만)"
+        },
+        "description": "저장된 Tuya 로그인이 있으면 그대로 씁니다. 없거나 만료됐으면 스캔할 QR 코드가 이어서 나옵니다. 사용자 코드는 그 첫 로그인에만 필요합니다."
+      },
+      "cloud_wizard_progress": {
+        "title": "Tuya Cloud"
+      },
+      "cloud_wizard_scan": {
+        "title": "QR 코드 스캔",
+        "description": "저장된 Tuya 로그인이 없거나 만료됐습니다. Smart Life 또는 Tuya Smart 앱으로 스캔한 뒤 확인을 누르세요.",
+        "data": {
+          "scanned": "스캔했습니다"
+        }
+      },
+      "bridge_sync": {
+        "title": "브리지와 기기 동기화",
+        "description": "클라우드 목록과 브리지가 가진 기기 비교: 일치 {synced}개, 브리지에 없음 {missing}개, 설정이 다름 {mismatched}개, 브리지에만 있음 {orphaned}개. 모든 기기가 상태와 함께 표시되며, 선택한 것만 바뀝니다. {error}",
+        "data": {
+          "add": "브리지에 추가",
+          "update": "브리지에서 갱신 (클라우드 설정 적용)",
+          "remove": "브리지에서 삭제 (브리지가 가진 모든 기기)"
+        }
+      }
+    },
+    "progress": {
+      "cloud_wizard_working": "{message}"
+    },
+    "abort": {
+      "wizard_failed": "Tuya Cloud에서 가져오지 못했습니다: {error}",
+      "no_devices": "클라우드 목록에도 브리지에도 기기가 없습니다.",
+      "manager_busy": "다른 Tuya Cloud 가져오기 또는 기기 동기화 창이 아직 열려 있습니다. 그 창을 닫고 다시 시도하세요.",
+      "panel_shown": "사이드바에 Rustuya 패널이 추가되었습니다: [열기]({url}). 패널의 Options에서 잠금장치·경보·차고문 원격 제어, 분류되지 않는 데이터 포인트, 오버라이드 팩을 설정합니다.",
+      "panel_open": "[Rustuya 패널 열기]({url})"
+    },
+    "error": {
+      "publish_failed": "브리지에 명령을 보내지 못했습니다."
+    }
+  }
+}

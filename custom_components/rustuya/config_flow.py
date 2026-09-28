@@ -379,7 +379,8 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
         self._scan_shown = False
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        panel = ["panel_open", "panel_hide"] if self.config_entry.options.get(CONF_PANEL) else ["panel_show"]
+        # the panel's own Hide panel removes it; here only adding it, or its link once added
+        panel = ["panel_open"] if self.config_entry.options.get(CONF_PANEL) else ["panel_show"]
         options = [*panel, "cloud_wizard", "bridge_sync"] if manager_session.available() else panel
         return self.async_show_menu(step_id="init", menu_options=options)
 
@@ -403,11 +404,6 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_panel_open(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         return self._panel_link("panel_open")
-
-    async def async_step_panel_hide(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        entry = self.config_entry
-        self.hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_PANEL: False})
-        return self.async_abort(reason="panel_hidden")
 
     async def _async_manager(self):
         if self._manager is None:
