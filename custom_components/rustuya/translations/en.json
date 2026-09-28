@@ -38,31 +38,31 @@
       },
       "onboard": {
         "title": "Devices",
-        "description": "Log in to Tuya Cloud now to fetch your device list and register devices on the bridge. You can also do it later from the integration's Configure, or point at a device file rustuya-manager already keeps from the Rustuya panel's Settings.",
+        "description": "Fetch your device list from Tuya Cloud now and register devices on the bridge (a saved login is used as is; otherwise you log in with a QR code). You can also do it later from the integration's Configure, or point at a device file rustuya-manager already keeps from the Rustuya panel's Settings.",
         "menu_options": {
-          "cloud_wizard_start": "Log in to Tuya Cloud now",
+          "cloud_wizard_start": "Fetch devices from Tuya Cloud now",
           "finish": "Finish; do it later"
         }
       },
       "cloud_wizard_start": {
-        "title": "Log in to Tuya Cloud",
-        "description": "Leave the user code blank for a fresh QR login, or enter a saved one to skip scanning again. To set up without logging in, close this window: Rustuya is added, and the login is in its Configure later.",
+        "title": "Fetch devices from Tuya Cloud",
+        "description": "A saved Tuya login is used as is. Without one (or when it has expired), a QR code to scan follows: the user code is only needed for that first login, from Smart Life → Me → Settings → Account and Security. To set up without fetching, close this window: Rustuya is added, and the fetch is in its Configure later.",
         "data": {
-          "user_code": "Saved user code (optional)"
+          "user_code": "User code (only for a new login)"
         }
       },
       "cloud_wizard_progress": {
-        "title": "Tuya Cloud login"
+        "title": "Tuya Cloud"
       },
       "cloud_wizard_scan": {
         "title": "Scan the QR code",
-        "description": "Scan with the Smart Life or Tuya Smart app, then submit. Close this window to finish the setup without the login.",
+        "description": "There is no saved Tuya login (or it has expired): scan with the Smart Life or Tuya Smart app, then submit. Close this window to finish the setup without the fetch.",
         "data": {
           "scanned": "I've scanned it"
         }
       },
       "cloud_wizard_error": {
-        "title": "Login failed",
+        "title": "Tuya Cloud fetch failed",
         "description": "{error}",
         "data": {
           "retry": "Try again"
@@ -90,7 +90,7 @@
     },
     "abort": {
       "already_configured": "Already set up.",
-      "manager_busy": "Another Tuya login or device sync window is still open. Close it and try again.",
+      "manager_busy": "Another Tuya Cloud fetch or device sync window is still open. Close it and try again.",
       "single_instance_allowed": "Rustuya is already set up; it runs as a single instance."
     }
   },
@@ -98,30 +98,26 @@
     "step": {
       "init": {
         "menu_options": {
-          "tuning": "Rustuya panel",
-          "cloud_wizard": "Log in to Tuya Cloud again",
+          "panel_show": "Show the Rustuya panel",
+          "panel_open": "Open the Rustuya panel",
+          "panel_hide": "Hide the Rustuya panel",
+          "cloud_wizard": "Fetch devices from Tuya Cloud",
           "bridge_sync": "Sync devices with the bridge"
         }
       },
-      "tuning": {
-        "title": "Rustuya panel",
-        "description": "The sidebar panel: bridge devices, custom converters, options (remote control of locks and alarms, unused data points, the override pack) and settings. For administrators.",
-        "data": {
-          "panel": "Show the Rustuya panel in the sidebar"
-        }
-      },
       "cloud_wizard": {
-        "title": "Log in to Tuya Cloud",
+        "title": "Fetch devices from Tuya Cloud",
         "data": {
-          "user_code": "Saved user code (optional)"
-        }
+          "user_code": "User code (only for a new login)"
+        },
+        "description": "A saved Tuya login is used as is. Without one (or when it has expired), a QR code to scan follows: the user code is only needed for that first login."
       },
       "cloud_wizard_progress": {
-        "title": "Tuya Cloud login"
+        "title": "Tuya Cloud"
       },
       "cloud_wizard_scan": {
         "title": "Scan the QR code",
-        "description": "Scan with the Smart Life or Tuya Smart app, then submit.",
+        "description": "There is no saved Tuya login (or it has expired): scan with the Smart Life or Tuya Smart app, then submit.",
         "data": {
           "scanned": "I've scanned it"
         }
@@ -140,9 +136,12 @@
       "cloud_wizard_working": "{message}"
     },
     "abort": {
-      "wizard_failed": "The Tuya Cloud login failed: {error}",
+      "wizard_failed": "Fetching from Tuya Cloud failed: {error}",
       "no_devices": "There are no devices in the cloud list or on the bridge.",
-      "manager_busy": "Another Tuya login or device sync window is still open. Close it and try again."
+      "manager_busy": "Another Tuya Cloud fetch or device sync window is still open. Close it and try again.",
+      "panel_shown": "The Rustuya panel is on, in the sidebar: [open it]({url}). Its Options hold remote control of locks, alarms and garage doors, unused data points and the override pack.",
+      "panel_open": "[Open the Rustuya panel]({url}).",
+      "panel_hidden": "The Rustuya panel is off. Configure → Show the Rustuya panel brings it back."
     },
     "error": {
       "publish_failed": "Could not send the command to the bridge."

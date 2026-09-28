@@ -49,11 +49,12 @@ another, stop the old one first.
 **Rustuya**, restart, then *Add Integration* → **Rustuya**) is the service tied to a config entry, with the QR login
 wizard, bridge registration and an optional embedded bridge. It creates no entities itself. Setup asks only for the
 bridge mode, the broker and the IL prefix (it checks an external bridge answers there, and asks for its topic root if it
-is not on the default one), then offers the Tuya Cloud login, which closing its window skips (it is in *Configure*
-later); the rest starts at its defaults and is changed in the panel's *Settings*. Deleting the integration
-takes its devices out of IL (so il-ha removes them); with the embedded bridge it also clears that bridge's retained
-topics and its state file. The device list and Tuya login it kept under `.storage/rustuya/` are deleted; a device file
-you pointed elsewhere, and everything on an external bridge, are left as they are.
+is not on the default one), then offers to fetch the devices from Tuya Cloud (a saved login is reused; a QR login
+only when there is none), which closing its window skips (it is in *Configure* later, and in the panel); the rest
+starts at its defaults and is changed in the panel's *Settings*. Deleting the integration takes its devices out of IL
+(so il-ha removes them); with the embedded bridge it also clears that bridge's retained topics and its state file.
+The device list and Tuya login it kept under `.storage/rustuya/` are deleted; a device file you pointed elsewhere, and
+everything on an external bridge, are left as they are.
 
 ### Overrides for non-standard devices
 
@@ -71,8 +72,8 @@ into the directory at start and daily, as `00_pack_*` files that your own files 
 false` (daemon), the Rustuya panel's *Options* (integration), or the plugin tab. The pack only replaces or removes the files it
 put there, and leaves a file alone once you edit it.
 
-In Home Assistant the files can be edited from a sidebar panel: turn on *Show the Rustuya panel* in the integration's
-*Configure* → *Rustuya panel*. The panel is for administrators. It shows the
+In Home Assistant the files can be edited from a sidebar panel: the integration's *Configure* → *Show the Rustuya
+panel* turns it on and links to it. The panel is for administrators. It fetches the device list from Tuya Cloud, shows the
 bridge's devices against the cloud list as rustuya-manager does (missing, orphan, mismatch, synced, each a filter you can
 turn off; sub-devices under their gateway; each device's bridge connection, live while the panel is open) with add /
 update / remove, lists the converter files with the pack's

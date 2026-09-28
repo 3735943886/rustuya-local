@@ -379,19 +379,31 @@ class RustuyaOptionsFlow(config_entries.OptionsFlow):
         self._scan_shown = False
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        options = ["tuning"]
-        if manager_session.available():
-            options = ["tuning", "cloud_wizard", "bridge_sync"]
+        panel = ["panel_open", "panel_hide"] if self.config_entry.options.get(CONF_PANEL) else ["panel_show"]
+        options = [*panel, "cloud_wizard", "bridge_sync"] if manager_session.available() else panel
         return self.async_show_menu(step_id="init", menu_options=options)
 
-    async def async_step_tuning(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        if user_input is not None:
-            # merged over the current options, so any option not on the form keeps its value
-            return self.async_create_entry(title="", data={**self.config_entry.options, **user_input})
-        # only the panel: the other options (hazardous control, unused data points, the pack) are in its Options card
-        current = self.config_entry.options
-        fields = {vol.Required(CONF_PANEL, default=current.get(CONF_PANEL, False)): bool}
-        return self.async_show_form(step_id="tuning", data_schema=vol.Schema(fields))
+    # ---- the panel: one click, then a link to it (a flow cannot navigate the page itself) --------------------------
+
+    def _panel_link(self, reason: str) -> FlowResult:
+        from .panel import PANEL_URL
+
+        return self.async_abort(reason=reason, description_placeholders={"url": f"/{PANEL_URL}"})
+
+    async def async_step_panel_show(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Turn the panel on now (the entry reloads and registers it) and hand over its link. The other options
+        (hazardous control, unused data points, the pack) are in its Options card."""
+        entry = self.config_entry
+        self.hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_PANEL: True})
+        return self._panel_link("panel_shown")
+
+    async def async_step_panel_open(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        return self._panel_link("panel_open")
+
+    async def async_step_panel_hide(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        entry = self.config_entry
+        self.hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_PANEL: False})
+        return self.async_abort(reason="panel_hidden")
 
     async def _async_manager(self):
         if self._manager is None:

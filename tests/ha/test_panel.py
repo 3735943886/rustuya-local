@@ -411,3 +411,66 @@ async def test_the_options_api_takes_only_those_three(hass, loaded, hass_client,
     c = await hass_client()
     assert (await c.put("/api/rustuya/options", json=body)).status == 400
     assert entry.options == {CONF_PANEL: True}
+
+
+async def _poll_until(c, states, timeout=5.0):
+    import asyncio
+
+    end = asyncio.get_running_loop().time() + timeout
+    while True:
+        r = await (await c.get("/api/rustuya/cloud")).json()
+        if r["state"] in states:
+            return r
+        assert asyncio.get_running_loop().time() < end, r
+        await asyncio.sleep(0.1)
+
+
+async def test_fetching_from_tuya_cloud_in_the_panel(hass, loaded, hass_client, monkeypatch):
+    from fake_manager import FakeManager, WizardState, install
+
+    import custom_components.rustuya as integration
+
+    entry, _ = await loaded({CONF_PANEL: True})
+    handed = []
+
+    async def refresh(_hass, e):
+        handed.append((e, manager.closed))
+
+    monkeypatch.setattr(integration, "async_refresh_devices", refresh)
+    manager = FakeManager(wizard_script=[WizardState.AWAITING_SCAN, WizardState.DONE])
+    install(monkeypatch, manager)
+    c = await hass_client()
+    assert await (await c.get("/api/rustuya/cloud")).json() == {"state": "idle"}
+
+    r = await c.post("/api/rustuya/cloud", json={"user_code": " abc "})
+    assert r.status == 200
+    r = await r.json()
+    assert r["state"] == "awaiting_scan" and r["qr"].startswith("data:image/png") and manager.wizard.started_with == "abc"
+    assert (await c.post("/api/rustuya/cloud", json={})).status == 409          # one at a time
+
+    manager.wizard.advance()                                                     # scanned, and fetched
+    r = await _poll_until(c, {"done"})
+    assert r["qr"] is None and manager.closed
+    assert handed == [(entry, True)]                                             # to the entry, after the session
+
+
+async def test_a_panel_fetch_can_be_cancelled_and_ends_when_nothing_polls(hass, loaded, hass_client, monkeypatch):
+    from fake_manager import FakeManager, WizardState, install
+
+    await loaded({CONF_PANEL: True})
+    c = await hass_client()
+    manager = FakeManager(wizard_script=[WizardState.AWAITING_SCAN])
+    install(monkeypatch, manager)
+    await c.post("/api/rustuya/cloud", json={})
+    r = await (await c.delete("/api/rustuya/cloud")).json()
+    assert r["state"] == "cancelled" and manager.closed
+
+    monkeypatch.setattr(panel.CloudFetch, "IDLE_TIMEOUT", 0.3)
+    manager = FakeManager(wizard_script=[WizardState.AWAITING_SCAN])
+    install(monkeypatch, manager)
+    assert (await c.post("/api/rustuya/cloud", json={})).status == 200          # the last one is over: a new one
+    import asyncio
+
+    await asyncio.sleep(1.2)                                                     # the page went away
+    assert manager.closed
+    assert (await (await c.get("/api/rustuya/cloud")).json())["state"] == "cancelled"

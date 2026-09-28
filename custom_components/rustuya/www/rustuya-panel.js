@@ -45,6 +45,10 @@ const STYLE = `
   button.primary { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
   button:disabled { opacity: .5; cursor: default; }
   .note { margin-top: 8px; }
+  .cloud { border: 1px solid var(--divider-color); border-radius: 8px; padding: 12px; margin: 12px 0; display: grid; gap: 8px; }
+  .cloud[hidden] { display: none; }
+  .cloud .qr { width: 220px; height: 220px; image-rendering: pixelated; background: #fff; padding: 8px; border-radius: 8px; }
+  .cloud .qr[hidden] { display: none; }
   .settings { display: grid; gap: 12px; margin-top: 12px; }
   .check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
   .check .muted { font-size: 12px; }
@@ -152,6 +156,101 @@ function store(key, value) {
   } catch (e) { /* private window or blocked storage: the default next time */ }
 }
 
+// ---- fetching the device list from Tuya Cloud (CloudView): a saved login is reused, a QR only without one ---------
+
+class CloudFetchBox {
+  constructor(panel, onDone) {
+    this.panel = panel;
+    this.onDone = onDone;
+    this.timer = null;
+    this.code = el("input", { placeholder: "User code (only for a new login)", spellcheck: "false" });
+    this.startBtn = el("button", { class: "primary", onclick: () => this.start() }, "Fetch");
+    this.cancelBtn = el("button", { onclick: () => this.cancel() }, "Cancel");
+    this.msg = el("div", { class: "muted" });
+    this.qr = el("img", { class: "qr", alt: "QR code to scan with the Smart Life or Tuya Smart app" });
+    this.form = el("div", { class: "row" }, this.code, this.startBtn);
+    this.root = el("div", { class: "cloud", hidden: true },
+      el("div", { class: "muted" },
+        "A saved Tuya login is reused. Without one (or when it has expired) a QR code to scan follows; the user code ",
+        "is only needed for that first login (Smart Life → Me → Settings → Account and Security)."),
+      this.form, this.msg, this.qr, el("div", { class: "row note" }, this.cancelBtn));
+    this.qr.hidden = true;
+  }
+
+  open() {
+    this.root.hidden = false;
+    this.form.hidden = false;
+    this.msg.textContent = "";
+    this.msg.className = "muted";
+    this.poll(true);                     // a fetch may already run (another tab, or this page reloaded)
+  }
+
+  async start() {
+    this.startBtn.disabled = true;
+    try {
+      this.show(await this.panel._api("POST", "cloud", { user_code: this.code.value.trim() }));
+      this.form.hidden = true;
+      this.schedule();
+    } catch (e) {
+      this.msg.className = "error";
+      this.msg.textContent = message(e);
+    } finally {
+      this.startBtn.disabled = false;
+    }
+  }
+
+  schedule() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.poll(false), 1000);
+  }
+
+  async poll(opening) {
+    let r;
+    try {
+      r = await this.panel._api("GET", "cloud");
+    } catch (e) {
+      this.msg.className = "error";
+      this.msg.textContent = message(e);
+      return;
+    }
+    const running = !["idle", "done", "error", "cancelled"].includes(r.state);
+    if (opening && !running) return;     // nothing running: the form, not the last outcome
+    this.form.hidden = running;
+    this.show(r);
+    if (running) {
+      this.schedule();
+    } else if (r.state === "done") {
+      this.panel._toast("Fetched the device list from Tuya Cloud");
+      this.close();
+      this.onDone();
+    }
+  }
+
+  show(r) {
+    this.msg.className = r.state === "error" ? "error" : "muted";
+    this.msg.textContent = r.state === "error" ? `Not fetched: ${r.error || r.message}` : r.message || "…";
+    this.qr.hidden = !r.qr;
+    if (r.qr) this.qr.src = r.qr;
+    if (r.state === "error" || r.state === "cancelled") this.form.hidden = false;
+  }
+
+  async cancel() {
+    clearTimeout(this.timer);
+    try {
+      await this.panel._api("DELETE", "cloud");
+    } catch (e) {
+      // closing the box anyway: the session closes itself once nothing polls it
+    }
+    this.close();
+  }
+
+  close() {
+    clearTimeout(this.timer);
+    this.root.hidden = true;
+    this.qr.hidden = true;
+  }
+}
+
 class BridgeSection {
   constructor(panel) {
     this.panel = panel;
@@ -170,12 +269,17 @@ class BridgeSection {
     this.syncbar = el("div", { class: "syncbar" });
     this.list = el("div", { class: "devices" });
     this.refreshBtn = el("button", { onclick: () => this.load() }, "Refresh");
+    this.cloud = new CloudFetchBox(panel, () => this.load());
+    this.fetchBtn = el("button", { title: "Fetch the device list from Tuya Cloud (a saved login is reused)",
+                                   onclick: () => this.cloud.open() }, "Fetch from Tuya Cloud");
     const sort = el("select", { title: "Sort devices", onchange: (e) => { this.sort = e.target.value; store("rustuya.sort", this.sort); this.paint(); } },
       ...["id", "name", "category"].map((k) => el("option", { value: k, selected: k === this.sort }, `sort by ${k}`)));
     this.dialog = el("dialog");
     this.root = el("div", { class: "card" },
-      el("div", { class: "head" }, el("h2", {}, "Bridge devices"), el("div", { class: "end" }, sort, this.refreshBtn)),
+      el("div", { class: "head" }, el("h2", {}, "Bridge devices"),
+        el("div", { class: "end" }, sort, this.fetchBtn, this.refreshBtn)),
       el("div", { class: "muted" }, "The cloud device list against what rustuya-bridge holds."),
+      this.cloud.root,
       this.chips, this.syncbar, this.status, this.list, this.dialog);
   }
 
@@ -189,7 +293,7 @@ class BridgeSection {
       const r = selection ? await this.panel._api("POST", "bridge", selection) : await this.panel._api("GET", "bridge");
       this.devices = r.devices;
       this.online = r.online || {};
-      this.status.textContent = r.cloud_loaded ? "" : "No cloud device list yet: log in to Tuya Cloud from the integration's options.";
+      this.status.textContent = r.cloud_loaded ? "" : "No cloud device list yet: fetch it with Fetch from Tuya Cloud.";
       if (selection) this.panel._toast(r.sent ? `Sent ${r.sent} command${r.sent === 1 ? "" : "s"} to the bridge` : "Nothing to send");
     } catch (e) {
       this.status.className = "error";
@@ -459,18 +563,30 @@ class OptionsSection {
       return;
     }
     this.body.replaceChildren(...OPTIONS.map(([k, label, hint]) => {
-      const box = el("input", { type: "checkbox" });
+      const box = el("input", { type: "checkbox", onchange: () => this.updateSave() });
       box.checked = !!this.current[k];
       this.boxes[k] = box;
       return el("label", { class: "check" }, box,
         el("span", {}, el("div", {}, label), el("div", { class: "muted" }, hint)));
     }));
-    this.save.disabled = false;
+    this.updateSave();
+  }
+
+  changed() {
+    return Object.fromEntries(Object.entries(this.boxes)
+      .map(([k, box]) => [k, box.checked]).filter(([k, v]) => v !== this.current[k]));
+  }
+
+  dirty() {
+    return Object.keys(this.changed()).length > 0;
+  }
+
+  updateSave() {
+    this.save.disabled = !this.dirty();                   // only when there is something to save
   }
 
   async submit() {
-    const changed = Object.fromEntries(Object.entries(this.boxes)
-      .map(([k, box]) => [k, box.checked]).filter(([k, v]) => v !== this.current[k]));
+    const changed = this.changed();
     if (!Object.keys(changed).length) {
       this.panel._toast("Nothing changed");
       return;
@@ -480,9 +596,10 @@ class OptionsSection {
       await this.panel._api("PUT", "options", changed);
     } catch (e) {
       this.panel._toast(`Not saved: ${message(e)}`);
-      this.save.disabled = false;
+      this.updateSave();
       return;
     }
+    this.current = { ...this.current, ...changed };      // saved: nothing left to warn about
     this.panel._toast("Saved; Rustuya is restarting");
     setTimeout(() => location.reload(), 4000);          // the restart takes the panel away and puts it back
   }
@@ -516,18 +633,31 @@ class SettingsSection {
     this.fields = {};
     this.body.replaceChildren(...SETTINGS.filter(([k]) => k in r.settings).map(([k, label, hint]) => {
       const input = k === "bridge_log_level"
-        ? el("select", {}, ...["error", "warn", "info", "debug"].map((v) => el("option", { value: v }, v)))
-        : el("input", { spellcheck: "false" });
+        ? el("select", { onchange: () => this.updateSave() },
+          ...["error", "warn", "info", "debug"].map((v) => el("option", { value: v }, v)))
+        : el("input", { spellcheck: "false", oninput: () => this.updateSave() });
       input.value = r.settings[k];
       this.fields[k] = input;
       return el("label", { class: "setting" }, el("span", {}, label), input, el("span", { class: "muted" }, hint));
     }));
-    this.save.disabled = false;
+    this.updateSave();
+  }
+
+  changed() {
+    return Object.fromEntries(Object.entries(this.fields)
+      .map(([k, input]) => [k, input.value.trim()]).filter(([k, v]) => v !== this.current[k]));
+  }
+
+  dirty() {
+    return Object.keys(this.changed()).length > 0;
+  }
+
+  updateSave() {
+    this.save.disabled = !this.dirty();                   // only when there is something to save
   }
 
   async submit() {
-    const changed = Object.fromEntries(Object.entries(this.fields)
-      .map(([k, input]) => [k, input.value.trim()]).filter(([k, v]) => v !== this.current[k]));
+    const changed = this.changed();
     if (!Object.keys(changed).length) {
       this.panel._toast("Nothing changed");
       return;
@@ -538,14 +668,15 @@ class SettingsSection {
       const r = await this.panel._api("PUT", "settings", changed);
       if (!r.restarting) {
         this.panel._toast("Nothing changed");
-        this.save.disabled = false;
+        this.updateSave();
         return;
       }
     } catch (e) {
       this.panel._toast(`Not saved: ${message(e)}`);
-      this.save.disabled = false;
+      this.updateSave();
       return;
     }
+    this.current = { ...this.current, ...changed };      // saved: nothing left to warn about
     this.panel._toast("Saved; Rustuya is restarting");
     // the restart takes the panel away and puts it back: reload the page once it is back
     setTimeout(() => location.reload(), 4000);
@@ -621,7 +752,7 @@ class RustuyaPanel extends HTMLElement {
     this.shadowRoot.replaceChildren(
       el("style", {}, STYLE),
       el("div", { class: "toolbar" }, this._menu, el("span", {}, "Rustuya"), el("span", { class: "spacer" }),
-        el("button", { title: "Remove this panel from the sidebar; Configure -> Rustuya panel brings it back",
+        el("button", { title: "Remove this panel from the sidebar; Configure -> Show the Rustuya panel brings it back",
                        onclick: () => this._hide() }, "Hide panel")),
       el("div", { class: "content" },
         this._bridge.root,
@@ -726,7 +857,9 @@ class RustuyaPanel extends HTMLElement {
   }
 
   async _hide() {
-    if (!confirm("Remove the Rustuya panel from the sidebar? Turn it back on in the integration's Configure -> Rustuya panel.")) return;
+    const unsaved = [["Options", this._options], ["Settings", this._settings]].filter(([, x]) => x.dirty()).map(([n]) => n);
+    const lost = unsaved.length ? `Unsaved changes in ${unsaved.join(" and ")} will be lost.\n\n` : "";
+    if (!confirm(`${lost}Remove the Rustuya panel from the sidebar? Turn it back on in the integration's Configure -> Show the Rustuya panel.`)) return;
     try {
       await this._api("DELETE", "panel");
     } catch (e) {

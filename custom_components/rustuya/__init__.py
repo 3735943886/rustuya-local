@@ -119,7 +119,7 @@ def _load_devices_or_none(path: str) -> list[dict]:
     from tuya2ildevice.host import load_devices
 
     if not os.path.exists(path):
-        _LOGGER.info("no device file at %s yet; log in to Tuya Cloud from the integration's Configure", path)
+        _LOGGER.info("no device file at %s yet; fetch the devices from Tuya Cloud in the integration's Configure", path)
         return []
     return load_devices(path)
 

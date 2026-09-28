@@ -51,6 +51,7 @@ from .const import (
 PANEL_URL = "rustuya"
 STATIC_URL = "/rustuya_static"
 _VIEWS_KEY = f"{DOMAIN}_panel_views"
+_CLOUD_KEY = f"{DOMAIN}_cloud_fetch"         # the panel's running (or last) cloud fetch
 
 
 async def async_setup(hass: HomeAssistant, entry: Any) -> None:
@@ -60,7 +61,8 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
         hass.data[_VIEWS_KEY] = True
         await hass.http.async_register_static_paths(
             [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)])
-        for view in (ConvertersView, ConverterView, PackView, BridgeView, PanelView, SettingsView, OptionsView):
+        for view in (ConvertersView, ConverterView, PackView, BridgeView, PanelView, SettingsView, OptionsView,
+                     CloudView):
             hass.http.register_view(view())
         websocket_api.async_register_command(hass, ws_subscribe_links)
     if entry.options.get(CONF_PANEL, False) and PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
@@ -75,6 +77,9 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
 
 def async_remove(hass: HomeAssistant) -> None:
     frontend.async_remove_panel(hass, PANEL_URL, warn_if_unknown=False)
+    fetch = hass.data.pop(_CLOUD_KEY, None)
+    if fetch is not None and fetch.running:         # the entry goes away: its session must not outlive it
+        hass.async_create_task(fetch.cancel())
 
 
 def _runtime(hass: HomeAssistant) -> tuple[Any, Any] | None:
@@ -156,7 +161,7 @@ class ConverterView(_View):
 
 class PanelView(_View):
     """DELETE: turn the panel off from the panel itself (the `panel` option; the entry reloads and takes it away).
-    It comes back on from the integration's Configure -> Rustuya panel."""
+    It comes back on from the integration's Configure -> Show the Rustuya panel."""
 
     url = "/api/rustuya/panel"
     name = "api:rustuya:panel"
@@ -312,6 +317,142 @@ def _online(service: Any) -> dict[str, bool]:
     session opened per request): the devices both in the device file and on the bridge."""
     hub = getattr(service, "hub", None)
     return {device_id: bool(driver.linked) for device_id, driver in hub.drivers.items()} if hub is not None else {}
+
+
+class CloudFetch:
+    """The panel's fetch of the device list from Tuya Cloud: rustuya-manager's wizard in a session held open while it
+    runs (a saved login is reused; without one it shows a QR to scan). The page polls `status()`; a page that stops
+    polling (closed) or a fetch that runs on too long closes the session, since it holds the one-session lock the
+    options flow and the bridge list share. Once done the new device file goes to the running entry."""
+
+    IDLE_TIMEOUT = 30.0         # seconds without a poll before the session is closed
+    MAX_TIME = 600.0            # a QR not scanned in 10 minutes is given up
+
+    def __init__(self, hass: HomeAssistant, entry: Any) -> None:
+        self.hass, self.entry = hass, entry
+        self.manager: Any = None
+        self.final: dict[str, Any] | None = None       # the outcome, once the session is closed
+        self._polled = self._started = 0.0
+        self._task: asyncio.Task | None = None
+        self._finishing = False
+
+    @property
+    def running(self) -> bool:
+        return self.final is None
+
+    async def start(self, user_code: str | None) -> None:
+        from . import manager_session
+
+        data = self.entry.data
+        await self.hass.async_add_executor_job(
+            lambda: os.makedirs(os.path.dirname(data[CONF_DEVICES_PATH]), exist_ok=True))    # the login is saved there
+        self.manager = await manager_session.open_manager(
+            broker=f"mqtt://{data[CONF_BROKER_HOST]}:{data[CONF_BROKER_PORT]}", root=data[CONF_BRIDGE_ROOT],
+            devices_path=data[CONF_DEVICES_PATH], username=data.get(CONF_BROKER_USERNAME) or None,
+            password=data.get(CONF_BROKER_PASSWORD) or None)
+        try:
+            await self.manager.wizard.start(user_code or None, scan=False)
+        except BaseException:
+            await manager_session.close_manager(self.manager)
+            raise
+        self._polled = self._started = self.hass.loop.time()
+        self._task = self.hass.async_create_background_task(self._watch(), "rustuya cloud fetch")
+
+    def status(self) -> dict[str, Any]:
+        self._polled = self.hass.loop.time()
+        if self.final is not None:
+            return self.final
+        session = self.manager.wizard.session
+        state = str(getattr(session.state, "value", session.state))
+        if state in ("done", "error"):              # the outcome is reported once the session has closed (`_finish`)
+            state = "finishing"
+        return {"state": state, "message": session.message or "", "qr": session.qr_image_data_url,
+                "error": session.error}
+
+    async def cancel(self) -> None:
+        if self.running and not self._finishing:
+            await self._finish({"state": "cancelled", "message": "Cancelled", "qr": None, "error": None})
+
+    async def _watch(self) -> None:
+        while self.running and not self._finishing:
+            await asyncio.sleep(0.5)
+            session = self.manager.wizard.session
+            state = str(getattr(session.state, "value", session.state))
+            now = self.hass.loop.time()
+            if state in ("done", "error"):
+                await self._finish({"state": state, "message": session.message or "", "qr": None,
+                                    "error": session.error})
+            elif now - self._polled > self.IDLE_TIMEOUT or now - self._started > self.MAX_TIME:
+                await self._finish({"state": "cancelled", "message": "Stopped: the page stopped asking, or it took too "
+                                    "long", "qr": None, "error": None})
+
+    async def _finish(self, final: dict[str, Any]) -> None:
+        from . import async_refresh_devices, manager_session
+
+        if self._finishing:                         # finishing already (a cancel racing the watcher)
+            return
+        self._finishing = True
+        try:
+            await manager_session.close_manager(self.manager)
+            if final["state"] == "done":
+                await async_refresh_devices(self.hass, self.entry)   # after the session: the new file to the entry
+        finally:
+            # reported only now: the page reloads the bridge list on `done`, which needs the session lock this held
+            self.final = {**final, "qr": None}
+
+
+class CloudView(_View):
+    """The panel's cloud fetch (`CloudFetch`). GET: its status (`{"state": "idle"}` before any). POST
+    `{"user_code": "..."}` (optional, only for a first login): start one. DELETE: cancel it."""
+
+    url = "/api/rustuya/cloud"
+    name = "api:rustuya:cloud"
+
+    async def get(self, request: web.Request) -> web.Response:
+        found = self._loaded(request)
+        if isinstance(found, web.Response):
+            return found
+        fetch: CloudFetch | None = request.app["hass"].data.get(_CLOUD_KEY)
+        return self.json(fetch.status() if fetch is not None else {"state": "idle"})
+
+    async def post(self, request: web.Request) -> web.Response:
+        from . import manager_session
+
+        found = self._loaded(request)
+        if isinstance(found, web.Response):
+            return found
+        if not manager_session.available():
+            return self.json_message("rustuya-manager is not installed", HTTPStatus.NOT_IMPLEMENTED)
+        hass = request.app["hass"]
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
+        user_code = body.get("user_code") if isinstance(body, dict) else None
+        if user_code is not None and not isinstance(user_code, str):
+            return self.json_message('the body is {"user_code": "..."} (optional)', HTTPStatus.BAD_REQUEST)
+        current: CloudFetch | None = hass.data.get(_CLOUD_KEY)
+        if current is not None and current.running:
+            return self.json_message("a fetch is already running", HTTPStatus.CONFLICT)
+        fetch = CloudFetch(hass, found[0])
+        try:
+            await fetch.start((user_code or "").strip() or None)
+        except manager_session.Busy:
+            return self.json_message("a Tuya Cloud fetch or device sync window is open; close it and try again",
+                                     HTTPStatus.CONFLICT)
+        except Exception as e:  # noqa: BLE001 -- broker down, bridge not answering: any of it is a 502
+            return self.json_message(f"cannot start the fetch: {e}", HTTPStatus.BAD_GATEWAY)
+        hass.data[_CLOUD_KEY] = fetch
+        return self.json(fetch.status())
+
+    async def delete(self, request: web.Request) -> web.Response:
+        found = self._loaded(request)
+        if isinstance(found, web.Response):
+            return found
+        fetch: CloudFetch | None = request.app["hass"].data.get(_CLOUD_KEY)
+        if fetch is not None:
+            await fetch.cancel()
+        return self.json(fetch.status() if fetch is not None else {"state": "idle"})
 
 
 class BridgeView(_View):

@@ -303,16 +303,24 @@ def _entry(hass, tmp_path):
     return entry
 
 
-async def test_tuning_is_only_the_panel_and_keeps_the_other_options(hass, tmp_path):
+async def test_the_panel_is_one_click_from_configure(hass, tmp_path):
+    """Show turns it on (keeping the other options) and links to it; then Open links, Hide turns it off."""
     entry = _entry(hass, tmp_path)
     hass.config_entries.async_update_entry(entry, options={CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True,
                                                            CONF_PACK: False})
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tuning"})
-    assert [str(k) for k in r["data_schema"].schema] == [CONF_PANEL]         # the rest is in the panel's Options
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {CONF_PANEL: True})
-    assert r["type"] == "create_entry"
-    assert r["data"] == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False, CONF_PANEL: True}
+    assert result["menu_options"][0] == "panel_show"
+    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "panel_show"})
+    assert r["type"] == "abort" and r["reason"] == "panel_shown" and r["description_placeholders"] == {"url": "/rustuya"}
+    assert entry.options == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False, CONF_PANEL: True}
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["menu_options"][:2] == ["panel_open", "panel_hide"]
+    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "panel_open"})
+    assert r["reason"] == "panel_open" and entry.options[CONF_PANEL] is True
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "panel_hide"})
+    assert r["reason"] == "panel_hidden" and entry.options[CONF_PANEL] is False
 
 
 async def test_a_session_still_open_elsewhere_aborts_with_a_hint(hass, tmp_path, monkeypatch):
@@ -335,7 +343,7 @@ async def test_options_menu_hides_manager_steps_when_manager_is_unavailable(hass
     monkeypatch.setattr(manager_session, "available", lambda: False)
     entry = _entry(hass, tmp_path)
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["menu_options"] == ["tuning"]
+    assert result["menu_options"] == ["panel_show"]
 
 
 async def _open_sync(hass, tmp_path, monkeypatch, diff):
