@@ -18,6 +18,10 @@ stop the start.
 
 With `pack` on, the override pack (tuya2ildevice's `pack/`) is copied into the overrides directory in the background at
 start and every `pack_interval` seconds; the directory watcher loads what it brings.
+
+A device's settings (a cover's direction toggles, tuya2ildevice's `device_settings`) are IL properties like any other;
+writing one saves it into the overrides directory (`tuya2ildevice.host.SETTINGS_FILE`), which the watcher applies at
+once. Without an overrides directory there is nowhere to keep them, so the Hub does not offer them.
 """
 
 from __future__ import annotations
@@ -107,8 +111,15 @@ class Settings:
     pack_interval: float = 86400.0
     pack_url: str | None = None                # the pack's base URL; tuya2ildevice's `master` when None
     hub_options: dict[str, Any] = field(default_factory=dict)
-    """`tuya2ildevice.Hub` keyword arguments: `allow_hazardous`, `expose_unused`, `use_quirks`, `overrides` (inline,
-    merged over the directory's), `converters`, `converter_types`."""
+    """`tuya2ildevice.Hub` keyword arguments: `allow_hazardous`, `expose_unused`, `use_quirks`, `device_settings` (on
+    by default, and only with an overrides directory), `overrides` (inline, merged over the directory's), `converters`,
+    `converter_types`."""
+
+    @property
+    def overrides_dir(self) -> Path | None:
+        """`overrides_path` when it is a directory (the pack and the device settings are written there), else None."""
+        p = self.overrides_path
+        return p if p is not None and p.suffix != ".json" else None
 
 
 class Service:
@@ -153,6 +164,8 @@ class Service:
                 options["converter_types"] = {**loaded.converter_types, **(options.get("converter_types") or {})}
             else:
                 options["overrides"] = inline
+            # a setting written through IL is kept in the overrides directory: none, no settings to offer
+            options["device_settings"] = s.overrides_dir is not None and options.get("device_settings", True)
             # no devices yet: the bridge client hands the Hub the ones the bridge holds
             self.hub = Hub([], il=IlTopics(s.prefix, s.source), **options)
             will = self.hub.presence(False)
@@ -164,7 +177,8 @@ class Service:
             stack.push_async_callback(self._say_offline, will.topic)
 
             await self._refuse_if_another_producer(will.topic, resume)
-            self.runner = Runner(self.hub, self.il, on_bridge_command=self.bridge_client.send_command)
+            save = self.override_watcher.save_settings if options["device_settings"] else None
+            self.runner = Runner(self.hub, self.il, on_bridge_command=self.bridge_client.send_command, on_settings=save)
             self.bridge_client.runner = self.runner
             if self.override_watcher is not None:
                 self.override_watcher.runner = self.runner
@@ -180,8 +194,8 @@ class Service:
             if self.override_watcher is not None and s.watch_interval > 0:
                 self.override_watcher.watch()
                 stack.push_async_callback(self.override_watcher.stop)
-            if s.pack and s.overrides_path is not None and s.overrides_path.suffix != ".json":
-                task = asyncio.ensure_future(self._pack_loop(s.overrides_path))
+            if s.pack and s.overrides_dir is not None:
+                task = asyncio.ensure_future(self._pack_loop(s.overrides_dir))
                 stack.callback(task.cancel)
                 stack.callback(setattr, self, "_pack_running", False)
             self._stack = stack.pop_all()

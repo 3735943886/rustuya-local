@@ -4,8 +4,8 @@ connected, and stop is idempotent."""
 import json
 
 import pytest
-from devices import lamp, status_reply
-from tuya2ildevice.host import InProcessTransport
+from devices import curtain, lamp, status_reply
+from tuya2ildevice.host import SETTINGS_FILE, InProcessTransport
 
 from rustuya_local.service import AnotherProducer, Service, Settings
 
@@ -111,6 +111,57 @@ async def test_an_overrides_directory_is_applied_and_followed(tmp_path, monkeypa
     assert service.override_watcher.check()
     await settle(service, t)
     assert "glow" not in json.loads(t.il.retained["il/lamp1"].payload)["props"]
+    await service.stop()
+
+
+async def test_a_cover_setting_written_through_il_is_saved_and_applied(tmp_path, monkeypatch):
+    """A cover's direction toggle is an IL property: writing it sends nothing to the device, saves the device's settings
+    into the overrides directory and applies them at once. Without an overrides directory none is offered."""
+    import asyncio
+
+    import rustuya_local.bridge_client as bc
+    orig = bc.BridgeClient.start
+    monkeypatch.setattr(bc.BridgeClient, "start", lambda self, timeout=0.05: orig(self, timeout))
+    conv = tmp_path / "conv"
+    conv.mkdir()
+    t = Transports()
+    await _answer_status(t.bridge, ["cur1"])
+    sent = []
+    await t.bridge.subscribe("rustuya/command", lambda m: sent.append(json.loads(m.payload)))
+    service = Service(Settings(devices=[curtain("cur1")], watch_interval=0, overrides_path=conv),
+                      connect_bridge=t.connect_bridge, connect_il=t.connect_il)
+    await service.start()
+    await t.bridge.publish("rustuya/error/cur1", '{"errorCode":0}', 0, True)
+    await t.bridge.publish("rustuya/event/state/cur1", '{"3":30}', 0, True)
+    await settle(service, t)
+    props = json.loads(t.il.retained["il/cur1"].payload)["props"]
+    assert {"cover_invert_position", "cover_invert_set_position", "cover_infer_motion"} <= set(props)
+    assert "cover_invert_control" not in props                  # the target position opens and closes it
+    assert t.il.retained["il/cur1/position"].payload == "30"
+
+    sent.clear()
+    await t.il.publish("il/cur1/cover_invert_position/set", "true", 1)
+    saved = conv / SETTINGS_FILE
+    for _ in range(100):
+        await settle(service, t)
+        if saved.is_file():
+            break
+        await asyncio.sleep(0.02)
+    assert json.loads(saved.read_text())["cur1"]["cover"]["invert_position"] is True
+    assert not [c for c in sent if c.get("action") == "set"]    # a setting, not a command to the device
+    await t.bridge.publish("rustuya/event/state/cur1", '{"3":20}', 0, True)
+    await settle(service, t)
+    assert t.il.retained["il/cur1/cover_invert_position"].payload == "true"
+    assert t.il.retained["il/cur1/position"].payload == "80"
+    await service.stop()
+
+    t = Transports()
+    await _answer_status(t.bridge, ["cur1"])
+    service = Service(Settings(devices=[curtain("cur1")], watch_interval=0), connect_bridge=t.connect_bridge,
+                      connect_il=t.connect_il)
+    await service.start()
+    await settle(service, t)
+    assert not [p for p in json.loads(t.il.retained["il/cur1"].payload)["props"] if p.startswith("cover_")]
     await service.stop()
 
 

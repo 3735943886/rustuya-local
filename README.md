@@ -62,8 +62,9 @@ Tuya's cloud schemas are fragmented; fixes go in a `custom_converters/` director
 config; integration: `<config>/rustuya_converters`; manager plugin: its data dir), followed live:
 
 - `*.json`: tuya2ildevice override blocks by product or device id: rename a dp, define one the schema lacks, map the
-  device's words to the standard ones (`remap.alias`), invert a direction (`remap.invert`), fix labels and classes,
-  turn on a code converter. rustuya-homeassistant's `custom_converters` JSON files load as they are.
+  device's words to the standard ones (`remap.alias`), fix labels and classes, turn on a code converter. A cover's
+  direction is not set here but with its settings (below). rustuya-homeassistant's `custom_converters` JSON files load
+  as they are.
 - `*.py`: code converters (`CONVERTERS = {"name": factory}`).
 
 See tuya2ildevice's README ("User overrides") for the format. A curated set ships in tuya2ildevice, and fixes published
@@ -71,6 +72,24 @@ between its releases (its [override pack](https://github.com/3735943886/tuya2ild
 into the directory at start and daily, as `00_pack_*` files that your own files refine. Turn that off with `"pack":
 false` (daemon), the Rustuya panel's *Options* (integration), or the plugin tab. The pack only replaces or removes the files it
 put there, and leaves a file alone once you edit it.
+
+### Cover settings
+
+A curtain or blind whose position runs the other way, or that never shows *opening* / *closing*, is fixed from its
+own configuration switches, not a file. Each appears only where it changes something:
+
+| switch | shown when the cover has | turn it on when |
+|---|---|---|
+| *Invert current position* | a position it reports | fully opened, it shows 0% |
+| *Invert target position* | a target position, separate from the reported one | *Open* closes it |
+| *Invert control* | an open / close command and no target position | *Open* closes it |
+| *Infer motion* (on by default) | a reported position and a target or a command | off: when *opening* / *closing* is wrong |
+
+With one position data point for both, *Invert current position* turns both. A switch changes nothing on the device:
+the setting is saved as the device's block in `zz_settings.json` in the converters directory and applied at once, so it
+survives a restart and can be edited there too. Without a converters directory (a daemon with no
+`custom_converters`) the switches are not offered; `"options": {"device_settings": false}` turns them off.
+A block with the same `cover` keys in your own file or the pack sets a model's starting point; the switches win.
 
 In Home Assistant the files can be edited from a sidebar panel: the integration's *Configure* → *Add the Rustuya
 panel to the sidebar* adds it and links to it. The panel is for administrators. It fetches the device list from Tuya Cloud, shows the

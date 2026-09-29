@@ -13,9 +13,10 @@
 `devices` is a path (relative to the config file), which is followed as rustuya-manager rewrites it every
 `watch_interval` seconds (0 = read once), or the list itself. `custom_converters` is a directory of user overrides and
 code converters (see `tuya2ildevice.host.load_overrides`), followed the same
-way; `options.overrides` is merged over it. `pack` (on by default) copies tuya2ildevice's override pack, fixes published
-between releases, into that directory daily. Every key but `devices` has a default. The bridge's own topic templates are
-read from its retained `{root}/bridge/config` at start.
+way; `options.overrides` is merged over it. A device's settings written through IL (a cover's direction switches) are
+kept in that directory too; `options.device_settings: false` stops offering them. `pack` (on by default) copies
+tuya2ildevice's override pack, fixes published between releases, into that directory daily. Every key but `devices`
+has a default. The bridge's own topic templates are read from its retained `{root}/bridge/config` at start.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from tuya2ildevice.host import MqttTransport, load_devices
 from .service import Settings
 
 KEYS = frozenset({"bridge", "il", "devices", "options", "watch_interval", "custom_converters", "pack"})
-OPTIONS = frozenset({"allow_hazardous", "expose_unused", "overrides", "converters", "use_quirks"})
+OPTIONS = frozenset({"allow_hazardous", "expose_unused", "overrides", "converters", "use_quirks", "device_settings"})
 _DEFAULT = Settings()
 
 
@@ -73,7 +74,8 @@ class Config:
     watch_interval: float = _DEFAULT.watch_interval
     pack: bool = True
     hub_options: dict[str, Any] = field(default_factory=dict)
-    """Keyword arguments for `tuya2ildevice.Hub`: `allow_hazardous`, `expose_unused`, `overrides`, `converters`."""
+    """Keyword arguments for `tuya2ildevice.Hub`: `allow_hazardous`, `expose_unused`, `device_settings`, `overrides`,
+    `converters`."""
 
     @classmethod
     def from_dict(cls, data: dict, base: Path | None = None) -> Config:
