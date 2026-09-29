@@ -1,6 +1,6 @@
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.39). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
+작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.40). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
 `docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
 
 ## 1. 결정 (사용자 확정)

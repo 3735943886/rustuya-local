@@ -1,6 +1,6 @@
 # 남은 일 (2026-09-28 기준)
 
-재설계(REDESIGN.md 9장)는 끝났다. 현재 배포: tuya2ildevice 0.3.13, rustuya-local 0.0.39(PyPI, HACS, 매니저 카탈로그 drop-in), rustuya-manager 0.2.1, pyrustuyabridge 0.4.0.dev2(PyPI).
+재설계(REDESIGN.md 9장)는 끝났다. 현재 배포: tuya2ildevice 0.3.15, rustuya-local 0.0.40(PyPI, HACS, 매니저 카탈로그 drop-in), rustuya-manager 0.2.1, pyrustuyabridge 0.4.0.dev2(PyPI).
 rustuya-homeassistant 는 폐기 안내만 푸시했다(아카이브 안 함). 2026-09-27 에 저장소 이름을 rustuya-homeassistant 로 바꿨다가 같은 날
 되돌렸다(HA 전용이 아니고 이름이 여러 개면 헷갈림): 저장소·PyPI·import·CLI·플러그인 id 모두 `rustuya-local`.
 아래는 그 뒤에 남은 것을 마일스톤 순서로 정리한 것이다. 저장소 표기: **T** tuya2ildevice, **L** rustuya-local, **H** il-ha,
@@ -68,12 +68,11 @@ rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아�
       시작 시와 하루마다 `custom_converters/` 로 복사(SHA-256 확인, `.tuya2ildevice_pack.json` 원장에 적힌 파일만 쓰고 지움, 사용자 파일·
       사용자가 고친 팩 파일은 건드리지 않음, `requires`/`until` 로 tuya2ildevice 버전 범위 지정). 기본 켜짐: 데몬 `"pack"`, HA 튜닝 옵션,
       매니저 탭 옵션(상태에 마지막 동기화 표시). 팩은 비어 있는 채로 시작.
-- [ ] **T/L** 커버 설정 엔티티(기기별 config 스위치): 현재 위치 반전(보고 위치 dp 가 있을 때), 목표 위치 반전(목표 dp 가 따로 있을 때),
+- [x] **T/L** 커버 설정 엔티티(tuya2ildevice 0.3.15, rustuya-local 0.0.40)(기기별 config 스위치): 현재 위치 반전(보고 위치 dp 가 있을 때), 목표 위치 반전(목표 dp 가 따로 있을 때),
       제어 반전(목표 dp 없이 control 로 여닫을 때), 이동 상태 추론(기본 켬). dp 가 결과에 영향을 줄 때만 노출. 쓰면 기기에는 아무것도
       보내지 않고 오버라이드 디렉터리의 `zz_settings.json` 에 기기 블록(`cover`)으로 저장, watcher 가 즉시 적용. 커버 방향용
       `remap.invert`·`converters.cover_motion` 은 이것으로 대체(폐기 예정), 컨버터 디렉터리는 진짜 커스텀만.
-      **L** 배선 완료(Hub `device_settings`, `Runner(on_settings=OverrideWatcher.save_settings)`, 디렉터리 없으면 끔);
-      **T** 0.3.15 구현·릴리스 대기.
+      **L** Hub `device_settings`, `Runner(on_settings=OverrideWatcher.save_settings)`, 디렉터리 없으면 끔.
 
 ## 제거한 것
 
