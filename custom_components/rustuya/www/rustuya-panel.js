@@ -75,7 +75,11 @@ const STYLE = `
   .dev .top { flex-wrap: wrap; }
   .dev .acts { flex-wrap: wrap; max-width: 100%; }
   dialog { box-sizing: border-box; max-height: calc(100dvh - 32px); overflow: auto; }
-  dialog label input { min-width: 0; width: 100%; }
+  dialog .settings input { min-width: 0; width: 100%; }
+  dialog input::placeholder { color: var(--secondary-text-color); opacity: 1; }
+  .icon-button { display: inline-flex; align-items: center; justify-content: center; padding: 8px; }
+  .icon-button ha-icon { --mdc-icon-size: 20px; }
+  .head .icon-button { min-width: 42px; min-height: 42px; }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 8px; }
   .chip { padding: 3px 10px; font-size: 13px; border-radius: 999px; border: 1px solid var(--cat, var(--divider-color));
           background: transparent; color: var(--primary-text-color); }
@@ -85,11 +89,8 @@ const STYLE = `
   .chip .n { margin-left: 4px; font-variant-numeric: tabular-nums; }
   select { font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--divider-color);
            background: var(--card-background-color); color: var(--primary-text-color); }
-  .syncbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-  .syncbar button, .act { border-color: var(--cat, var(--divider-color));
+  .act { border-color: var(--cat, var(--divider-color));
                           background: color-mix(in srgb, var(--cat, transparent) 12%, var(--card-background-color)); }
-  .syncbar .all { margin-left: auto; background: var(--primary-text-color); color: var(--card-background-color);
-                  border-color: var(--primary-text-color); }
   .devices { display: flex; flex-direction: column; gap: 6px; }
   .dev { border: 1px solid var(--divider-color); border-left: 4px solid var(--cat); border-radius: 8px; padding: 8px 10px;
          background: color-mix(in srgb, var(--cat) 8%, var(--card-background-color)); cursor: pointer; }
@@ -103,7 +104,7 @@ const STYLE = `
   .dev .name { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .dev .tree { color: var(--secondary-text-color); }
   .dev .acts { margin-left: auto; display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
-  .dev .acts button { padding: 2px 8px; font-size: 12px; }
+  .dev .acts button { padding: 6px; min-width: 32px; min-height: 32px; }
   .dev .id { font-family: var(--code-font-family, ui-monospace, monospace); font-size: 11px; color: var(--secondary-text-color);
              word-break: break-all; }
   .pill { font-size: 11px; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--cat); white-space: nowrap; }
@@ -121,9 +122,6 @@ const STYLE = `
            background: var(--card-background-color); color: var(--primary-text-color); }
   dialog::backdrop { background: rgba(0, 0, 0, .4); }
   dialog h3 { margin: 0 0 8px; font-size: 16px; font-weight: 500; }
-  dialog .group { margin: 10px 0 4px; font-size: 13px; font-weight: 500; }
-  dialog label { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 3px 0; word-break: break-all; }
-  dialog .plan { max-height: 55vh; overflow: auto; }
   dialog .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 `;
 
@@ -147,12 +145,10 @@ const message = (e) => (e && e.body && e.body.message) || (e && (e.message || e.
 const I18N = {
   en: {
     origin_pack: "pack", origin_pack_edited: "pack, edited",
+    close_panel: "Close panel",
     menu: "Panel menu", edit_device: "Edit device", edit_hint: "Edit the bridge values. Device ID and type cannot be changed.",
     manual_add: "Register manually", manual_hint: "Register without Tuya Cloud. Leave IP/version blank for automatic detection. ID may be generated from IP or CID and name.",
     cat_all: "all", cat_missing: "missing", cat_orphan: "Bridge only", cat_mismatch: "mismatch", cat_synced: "synced",
-    plan_mismatch_title: "Update on the bridge", plan_mismatch_button: "Update mismatch",
-    plan_missing_title: "Add to the bridge", plan_missing_button: "Add missing",
-    plan_orphan_title: "Remove from the bridge", plan_orphan_button: "Remove bridge-only devices",
     cloud_code: "User code (only for a new login)", cloud_fetch: "Fetch", cancel: "Cancel",
     cloud_qr_alt: "QR code to scan with the Smart Life or Tuya Smart app",
     cloud_intro: "A saved Tuya login is reused. Without one (or when it has expired) a QR code to scan follows; the user code is only needed for that first login (Smart Life → Me → Settings → Account and Security).",
@@ -161,13 +157,13 @@ const I18N = {
     cloud_state_logged_in: "Logged in; fetching the devices…", cloud_state_fetching: "Fetching the devices…",
     cloud_state_finishing: "Fetching the devices…", cloud_state_cancelled: "Cancelled",
     refresh: "Refresh", fetch_title: "Fetch the device list from Tuya Cloud (a saved login is reused)",
-    fetch_button: "Fetch from Tuya Cloud", sort_title: "Sort devices",
-    sort_id: "sort by id", sort_name: "sort by name", sort_category: "sort by category",
+    fetch_button: "Fetch from Tuya Cloud", sort_title: "Sort",
+    sort_id: "ID", sort_name: "Name", sort_category: "Category",
     bridge_title: "Bridge devices", bridge_intro: "The cloud device list against what rustuya-bridge holds.",
     bridge_sending: "Sending to the bridge…", bridge_reading: "Reading the bridge…",
     bridge_no_cloud: "No cloud device list yet: fetch it with Fetch from Tuya Cloud.",
     bridge_sent_one: "Sent 1 command to the bridge", bridge_sent_many: "Sent {n} commands to the bridge",
-    bridge_nothing: "Nothing to send", apply_all: "Apply all",
+    bridge_nothing: "Nothing to send",
     no_category: "No category is selected.", no_device_in_categories: "No device in the selected categories.",
     no_devices: "No devices in the cloud list or on the bridge.",
     missing_gateway: "missing gateway",
@@ -175,7 +171,6 @@ const I18N = {
     link_online: "Connected to the bridge", link_offline: "Not connected to the bridge",
     act_add: "Add", act_update: "Update", act_remove: "Remove",
     confirm_remove_device: "Remove {who} from the bridge?",
-    apply_n: "Apply {n}", apply: "Apply", sync_title: "Sync with the bridge",
     set_bridge_root: "Bridge topic root", set_bridge_root_hint: "The MQTT root rustuya-bridge uses (its mqtt_root_topic).",
     set_il_prefix: "IL topic prefix", set_il_prefix_hint: "Where the IL devices are published; il-ha reads il by default.",
     set_il_source: "IL source name", set_il_source_hint: "This producer's name on IL (one topic level).",
@@ -219,12 +214,10 @@ const I18N = {
   },
   ko: {
     origin_pack: "팩", origin_pack_edited: "팩, 수정됨",
+    close_panel: "패널 닫기",
     menu: "패널 메뉴", edit_device: "기기 수정", edit_hint: "브리지에 등록된 값을 수정합니다. 기기 ID와 유형은 변경할 수 없습니다.",
     manual_add: "수동 등록", manual_hint: "클라우드 없이 등록합니다. IP·버전을 비우면 자동 탐색합니다. ID는 IP 또는 CID와 이름으로 자동 생성할 수 있습니다.",
     cat_all: "전체", cat_missing: "없음", cat_orphan: "브릿지 전용", cat_mismatch: "불일치", cat_synced: "일치",
-    plan_mismatch_title: "브리지에서 갱신", plan_mismatch_button: "불일치 갱신",
-    plan_missing_title: "브리지에 추가", plan_missing_button: "없는 기기 추가",
-    plan_orphan_title: "브리지에서 삭제", plan_orphan_button: "브릿지 전용 기기 삭제",
     cloud_code: "사용자 코드 (새 로그인일 때만)", cloud_fetch: "가져오기", cancel: "취소",
     cloud_qr_alt: "Smart Life 또는 Tuya Smart 앱으로 스캔할 QR 코드",
     cloud_intro: "저장된 Tuya 로그인이 있으면 그대로 씁니다. 없거나 만료됐으면 스캔할 QR 코드가 이어서 나옵니다. 사용자 코드는 그 첫 로그인에만 필요합니다(Smart Life → 나 → 설정 → 계정 및 보안).",
@@ -233,13 +226,13 @@ const I18N = {
     cloud_state_logged_in: "로그인했습니다. 기기를 가져오는 중…", cloud_state_fetching: "기기를 가져오는 중…",
     cloud_state_finishing: "기기를 가져오는 중…", cloud_state_cancelled: "취소됨",
     refresh: "새로 고침", fetch_title: "Tuya Cloud에서 기기 목록 가져오기 (저장된 로그인 재사용)",
-    fetch_button: "Tuya Cloud에서 가져오기", sort_title: "기기 정렬",
-    sort_id: "ID순", sort_name: "이름순", sort_category: "분류순",
+    fetch_button: "Tuya Cloud에서 가져오기", sort_title: "정렬",
+    sort_id: "ID", sort_name: "이름", sort_category: "분류",
     bridge_title: "브리지 기기", bridge_intro: "클라우드 기기 목록과 rustuya-bridge가 가진 기기를 비교합니다.",
     bridge_sending: "브리지에 보내는 중…", bridge_reading: "브리지를 읽는 중…",
     bridge_no_cloud: "아직 클라우드 기기 목록이 없습니다. 'Tuya Cloud에서 가져오기'로 가져오세요.",
     bridge_sent_one: "브리지에 명령 1개를 보냈습니다", bridge_sent_many: "브리지에 명령 {n}개를 보냈습니다",
-    bridge_nothing: "보낼 것이 없습니다", apply_all: "모두 적용",
+    bridge_nothing: "보낼 것이 없습니다",
     no_category: "선택한 분류가 없습니다.", no_device_in_categories: "선택한 분류에 기기가 없습니다.",
     no_devices: "클라우드 목록에도 브리지에도 기기가 없습니다.",
     missing_gateway: "게이트웨이 없음",
@@ -247,7 +240,6 @@ const I18N = {
     link_online: "브리지에 연결됨", link_offline: "브리지에 연결되지 않음",
     act_add: "추가", act_update: "갱신", act_remove: "삭제",
     confirm_remove_device: "{who}을(를) 브리지에서 삭제할까요?",
-    apply_n: "{n}개 적용", apply: "적용", sync_title: "브리지와 동기화",
     set_bridge_root: "브리지 토픽 root", set_bridge_root_hint: "rustuya-bridge가 쓰는 MQTT root(mqtt_root_topic).",
     set_il_prefix: "IL 토픽 prefix", set_il_prefix_hint: "IL 기기를 게시하는 곳. il-ha는 기본으로 il을 읽습니다.",
     set_il_source: "IL source 이름", set_il_source_hint: "IL에서 이 생산자의 이름(토픽 한 단계).",
@@ -310,8 +302,6 @@ function t(key, vars = {}) {
 
 const CATEGORIES = ["missing", "orphan", "mismatch", "synced"];     // rustuya-manager's order and filter tabs
 const RANK = Object.fromEntries(CATEGORIES.map((c, i) => [c, i]));
-const VERB = { mismatch: "update", missing: "add", orphan: "remove" };   // title / button: t(`plan_${category}_title` / `_button`)
-const PLAN_ORDER = ["mismatch", "missing", "orphan"];               // the manager's sync dialog groups
 const SORTS = ["id", "name", "category"];                           // label: t(`sort_${key}`)
 
 const side = (d) => d.cloud || d.bridge;                            // the cloud's record, else the bridge's
@@ -443,18 +433,17 @@ class BridgeSection {
 
     this.status = el("div", { class: "muted" });
     this.chips = el("div", { class: "chips" });
-    this.syncbar = el("div", { class: "syncbar" });
     this.list = el("div", { class: "devices" });
     this.refreshBtn = el("button", { onclick: () => this.load() }, t("refresh"));
     this.cloud = new CloudFetchBox(panel, () => this.load());
     this.fetchBtn = el("button", { title: t("fetch_title"), onclick: () => this.cloud.open() }, t("fetch_button"));
     const sortSelect = el("select", { title: t("sort_title"), onchange: (e) => { this.sort = e.target.value; store("rustuya.sort", this.sort); this.paint(); } },
+      el("option", { value: "", disabled: true }, t("sort_title")),
       ...SORTS.map((k) => el("option", { value: k, selected: k === this.sort }, t(`sort_${k}`))));
     const menu = el("details", { class: "panel-menu" },
       el("summary", { title: t("menu"), "aria-label": t("menu") }, "☰"),
       el("div", { class: "menu-items" }, sortSelect,
-        el("button", { onclick: () => this.openManual() }, t("manual_add")), this.fetchBtn, this.refreshBtn,
-        el("button", { title: t("hide_title"), onclick: () => panel._hide() }, t("hide"))));
+        el("button", { onclick: () => this.openManual() }, t("manual_add")), this.fetchBtn, this.refreshBtn));
     menu.addEventListener("click", (event) => {
       if (event.target.closest("button")) menu.open = false;
     });
@@ -467,10 +456,12 @@ class BridgeSection {
     this.dialog = el("dialog");
     this.root = el("div", { class: "card" },
       el("div", { class: "head" }, el("h2", {}, t("bridge_title")),
-        menu),
+        el("div", { class: "end" }, menu,
+          el("button", { class: "icon-button", title: t("close_panel"), "aria-label": t("close_panel"),
+            onclick: () => panel._hide() }, el("ha-icon", { icon: "mdi:close" })))),
       el("div", { class: "muted" }, t("bridge_intro")),
       this.cloud.root,
-      this.chips, this.syncbar, this.status, this.list, this.dialog);
+      this.chips, this.status, this.list, this.dialog);
   }
 
   async load(selection) {
@@ -545,12 +536,6 @@ class BridgeSection {
     this.chips.replaceChildren(
       chip("all", t("cat_all"), (this.devices || []).length, all),
       ...CATEGORIES.map((c) => chip(c, t(`cat_${c}`), this.count(c), this.filters.has(c))));
-
-    const pending = PLAN_ORDER.filter((c) => this.count(c));
-    this.syncbar.replaceChildren(...(pending.length ? [
-      ...CATEGORIES.filter((c) => c in VERB && this.count(c)).map((c) =>
-        el("button", { class: `cat-${c}`, onclick: () => this.openPlan(c) }, t(`plan_${c}_button`))),
-      el("button", { class: "all", onclick: () => this.openPlan("all") }, t("apply_all"))] : []));
 
     if (!this.devices) {
       this.list.replaceChildren();
@@ -635,11 +620,14 @@ class BridgeSection {
     const acts = el("span", { class: "acts" },
       live ? el("span", { class: `dot ${live}`, title: live === "online" ? t("link_online") : t("link_offline") }) : "",
       el("span", { class: `pill cat-${d.category}` }, t(`cat_${d.category}`)));
-    const act = (label, cat, fn) => el("button", { class: `act cat-${cat}`, onclick: (e) => { e.stopPropagation(); fn(); } }, label);
-    if (d.category === "missing") acts.append(act(t("act_add"), "missing", () => this.one("add", d)));
-    if (d.category === "mismatch") acts.append(act(t("act_update"), "mismatch", () => this.one("update", d)));
-    if (d.category !== "missing") acts.append(act(t("edit_device"), d.category, () => this.openManual(d)));
-    if (d.category !== "missing") acts.append(act(t("act_remove"), "orphan", () => this.one("remove", d)));
+    const act = (label, icon, cat, fn) => el("button", {
+      class: `act icon-button cat-${cat}`, title: label, "aria-label": label,
+      onclick: (e) => { e.stopPropagation(); fn(); },
+    }, el("ha-icon", { icon: `mdi:${icon}` }));
+    if (d.category === "missing") acts.append(act(t("act_add"), "plus", "missing", () => this.one("add", d)));
+    if (d.category === "mismatch") acts.append(act(t("act_update"), "sync", "mismatch", () => this.one("update", d)));
+    if (d.category !== "missing") acts.append(act(t("edit_device"), "pencil", d.category, () => this.openManual(d)));
+    if (d.category !== "missing") acts.append(act(t("act_remove"), "trash-can-outline", "orphan", () => this.one("remove", d)));
     const card = el("div", { class: `dev cat-${d.category}${child ? " child" : ""}${live === "offline" ? " offline" : ""}`,
       title: `${t(`cat_${d.category}`)} · ${s.type}${live ? ` · ${live === "online" ? t("link_online") : t("link_offline")}` : ""}`,
       onclick: () => { this.expanded.has(d.id) ? this.expanded.delete(d.id) : this.expanded.add(d.id); this.paint(); } },
@@ -672,9 +660,9 @@ class BridgeSection {
     type.disabled = !!device;
     const render = () => {
       fields.replaceChildren(...["id", "name", ...(type.value === "WiFi" ? ["ip", "key", "version"] : ["cid", "parent_id"])].map((key) => {
-        inputs[key] ||= el("input", { type: key === "key" ? "password" : "text", autocomplete: "off",
+        inputs[key] ||= el("input", { type: key === "key" ? "password" : "text", autocomplete: "off", placeholder: key, "aria-label": key, title: key,
           value: initial[key] === "Auto" ? "" : initial[key] || "", readonly: !!device && key === "id" });
-        return el("label", {}, key, inputs[key]);
+        return inputs[key];
       }));
     };
     render();
@@ -714,44 +702,7 @@ class BridgeSection {
     await this.load({ [verb]: [d.id] });
   }
 
-  openPlan(scope) {
-    const groups = PLAN_ORDER.filter((c) => scope === "all" || scope === c)
-      .map((c) => [c, this.devices.filter((d) => d.category === c)]).filter(([, list]) => list.length);
-    const boxes = [];
-    const body = [];
-    for (const [c, list] of groups) {
-      const all = el("input", { type: "checkbox", checked: c !== "orphan" });
-      const mine = list.map((d) => {
-        const box = el("input", { type: "checkbox", checked: c !== "orphan" });
-        box.dataset.verb = VERB[c];
-        box.dataset.id = d.id;
-        boxes.push(box);
-        return el("label", {}, box, el("span", {}, nameOf(d) || d.id,
-          el("span", { class: "id" }, ` ${d.id}`), d.reasons.length ? el("div", { class: "muted" }, d.reasons.join("; ")) : ""));
-      });
-      all.addEventListener("change", () => { for (const b of mine) b.firstChild.checked = all.checked; update(); });
-      body.push(el("label", { class: `group cat-${c}` }, all, el("span", { class: "pill" }, t(`plan_${c}_title`))), ...mine);
-    }
-    const apply = el("button", { class: "primary" });
-    const update = () => {
-      const n = boxes.filter((b) => b.checked).length;
-      apply.textContent = n ? t("apply_n", { n }) : t("apply");
-      apply.disabled = !n;
-    };
-    for (const b of boxes) b.addEventListener("change", update);
-    apply.addEventListener("click", async () => {
-      const sel = Object.fromEntries(Object.values(VERB).map((v) => [v, []]));
-      for (const b of boxes) if (b.checked) sel[b.dataset.verb].push(b.dataset.id);
-      this.dialog.close();
-      await this.load(sel);
-    });
-    update();
-    this.dialog.replaceChildren(
-      el("h3", {}, scope === "all" ? t("sync_title") : t(`plan_${scope}_title`)),
-      el("div", { class: "plan" }, ...body),
-      el("div", { class: "foot" }, el("button", { onclick: () => this.dialog.close() }, t("cancel")), apply));
-    this.dialog.showModal();
-  }
+
 }
 
 // ---- options and settings: cards of fields saved together, each save restarting the integration -----------------
