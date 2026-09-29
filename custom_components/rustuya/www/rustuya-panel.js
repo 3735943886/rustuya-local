@@ -660,7 +660,7 @@ class BridgeSection {
     type.disabled = !!device;
     const render = () => {
       fields.replaceChildren(...["id", "name", ...(type.value === "WiFi" ? ["ip", "key", "version"] : ["cid", "parent_id"])].map((key) => {
-        inputs[key] ||= el("input", { type: key === "key" ? "password" : "text", autocomplete: "off", placeholder: key, "aria-label": key, title: key,
+        inputs[key] ||= el("input", { type: "text", autocomplete: "off", placeholder: key, "aria-label": key, title: key,
           value: initial[key] === "Auto" ? "" : initial[key] || "", readonly: !!device && key === "id" });
         return inputs[key];
       }));
