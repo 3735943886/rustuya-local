@@ -63,6 +63,19 @@ const STYLE = `
   .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .head h2 { margin: 0; }
   .head .end { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .panel-menu { position: relative; margin-left: auto; }
+  .panel-menu summary { cursor: pointer; list-style: none; padding: 8px 12px; border-radius: 6px;
+                        border: 1px solid var(--divider-color); font-size: 20px; }
+  .panel-menu summary::-webkit-details-marker { display: none; }
+  .menu-items { position: absolute; right: 0; top: 100%; z-index: 2; display: grid; gap: 8px;
+                width: min(260px, calc(100vw - 72px)); box-sizing: border-box; padding: 12px;
+                background: var(--card-background-color); border: 1px solid var(--divider-color);
+                border-radius: 8px; box-shadow: 0 4px 12px #0003; }
+  .menu-items button, .menu-items select { width: 100%; white-space: normal; text-align: start; }
+  .dev .top { flex-wrap: wrap; }
+  .dev .acts { flex-wrap: wrap; max-width: 100%; }
+  dialog { box-sizing: border-box; max-height: calc(100dvh - 32px); overflow: auto; }
+  dialog label input { min-width: 0; width: 100%; }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 8px; }
   .chip { padding: 3px 10px; font-size: 13px; border-radius: 999px; border: 1px solid var(--cat, var(--divider-color));
           background: transparent; color: var(--primary-text-color); }
@@ -134,6 +147,7 @@ const message = (e) => (e && e.body && e.body.message) || (e && (e.message || e.
 const I18N = {
   en: {
     origin_pack: "pack", origin_pack_edited: "pack, edited",
+    menu: "Panel menu", edit_device: "Edit device", edit_hint: "Edit the bridge values. Device ID and type cannot be changed.",
     manual_add: "Register manually", manual_hint: "Register without Tuya Cloud. Leave IP/version blank for automatic detection. ID may be generated from IP or CID and name.",
     cat_all: "all", cat_missing: "missing", cat_orphan: "Bridge only", cat_mismatch: "mismatch", cat_synced: "synced",
     plan_mismatch_title: "Update on the bridge", plan_mismatch_button: "Update mismatch",
@@ -205,6 +219,7 @@ const I18N = {
   },
   ko: {
     origin_pack: "팩", origin_pack_edited: "팩, 수정됨",
+    menu: "패널 메뉴", edit_device: "기기 수정", edit_hint: "브리지에 등록된 값을 수정합니다. 기기 ID와 유형은 변경할 수 없습니다.",
     manual_add: "수동 등록", manual_hint: "클라우드 없이 등록합니다. IP·버전을 비우면 자동 탐색합니다. ID는 IP 또는 CID와 이름으로 자동 생성할 수 있습니다.",
     cat_all: "전체", cat_missing: "없음", cat_orphan: "브릿지 전용", cat_mismatch: "불일치", cat_synced: "일치",
     plan_mismatch_title: "브리지에서 갱신", plan_mismatch_button: "불일치 갱신",
@@ -435,10 +450,24 @@ class BridgeSection {
     this.fetchBtn = el("button", { title: t("fetch_title"), onclick: () => this.cloud.open() }, t("fetch_button"));
     const sortSelect = el("select", { title: t("sort_title"), onchange: (e) => { this.sort = e.target.value; store("rustuya.sort", this.sort); this.paint(); } },
       ...SORTS.map((k) => el("option", { value: k, selected: k === this.sort }, t(`sort_${k}`))));
+    const menu = el("details", { class: "panel-menu" },
+      el("summary", { title: t("menu"), "aria-label": t("menu") }, "☰"),
+      el("div", { class: "menu-items" }, sortSelect,
+        el("button", { onclick: () => this.openManual() }, t("manual_add")), this.fetchBtn, this.refreshBtn,
+        el("button", { title: t("hide_title"), onclick: () => panel._hide() }, t("hide"))));
+    menu.addEventListener("click", (event) => {
+      if (event.target.closest("button")) menu.open = false;
+    });
+    menu.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { menu.open = false; menu.querySelector("summary").focus(); }
+    });
+    menu.addEventListener("focusout", (event) => {
+      if (!menu.contains(event.relatedTarget)) menu.open = false;
+    });
     this.dialog = el("dialog");
     this.root = el("div", { class: "card" },
       el("div", { class: "head" }, el("h2", {}, t("bridge_title")),
-        el("div", { class: "end" }, sortSelect, el("button", { onclick: () => this.openManual() }, t("manual_add")), this.fetchBtn, this.refreshBtn)),
+        menu),
       el("div", { class: "muted" }, t("bridge_intro")),
       this.cloud.root,
       this.chips, this.syncbar, this.status, this.list, this.dialog);
@@ -609,6 +638,7 @@ class BridgeSection {
     const act = (label, cat, fn) => el("button", { class: `act cat-${cat}`, onclick: (e) => { e.stopPropagation(); fn(); } }, label);
     if (d.category === "missing") acts.append(act(t("act_add"), "missing", () => this.one("add", d)));
     if (d.category === "mismatch") acts.append(act(t("act_update"), "mismatch", () => this.one("update", d)));
+    if (d.category !== "missing") acts.append(act(t("edit_device"), d.category, () => this.openManual(d)));
     if (d.category !== "missing") acts.append(act(t("act_remove"), "orphan", () => this.one("remove", d)));
     const card = el("div", { class: `dev cat-${d.category}${child ? " child" : ""}${live === "offline" ? " offline" : ""}`,
       title: `${t(`cat_${d.category}`)} · ${s.type}${live ? ` · ${live === "online" ? t("link_online") : t("link_offline")}` : ""}`,
@@ -631,21 +661,25 @@ class BridgeSection {
     return card;
   }
 
-  openManual() {
+  openManual(device = null) {
     if (this.busy) return;
+    const initial = device ? { ...device.bridge, id: device.id } : {};
     const inputs = {};
     const fields = el("div", { class: "settings" });
     const type = el("select", { onchange: () => render() },
       el("option", { value: "WiFi" }, "Wi-Fi"), el("option", { value: "SubDevice" }, "Sub-device"));
+    type.value = initial.type || "WiFi";
+    type.disabled = !!device;
     const render = () => {
       fields.replaceChildren(...["id", "name", ...(type.value === "WiFi" ? ["ip", "key", "version"] : ["cid", "parent_id"])].map((key) => {
-        inputs[key] ||= el("input", { type: key === "key" ? "password" : "text", autocomplete: "off" });
+        inputs[key] ||= el("input", { type: key === "key" ? "password" : "text", autocomplete: "off",
+          value: initial[key] === "Auto" ? "" : initial[key] || "", readonly: !!device && key === "id" });
         return el("label", {}, key, inputs[key]);
       }));
     };
     render();
     const error = el("div", { class: "error" });
-    const submit = el("button", { type: "submit", class: "primary" }, t("manual_add"));
+    const submit = el("button", { type: "submit", class: "primary" }, t(device ? "save" : "manual_add"));
     const form = el("form", { onsubmit: async (event) => {
       event.preventDefault();
       if (this.busy) return;
@@ -656,7 +690,7 @@ class BridgeSection {
       submit.disabled = true;
       this.busy = true;
       try {
-        await this.panel._api("PUT", "bridge", body);
+        await this.panel._api(device ? "PATCH" : "PUT", "bridge", body);
         this.dialog.close();
         this.filters.add("orphan");
         this.panel._toast(t("bridge_sent_one"));
@@ -668,7 +702,7 @@ class BridgeSection {
         submit.disabled = false;
       }
       await this.load();
-    } }, el("h3", {}, t("manual_add")), el("p", { class: "muted" }, t("manual_hint")), type, fields, error,
+    } }, el("h3", {}, t(device ? "edit_device" : "manual_add")), el("p", { class: "muted" }, t(device ? "edit_hint" : "manual_hint")), type, fields, error,
     el("div", { class: "foot" }, el("button", { type: "button", onclick: () => this.dialog.close() }, t("cancel")), submit));
     this.dialog.replaceChildren(form);
     this.dialog.showModal();
@@ -932,8 +966,7 @@ class RustuyaPanel extends HTMLElement {
 
     this.shadowRoot.replaceChildren(
       el("style", {}, STYLE),
-      el("div", { class: "toolbar" }, this._menu, el("span", {}, "Rustuya"), el("span", { class: "spacer" }),
-        el("button", { title: t("hide_title"), onclick: () => this._hide() }, t("hide"))),
+      el("div", { class: "toolbar" }, this._menu, el("span", {}, "Rustuya"), el("span", { class: "spacer" })),
       el("div", { class: "content" },
         this._bridge.root,
         el("div", { class: "card" },

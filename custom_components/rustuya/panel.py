@@ -501,7 +501,7 @@ class BridgeView(_View):
     """The cloud list against what the bridge holds, through a rustuya-manager session like the options flow's
     `bridge_sync` step (and sharing its lock: one session at a time). GET: every device with its category. POST
     `{"add": [...], "update": [...], "remove": [...]}`: those commands (only for ids the diff has in that category),
-    then the list again. PUT registers a manual device (id/name, WiFi key/ip/version or SubDevice cid/parent_id).
+    then the list again. PATCH edits an existing device; PUT registers a manual device (id/name, WiFi key/ip/version or SubDevice cid/parent_id).
     `online` is the running service's link state by id."""
 
     url = "/api/rustuya/bridge"
@@ -528,8 +528,20 @@ class BridgeView(_View):
             return self.json_message(str(e), HTTPStatus.BAD_REQUEST)
         return await self._session(request, entry, runtime, None, manual=device)
 
+    @_entry_view
+    async def patch(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
+        try:
+            body = await _json_body(request)
+            if not isinstance(body, dict) or not isinstance(body.get("id"), str) or not body["id"].strip():
+                raise ValueError("device id is required")
+            device = _manual_device(body)
+        except ValueError as e:
+            return self.json_message(str(e), HTTPStatus.BAD_REQUEST)
+        return await self._session(request, entry, runtime, None, manual=device, editing=True)
+
     async def _session(self, request: web.Request, entry: Any, runtime: Any,
-                       selection: dict[str, list[str]] | None, *, manual: dict[str, str] | None = None) -> web.Response:
+                       selection: dict[str, list[str]] | None, *, manual: dict[str, str] | None = None,
+                       editing: bool = False) -> web.Response:
         from . import bridge_sync, manager_session
 
         if not manager_session.available():
@@ -545,7 +557,12 @@ class BridgeView(_View):
             diff = await manager.sync()
             sent = 0
             if manual is not None:
-                if manual["id"] in bridge_sync._on_bridge(diff):
+                existing = bridge_sync._on_bridge(diff).get(manual["id"])
+                if editing and existing is None:
+                    return self.json_message("device is no longer registered on the bridge", HTTPStatus.NOT_FOUND)
+                if editing and (existing.type == "SubDevice") != ("cid" in manual):
+                    return self.json_message("device type cannot be changed", HTTPStatus.BAD_REQUEST)
+                if not editing and existing is not None:
                     return self.json_message("device is already registered on the bridge", HTTPStatus.CONFLICT)
                 await manager.publish_command("add", target_id=manual["id"], target_name=manual.get("name"),
                                               extra={k: v for k, v in manual.items() if k not in ("id", "name")} or None)

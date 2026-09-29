@@ -15,5 +15,5 @@
     "rustuya-local>=0.0.42"
   ],
   "single_config_entry": true,
-  "version": "0.0.42"
+  "version": "0.0.43"
 }

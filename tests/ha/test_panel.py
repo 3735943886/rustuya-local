@@ -609,3 +609,38 @@ async def test_manual_registration_rejects_existing_device(hass, loaded, hass_cl
     client = await hass_client()
     assert (await client.put('/api/rustuya/bridge', json={'id': 'old'})).status == 409
     assert manager.commands == []
+
+
+@pytest.mark.parametrize('device_id', ['old', 'fan', 'gw'])
+async def test_edit_registered_device(hass, loaded, hass_client, monkeypatch, device_id):
+    from fake_manager import FakeManager, install
+
+    monkeypatch.setattr(panel.BridgeView, 'SETTLE', 0)
+    manager = FakeManager(sync_result=_diff())
+    install(monkeypatch, manager)
+    await loaded({CONF_PANEL: True})
+    client = await hass_client()
+    response = await client.patch('/api/rustuya/bridge', json={
+        'id': device_id, 'name': 'Edited', 'key': 'new-key', 'ip': '192.0.2.2',
+    })
+    assert response.status == 200
+    assert (await response.json())['sent'] == 1
+    assert manager.commands == [('add', device_id, 'Edited', {'key': 'new-key', 'ip': '192.0.2.2'})]
+
+
+@pytest.mark.parametrize(('body', 'status'), [
+    ({'id': 'gone'}, 404),
+    ({'id': 'lamp'}, 404),
+    ({'ip': '192.0.2.2'}, 400),
+    ({'id': 'old', 'type': 'SubDevice', 'cid': '12'}, 400),
+    ({'id': 'old', 'unknown': 'x'}, 400),
+])
+async def test_edit_rejects_invalid_device(hass, loaded, hass_client, monkeypatch, body, status):
+    from fake_manager import FakeManager, install
+
+    manager = FakeManager(sync_result=_diff())
+    install(monkeypatch, manager)
+    await loaded({CONF_PANEL: True})
+    client = await hass_client()
+    assert (await client.patch('/api/rustuya/bridge', json=body)).status == status
+    assert manager.commands == []
