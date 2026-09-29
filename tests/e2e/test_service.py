@@ -135,7 +135,8 @@ async def test_a_cover_setting_written_through_il_is_saved_and_applied(tmp_path,
     await t.bridge.publish("rustuya/event/state/cur1", '{"3":30}', 0, True)
     await settle(service, t)
     props = json.loads(t.il.retained["il/cur1"].payload)["props"]
-    assert {"cover_invert_position", "cover_invert_set_position", "cover_infer_motion"} <= set(props)
+    assert {"cover_invert_position", "cover_invert_set_position", "cover_state_source"} <= set(props)
+    assert "cover_infer_motion" not in props                   # replaced by the state-source selector in 0.3.16
     assert "cover_invert_control" not in props                  # the target position opens and closes it
     assert t.il.retained["il/cur1/position"].payload == "30"
 

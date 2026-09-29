@@ -12,8 +12,8 @@
     "tuya2ildevice[host]>=0.3.16",
     "rustuya-manager>=0.2.1",
     "pyrustuyabridge>=0.4.0.dev2",
-    "rustuya-local>=0.0.41"
+    "rustuya-local>=0.0.42"
   ],
   "single_config_entry": true,
-  "version": "0.0.41"
+  "version": "0.0.42"
 }
