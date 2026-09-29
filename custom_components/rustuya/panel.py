@@ -476,11 +476,33 @@ def _selection_ok(body: Any) -> bool:
         for k in (bridge_sync.ADD, bridge_sync.UPDATE, bridge_sync.REMOVE))
 
 
+def _manual_device(body: Any) -> dict[str, str]:
+    allowed = {"id", "name", "type", "key", "ip", "version", "cid", "parent_id"}
+    if not isinstance(body, dict) or set(body) - allowed or not all(isinstance(v, str) for v in body.values()):
+        raise ValueError("invalid manual device fields")
+    device = {k: v.strip() for k, v in body.items() if v.strip()}
+    kind = device.pop("type", "WiFi")
+    if kind not in ("WiFi", "SubDevice"):
+        raise ValueError("type must be WiFi or SubDevice")
+    fields = {"key", "ip", "version"} if kind == "WiFi" else {"cid", "parent_id"}
+    if set(device) - fields - {"id", "name"}:
+        raise ValueError("fields do not match the device type")
+    if kind == "SubDevice" and not device.get("cid"):
+        raise ValueError("a sub-device needs cid")
+    if not device.get("id"):
+        base = device.get("ip" if kind == "WiFi" else "cid")
+        if not base:
+            raise ValueError("device id is required")
+        device["id"] = base + ("_" + device["name"] if device.get("name") else "")
+    return device
+
+
 class BridgeView(_View):
     """The cloud list against what the bridge holds, through a rustuya-manager session like the options flow's
     `bridge_sync` step (and sharing its lock: one session at a time). GET: every device with its category. POST
     `{"add": [...], "update": [...], "remove": [...]}`: those commands (only for ids the diff has in that category),
-    then the list again. `online` is the running service's link state by id."""
+    then the list again. PUT registers a manual device (id/name, WiFi key/ip/version or SubDevice cid/parent_id).
+    `online` is the running service's link state by id."""
 
     url = "/api/rustuya/bridge"
     name = "api:rustuya:bridge"
@@ -498,8 +520,16 @@ class BridgeView(_View):
                                      HTTPStatus.BAD_REQUEST)
         return await self._session(request, entry, runtime, body)
 
+    @_entry_view
+    async def put(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
+        try:
+            device = _manual_device(await _json_body(request))
+        except ValueError as e:
+            return self.json_message(str(e), HTTPStatus.BAD_REQUEST)
+        return await self._session(request, entry, runtime, None, manual=device)
+
     async def _session(self, request: web.Request, entry: Any, runtime: Any,
-                       selection: dict[str, list[str]] | None) -> web.Response:
+                       selection: dict[str, list[str]] | None, *, manual: dict[str, str] | None = None) -> web.Response:
         from . import bridge_sync, manager_session
 
         if not manager_session.available():
@@ -514,6 +544,14 @@ class BridgeView(_View):
         try:
             diff = await manager.sync()
             sent = 0
+            if manual is not None:
+                if manual["id"] in bridge_sync._on_bridge(diff):
+                    return self.json_message("device is already registered on the bridge", HTTPStatus.CONFLICT)
+                await manager.publish_command("add", target_id=manual["id"], target_name=manual.get("name"),
+                                              extra={k: v for k, v in manual.items() if k not in ("id", "name")} or None)
+                sent = 1
+                await asyncio.sleep(self.SETTLE)
+                diff = await manager.sync()
             if selection is not None:
                 sent = await bridge_sync.apply(manager, diff, selection)      # gateways first, as the flows do
                 if sent:

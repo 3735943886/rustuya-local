@@ -569,3 +569,43 @@ def test_the_panel_has_every_text_in_korean_too():
     assert {k for k in en if en[k] != ko[k]} == set()
     used = set(re.findall(r'\bt\("(\w+)"', src))
     assert used <= en.keys()
+
+
+@pytest.mark.parametrize(('device', 'expected_id', 'extra'), [
+    ({'id': 'manual', 'name': 'Desk', 'key': 'secret', 'ip': '192.0.2.1'},
+     'manual', {'key': 'secret', 'ip': '192.0.2.1'}),
+    ({'type': 'SubDevice', 'cid': '12', 'parent_id': 'gw', 'name': 'Desk'},
+     '12_Desk', {'cid': '12', 'parent_id': 'gw'}),
+])
+async def test_manual_bridge_registration(hass, loaded, hass_client, monkeypatch, device, expected_id, extra):
+    from fake_manager import FakeManager, install
+
+    monkeypatch.setattr(panel.BridgeView, 'SETTLE', 0)
+    manager = FakeManager(sync_result=_diff())
+    install(monkeypatch, manager)
+    await loaded({CONF_PANEL: True})
+    client = await hass_client()
+    response = await client.put('/api/rustuya/bridge', json=device)
+    assert response.status == 200
+    assert (await response.json())['sent'] == 1
+    assert manager.commands == [('add', expected_id, 'Desk', extra)]
+
+
+@pytest.mark.parametrize('device', [None, [], {}, {'id': 123}, {'id': 'x', 'type': 'bad'},
+                                   {'id': 'x', 'type': 'SubDevice'}, {'id': 'x', 'cid': '1'},
+                                   {'id': 'x', 'unknown': 'value'}])
+async def test_invalid_manual_registration(hass, loaded, hass_client, device):
+    await loaded({CONF_PANEL: True})
+    client = await hass_client()
+    assert (await client.put('/api/rustuya/bridge', json=device)).status == 400
+
+
+async def test_manual_registration_rejects_existing_device(hass, loaded, hass_client, monkeypatch):
+    from fake_manager import FakeManager, install
+
+    manager = FakeManager(sync_result=_diff())
+    install(monkeypatch, manager)
+    await loaded({CONF_PANEL: True})
+    client = await hass_client()
+    assert (await client.put('/api/rustuya/bridge', json={'id': 'old'})).status == 409
+    assert manager.commands == []

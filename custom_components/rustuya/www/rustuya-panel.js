@@ -134,10 +134,11 @@ const message = (e) => (e && e.body && e.body.message) || (e && (e.message || e.
 const I18N = {
   en: {
     origin_pack: "pack", origin_pack_edited: "pack, edited",
-    cat_all: "all", cat_missing: "missing", cat_orphan: "orphan", cat_mismatch: "mismatch", cat_synced: "synced",
+    manual_add: "Register manually", manual_hint: "Register without Tuya Cloud. Leave IP/version blank for automatic detection. ID may be generated from IP or CID and name.",
+    cat_all: "all", cat_missing: "missing", cat_orphan: "Bridge only", cat_mismatch: "mismatch", cat_synced: "synced",
     plan_mismatch_title: "Update on the bridge", plan_mismatch_button: "Update mismatch",
     plan_missing_title: "Add to the bridge", plan_missing_button: "Add missing",
-    plan_orphan_title: "Remove from the bridge", plan_orphan_button: "Remove orphan",
+    plan_orphan_title: "Remove from the bridge", plan_orphan_button: "Remove bridge-only devices",
     cloud_code: "User code (only for a new login)", cloud_fetch: "Fetch", cancel: "Cancel",
     cloud_qr_alt: "QR code to scan with the Smart Life or Tuya Smart app",
     cloud_intro: "A saved Tuya login is reused. Without one (or when it has expired) a QR code to scan follows; the user code is only needed for that first login (Smart Life → Me → Settings → Account and Security).",
@@ -204,10 +205,11 @@ const I18N = {
   },
   ko: {
     origin_pack: "팩", origin_pack_edited: "팩, 수정됨",
-    cat_all: "전체", cat_missing: "없음", cat_orphan: "고아", cat_mismatch: "불일치", cat_synced: "일치",
+    manual_add: "수동 등록", manual_hint: "클라우드 없이 등록합니다. IP·버전을 비우면 자동 탐색합니다. ID는 IP 또는 CID와 이름으로 자동 생성할 수 있습니다.",
+    cat_all: "전체", cat_missing: "없음", cat_orphan: "브릿지 전용", cat_mismatch: "불일치", cat_synced: "일치",
     plan_mismatch_title: "브리지에서 갱신", plan_mismatch_button: "불일치 갱신",
     plan_missing_title: "브리지에 추가", plan_missing_button: "없는 기기 추가",
-    plan_orphan_title: "브리지에서 삭제", plan_orphan_button: "고아 삭제",
+    plan_orphan_title: "브리지에서 삭제", plan_orphan_button: "브릿지 전용 기기 삭제",
     cloud_code: "사용자 코드 (새 로그인일 때만)", cloud_fetch: "가져오기", cancel: "취소",
     cloud_qr_alt: "Smart Life 또는 Tuya Smart 앱으로 스캔할 QR 코드",
     cloud_intro: "저장된 Tuya 로그인이 있으면 그대로 씁니다. 없거나 만료됐으면 스캔할 QR 코드가 이어서 나옵니다. 사용자 코드는 그 첫 로그인에만 필요합니다(Smart Life → 나 → 설정 → 계정 및 보안).",
@@ -436,7 +438,7 @@ class BridgeSection {
     this.dialog = el("dialog");
     this.root = el("div", { class: "card" },
       el("div", { class: "head" }, el("h2", {}, t("bridge_title")),
-        el("div", { class: "end" }, sortSelect, this.fetchBtn, this.refreshBtn)),
+        el("div", { class: "end" }, sortSelect, el("button", { onclick: () => this.openManual() }, t("manual_add")), this.fetchBtn, this.refreshBtn)),
       el("div", { class: "muted" }, t("bridge_intro")),
       this.cloud.root,
       this.chips, this.syncbar, this.status, this.list, this.dialog);
@@ -629,6 +631,49 @@ class BridgeSection {
     return card;
   }
 
+  openManual() {
+    if (this.busy) return;
+    const inputs = {};
+    const fields = el("div", { class: "settings" });
+    const type = el("select", { onchange: () => render() },
+      el("option", { value: "WiFi" }, "Wi-Fi"), el("option", { value: "SubDevice" }, "Sub-device"));
+    const render = () => {
+      fields.replaceChildren(...["id", "name", ...(type.value === "WiFi" ? ["ip", "key", "version"] : ["cid", "parent_id"])].map((key) => {
+        inputs[key] ||= el("input", { type: key === "key" ? "password" : "text", autocomplete: "off" });
+        return el("label", {}, key, inputs[key]);
+      }));
+    };
+    render();
+    const error = el("div", { class: "error" });
+    const submit = el("button", { type: "submit", class: "primary" }, t("manual_add"));
+    const form = el("form", { onsubmit: async (event) => {
+      event.preventDefault();
+      if (this.busy) return;
+      const body = { type: type.value };
+      for (const key of ["id", "name", ...(type.value === "WiFi" ? ["ip", "key", "version"] : ["cid", "parent_id"])]) {
+        if (inputs[key].value.trim()) body[key] = inputs[key].value.trim();
+      }
+      submit.disabled = true;
+      this.busy = true;
+      try {
+        await this.panel._api("PUT", "bridge", body);
+        this.dialog.close();
+        this.filters.add("orphan");
+        this.panel._toast(t("bridge_sent_one"));
+      } catch (e) {
+        error.textContent = message(e);
+        return;
+      } finally {
+        this.busy = false;
+        submit.disabled = false;
+      }
+      await this.load();
+    } }, el("h3", {}, t("manual_add")), el("p", { class: "muted" }, t("manual_hint")), type, fields, error,
+    el("div", { class: "foot" }, el("button", { type: "button", onclick: () => this.dialog.close() }, t("cancel")), submit));
+    this.dialog.replaceChildren(form);
+    this.dialog.showModal();
+  }
+
   async one(verb, d) {
     const who = nameOf(d) ? `${nameOf(d)} (${d.id})` : d.id;
     if (verb === "remove" && !confirm(t("confirm_remove_device", { who }))) return;
@@ -641,9 +686,9 @@ class BridgeSection {
     const boxes = [];
     const body = [];
     for (const [c, list] of groups) {
-      const all = el("input", { type: "checkbox", checked: true });
+      const all = el("input", { type: "checkbox", checked: c !== "orphan" });
       const mine = list.map((d) => {
-        const box = el("input", { type: "checkbox", checked: true });
+        const box = el("input", { type: "checkbox", checked: c !== "orphan" });
         box.dataset.verb = VERB[c];
         box.dataset.id = d.id;
         boxes.push(box);
