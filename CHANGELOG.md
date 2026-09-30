@@ -8,6 +8,8 @@ stable release.
 
 ## [Unreleased]
 
+## [0.0.47] — 2026-09-30
+
 ### Changed
 - The panel's Fetch from Tuya Cloud opens in a dialog (with its QR code), instead of a box in the bridge card.
 - Its form starts with the saved Tuya login's user code, as the config flow's does.
