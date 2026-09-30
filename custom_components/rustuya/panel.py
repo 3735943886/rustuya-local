@@ -425,14 +425,22 @@ def _fetch_status(fetch: CloudFetch | None) -> dict[str, Any]:
 
 class CloudView(_View):
     """The panel's cloud fetch (`CloudFetch`). GET: its status (`{"state": "idle"}` before any). POST
-    `{"user_code": "..."}` (optional, only for a first login): start one. DELETE: cancel it."""
+    `{"user_code": "..."}` (optional, only for a first login): start one. DELETE: cancel it. While none runs, GET also
+    has the saved login's `user_code` (or null), for the form to start from."""
 
     url = "/api/rustuya/cloud"
     name = "api:rustuya:cloud"
 
     @_entry_view
     async def get(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
-        return self.json(_fetch_status(request.app["hass"].data.get(_CLOUD_KEY)))
+        from . import manager_session
+
+        hass = request.app["hass"]
+        fetch: CloudFetch | None = hass.data.get(_CLOUD_KEY)
+        status = _fetch_status(fetch)
+        if fetch is None or not fetch.running:          # the form shows: not read on every poll of a running fetch
+            status = {**status, "user_code": await manager_session.saved_user_code(hass, entry.data)}
+        return self.json(status)
 
     @_entry_view
     async def post(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:

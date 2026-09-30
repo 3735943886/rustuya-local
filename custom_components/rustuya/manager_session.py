@@ -107,6 +107,25 @@ async def open_for_entry(hass: Any, data: dict[str, Any], *, run_bridge: bool = 
                               devices_path=data[CONF_DEVICES_PATH], username=username, password=password, **bridge)
 
 
+async def saved_user_code(hass: Any, data: dict[str, Any]) -> str | None:
+    """The user code of the saved Tuya login (`tuyacreds.json` beside the device file, where a session's wizard keeps
+    it), read without a session: no broker connection and no lock, so the panel can fill it in before a fetch starts."""
+    import os
+
+    from .const import CONF_DEVICES_PATH
+
+    if not available():
+        return None
+
+    def wizard_class() -> Any:                      # the import pulls in tuyawizard and qrcode: not on the event loop
+        from rustuya_manager.wizard import WizardManager
+
+        return WizardManager
+
+    creds_path = os.path.join(os.path.dirname(data[CONF_DEVICES_PATH]), "tuyacreds.json")
+    return await (await hass.async_add_executor_job(wizard_class))(creds_path=creds_path).read_saved_user_code()
+
+
 async def close_manager(manager: Any) -> None:
     if manager is None:
         return

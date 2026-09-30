@@ -146,4 +146,5 @@ def install(monkeypatch, manager: FakeManager) -> None:
 
     fake_module = types.ModuleType("rustuya_manager.wizard")
     fake_module.WizardState = WizardState
+    fake_module.WizardManager = lambda creds_path: manager.wizard      # manager_session.saved_user_code's reader
     monkeypatch.setitem(sys.modules, "rustuya_manager.wizard", fake_module)

@@ -378,6 +378,7 @@ class CloudFetchBox {
       return;
     }
     const running = !["idle", "done", "error", "cancelled"].includes(r.state);
+    if (!running && r.user_code && !this.code.value) this.code.value = r.user_code;   // the saved login's code
     if (opening && !running) return;     // nothing running: the form, not the last outcome
     this.form.hidden = running;
     this.show(r);

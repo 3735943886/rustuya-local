@@ -9,6 +9,9 @@ name: Release
 # the safety net: tag a pre-release, verify the wheel installs, fix any issues, then tag the
 # plain version for the real index.
 #
+# The GitHub Release's notes are the version's section in CHANGELOG.md (scripts/release_notes.py); a
+# plain version without one fails before anything is published.
+#
 # OIDC trusted publishing -- no API tokens stored in repo secrets. One-time setup needed on BOTH
 # registries before the first tag (the trust DBs are separate):
 #   https://pypi.org/manage/account/publishing/
@@ -81,6 +84,14 @@ jobs:
           fi
           echo "Target: $TAG -> $(grep '^name=' "$GITHUB_OUTPUT" | tail -1)"
 
+      - name: Release notes from CHANGELOG.md
+        # Before anything is published: a stable tag without a `## [X.Y.Z]` section in CHANGELOG.md stops here.
+        # A pre-release falls back to the `## [Unreleased]` section.
+        run: |
+          python scripts/release_notes.py "${GITHUB_REF_NAME#v}" \
+            ${{ steps.target.outputs.prerelease == 'true' && '--prerelease' || '' }} > release-notes.md
+          cat release-notes.md
+
       - name: Install build tooling
         run: python -m pip install --upgrade pip build twine
 
@@ -112,6 +123,7 @@ jobs:
             dropin/*
           draft: false
           prerelease: ${{ steps.target.outputs.prerelease }}
-          generate_release_notes: true
+          body_path: release-notes.md
+          generate_release_notes: true      # appended after the body: the "Full Changelog" compare link
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

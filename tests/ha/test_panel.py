@@ -452,7 +452,7 @@ async def test_fetching_from_tuya_cloud_in_the_panel(hass, loaded, hass_client, 
     manager = FakeManager(wizard_script=[WizardState.AWAITING_SCAN, WizardState.DONE])
     install(monkeypatch, manager)
     c = await hass_client()
-    assert await (await c.get("/api/rustuya/cloud")).json() == {"state": "idle"}
+    assert await (await c.get("/api/rustuya/cloud")).json() == {"state": "idle", "user_code": None}
 
     r = await c.post("/api/rustuya/cloud", json={"user_code": " abc "})
     assert r.status == 200
@@ -464,6 +464,17 @@ async def test_fetching_from_tuya_cloud_in_the_panel(hass, loaded, hass_client, 
     r = await _poll_until(c, {"done"})
     assert r["qr"] is None and manager.closed
     assert handed == [(entry, True)]                                             # to the entry, after the session
+
+
+async def test_the_panel_form_starts_from_the_saved_login_code(hass, loaded, hass_client, tmp_path):
+    """The code of the saved login (`tuyacreds.json` beside the device file) comes with the status while no fetch runs,
+    read without a manager session."""
+    await loaded({CONF_PANEL: True})
+    c = await hass_client()
+    (tmp_path / "tuyacreds.json").write_text('{"user_code": "saved1", "token_info": {}}')
+    assert await (await c.get("/api/rustuya/cloud")).json() == {"state": "idle", "user_code": "saved1"}
+    (tmp_path / "tuyacreds.json").write_text("not json")
+    assert (await (await c.get("/api/rustuya/cloud")).json())["user_code"] is None
 
 
 async def test_a_panel_fetch_can_be_cancelled_and_ends_when_nothing_polls(hass, loaded, hass_client, monkeypatch):
