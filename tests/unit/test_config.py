@@ -27,3 +27,15 @@ def test_a_custom_converters_directory_relative_to_the_config(tmp_path):
     assert c.overrides_path == tmp_path / "conv"
     s = c.settings()
     assert s.overrides_path == tmp_path / "conv" and s.watch_interval == 0 and s.devices == []
+
+
+@pytest.mark.parametrize("data", [
+    [], {"bridge": []}, {"il": None}, {"options": []}, {"pack": "false"},
+    {"options": {"allow_hazardous": "false"}}, {"watch_interval": -1}, {"watch_interval": float("nan")},
+    {"watch_interval": "5"}, {"bridge": {"port": True}}, {"bridge": {"port": 0}},
+    {"bridge": {"root": "x/#"}}, {"il": {"prefix": "x//y"}}, {"il": {"source": "_reserved"}},
+    {"il": {"source": "x\0y"}}, {"il": {"prefix": "with space"}}, {"devices": {}},
+])
+def test_invalid_types_and_topics_are_rejected(data):
+    with pytest.raises(ValueError):
+        Config.from_dict(data)

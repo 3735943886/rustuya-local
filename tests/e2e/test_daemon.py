@@ -93,3 +93,26 @@ async def test_the_daemon_uses_the_bridges_templates_and_follows_the_device_file
             await t.publish(topic, "", 1, True)
         await asyncio.sleep(0.1)
         await t.close()
+
+
+async def test_independent_instances_keep_both_mqtt_connections(broker):
+    import asyncio
+
+    from rustuya_local.cli import service_for
+    from rustuya_local.config import Broker, Config
+
+    config = Config(bridge=Broker(host="127.0.0.1", port=broker))
+    first = service_for(config)
+    second = service_for(config)
+    a = await first._connect_bridge()
+    reconnects = []
+    a.on_connect.append(lambda: reconnects.append("a"))
+    b = await second._connect_bridge()
+    b.on_connect.append(lambda: reconnects.append("b"))
+    try:
+        await asyncio.sleep(1.5)
+        assert reconnects == []
+        assert a._connected.is_set() and b._connected.is_set()
+    finally:
+        await b.close()
+        await a.close()

@@ -16,12 +16,13 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Annotated, Any
 
+from ..validation import topic_ok
+
 DEFAULTS: dict[str, Any] = {"il": {"prefix": "il", "source": "tuya"},
                             "options": {"allow_hazardous": False, "expose_unused": False, "use_quirks": True,
                                         "pack": True}}
 SETTINGS_FILE = "settings.json"
 CONVERTERS_DIR = "custom_converters"
-_LEVEL = re.compile(r"^[^/+#\s]+$")                  # one MQTT topic level: no separators, wildcards or spaces
 _FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.(json|py)$")
 
 
@@ -60,14 +61,16 @@ def read_settings(data_dir: Path) -> dict[str, Any]:
 def validate_settings(body: Any) -> dict[str, Any]:
     if not isinstance(body, dict) or set(body) - set(DEFAULTS):
         raise Invalid("settings take `il` and `options`")
+    if any(not isinstance(body[k], dict) for k in body):
+        raise Invalid("settings sections must be objects")
     merged = _over_defaults(body)
     il, options = merged["il"], merged["options"]
     if set(il) - {"prefix", "source"}:
         raise Invalid("`il` takes `prefix` and `source`")
     prefix, source = il["prefix"], il["source"]
-    if not isinstance(prefix, str) or not prefix or not all(_LEVEL.match(p) for p in prefix.split("/")):
+    if not topic_ok(prefix):
         raise Invalid("`il.prefix` is one or more topic levels (`il`, `il/tuya`), without wildcards or spaces")
-    if not isinstance(source, str) or not _LEVEL.match(source):
+    if not topic_ok(source, source=True):
         raise Invalid("`il.source` is one topic level, without wildcards or spaces")
     if set(options) - set(DEFAULTS["options"]) or not all(isinstance(v, bool) for v in options.values()):
         raise Invalid(f"`options` takes the booleans {sorted(DEFAULTS['options'])}")

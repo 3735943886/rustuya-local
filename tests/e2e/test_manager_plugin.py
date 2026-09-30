@@ -174,10 +174,21 @@ async def test_a_settings_change_restarts_the_service_and_bad_settings_wait_for_
         await plugin.restart()
         await until(lambda: seen.get("ilr1/_producer/tuya") == "online" and "ilr1/mp1" in seen, "not started")
 
+        previous = plugin.service
+        (data / "settings.json").write_text('{"options":{"pack":"false"}}')
+        await plugin.restart()
+        await until(lambda: plugin.error is not None, "invalid edit not reported")
+        assert plugin.service is previous and seen["ilr1/_producer/tuya"] == "online"
+        api.save_settings(data, {"il": {"prefix": "ilr1"}, "options": {"pack": False, "expose_unused": True}})
+        await plugin.restart()
+        await until(lambda: plugin.service is not None and plugin.service is not previous, "not restarted in place")
+        assert seen["ilr1/_producer/tuya"] == "online"
+
         api.save_settings(data, {"il": {"prefix": "ilr2"}, "options": {"pack": False}})
         await plugin.restart()
         await until(lambda: seen.get("ilr2/_producer/tuya") == "online" and "ilr2/mp1" in seen, "not restarted")
-        assert seen["ilr1/_producer/tuya"] == "offline"           # the old service stopped
+        assert seen["ilr1/_producer/tuya"] == ""                # the old namespace was retired
+        assert seen["ilr1/mp1"] == ""
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

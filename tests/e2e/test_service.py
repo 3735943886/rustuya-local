@@ -271,3 +271,65 @@ async def test_a_restart_keeps_the_presence_and_every_device_available(tmp_path,
     finally:
         await second.stop()
     assert t.il.retained["il/_producer/tuya"].payload == "offline"            # a real stop still goes offline
+
+
+async def test_restart_removes_only_old_owned_devices():
+    t = Transports()
+    await t.bridge.publish("rustuya/bridge/config", "{}", 1, True)
+    ids = ["lamp1", "lamp2"]
+    await _answer_status(t.bridge, ids)
+    # Another producer's data must survive reconciliation.
+    await t.il.publish("il/other", '{"source":"other"}', 1, True)
+    first = Service(Settings(devices=[lamp(i) for i in ids]),
+                    connect_bridge=t.connect_bridge, connect_il=t.connect_il)
+    await first.start()
+    await settle(first, t)
+    await first.stop()
+    ids.remove("lamp2")
+    second = Service(Settings(devices=[lamp("lamp1"), lamp("lamp2")]),
+                     connect_bridge=t.connect_bridge, connect_il=t.connect_il)
+    await second.start()
+    await settle(second, t)
+    assert "il/lamp1" in t.il.retained and "il/other" in t.il.retained
+    assert not any(topic == "il/lamp2" or topic.startswith("il/lamp2/") for topic in t.il.retained)
+    await second.stop()
+
+
+async def test_stop_cleans_up_even_when_command_drain_fails():
+    from unittest.mock import AsyncMock
+
+    t = Transports()
+    await t.bridge.publish("rustuya/bridge/config", "{}", 1, True)
+    service = Service(Settings(), connect_bridge=t.connect_bridge, connect_il=t.connect_il)
+    await service.start()
+    await service.bridge_client.drain()
+    service.bridge_client.drain = AsyncMock(side_effect=RuntimeError("publish failed"))
+    with pytest.raises(RuntimeError, match="publish failed"):
+        await service.stop()
+    assert t.closed == ["il", "bridge"]
+    assert t.il.retained["il/_producer/tuya"].payload == "offline"
+    await service.stop()
+
+
+async def test_stop_cleans_up_when_cancelled_while_draining():
+    import asyncio
+
+    t = Transports()
+    await t.bridge.publish("rustuya/bridge/config", "{}", 1, True)
+    service = Service(Settings(), connect_bridge=t.connect_bridge, connect_il=t.connect_il)
+    await service.start()
+    await service.bridge_client.drain()
+    draining = asyncio.Event()
+
+    async def blocked():
+        draining.set()
+        await asyncio.Event().wait()
+
+    service.bridge_client.drain = blocked
+    stopping = asyncio.create_task(service.stop())
+    await draining.wait()
+    stopping.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await stopping
+    assert t.closed == ["il", "bridge"]
+    assert t.il.retained["il/_producer/tuya"].payload == "offline"

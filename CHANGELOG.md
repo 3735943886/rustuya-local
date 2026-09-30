@@ -8,6 +8,18 @@ stable release.
 
 ## [Unreleased]
 
+## [0.0.48] — 2026-09-30
+
+### Fixed
+- Give daemon and manager MQTT connections unique client IDs so separate producers do not disconnect each other.
+- Validate contiguous bridge status pages and consistent totals; retry lost replies automatically and refresh on reconnect.
+- Remove stale retained IL devices after the first complete bridge snapshot on startup; retire old IL topics when manager settings move the producer.
+- Keep presence online during manager restarts within the same IL namespace and keep a working service on invalid settings edits.
+- Always close service resources when draining bridge commands raises or is cancelled.
+- Restore previous Home Assistant settings after a failed restart and allow settings recovery while the entry is not loaded.
+- Stop cloud polling when the panel detaches, including late responses to pending requests.
+- Share topic validation across hosts and reject invalid configuration types instead of coercing strings to booleans.
+
 ## [0.0.47] — 2026-09-30
 
 ### Changed

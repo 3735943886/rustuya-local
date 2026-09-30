@@ -75,3 +75,10 @@ def test_the_router(tmp_path):
     assert c.get("/api/rustuya-local/converters/zz.json").status_code == 404
     assert c.put("/api/rustuya-local/converters/a.txt", json={"content": ""}).status_code == 400
     assert c.delete("/api/rustuya-local/converters/a.json").status_code == 200
+
+
+@pytest.mark.parametrize("body", [{"il": []}, {"il": None}, {"options": "false"},
+                                  {"il": {"source": "_reserved"}}, {"il": {"source": "x\0y"}}])
+def test_invalid_sections_and_reserved_sources(body):
+    with pytest.raises(api.Invalid):
+        api.validate_settings(body)

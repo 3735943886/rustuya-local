@@ -329,6 +329,8 @@ class CloudFetchBox {
     this.panel = panel;
     this.onDone = onDone;
     this.timer = null;
+    this.active = false;
+    this.generation = 0;
     this.code = el("input", { placeholder: t("cloud_code"), spellcheck: "false" });
     this.startBtn = el("button", { class: "primary", onclick: () => this.start() }, t("cloud_fetch"));
     this.cancelBtn = el("button", { onclick: () => this.cancel() }, t("cancel"));
@@ -347,6 +349,7 @@ class CloudFetchBox {
   }
 
   open() {
+    this.active = true;
     if (!this.root.open) this.root.showModal();
     this.form.hidden = false;
     this.msg.textContent = "";
@@ -369,11 +372,13 @@ class CloudFetchBox {
   }
 
   schedule() {
+    if (!this.active) return;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => this.poll(false), 1000);
   }
 
   async poll(opening) {
+    const generation = this.generation;
     let r;
     try {
       r = await this.panel._api("GET", "cloud");
@@ -382,6 +387,7 @@ class CloudFetchBox {
       this.msg.textContent = message(e);
       return;
     }
+    if (!this.active || generation !== this.generation) return;
     const running = !["idle", "done", "error", "cancelled"].includes(r.state);
     if (!running && r.user_code && !this.code.value) this.code.value = r.user_code;   // the saved login's code
     if (opening && !running) return;     // nothing running: the form, not the last outcome
@@ -417,6 +423,8 @@ class CloudFetchBox {
   }
 
   close() {
+    this.active = false;
+    this.generation += 1;
     clearTimeout(this.timer);
     this.root.close();
     this.qr.hidden = true;
@@ -854,7 +862,7 @@ class RustuyaPanel extends HTMLElement {
     const before = LANG;
     if (setLanguage(hass) !== before && this._built) {
       // the user switched Home Assistant's language: build the page again in it
-      if (this._bridge) this._bridge.unwatch();
+      if (this._bridge) { this._bridge.unwatch(); this._bridge.cloud.close(); }
       this._built = false;
     }
     if (!this._built) {
@@ -871,7 +879,7 @@ class RustuyaPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
-    if (this._bridge) this._bridge.unwatch();
+    if (this._bridge) { this._bridge.unwatch(); this._bridge.cloud.close(); }
   }
 
   set narrow(narrow) {

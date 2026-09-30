@@ -10,14 +10,15 @@ import sys
 
 from .config import Config
 from .service import AnotherProducer, Service, purge_il
+from .validation import client_id
 
 log = logging.getLogger(__name__)
 
 
 def service_for(config: Config) -> Service:
     return Service(config.settings(),
-                   connect_bridge=lambda: config.bridge.connect("rustuya-local-bridge"),
-                   connect_il=lambda will: config.il.connect("rustuya-local-il", will))
+                   connect_bridge=lambda: config.bridge.connect(client_id("bridge")),
+                   connect_il=lambda will: config.il.connect(client_id("il"), will))
 
 
 async def run(config: Config) -> None:
@@ -39,7 +40,7 @@ async def run(config: Config) -> None:
 async def purge(config: Config) -> None:
     """Take this daemon's devices out of IL for good (run it after stopping the daemon, when retiring it): the retained
     descriptors, values and presence of its IL prefix and source are cleared. The bridge is not touched."""
-    t = await config.il.connect("rustuya-local-purge")
+    t = await config.il.connect(client_id("purge"))
     try:
         ids = await purge_il(t, config.prefix, config.source)
     finally:

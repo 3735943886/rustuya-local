@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tuya2ildevice import BridgeCommand, Hub, IlTopics, preload
+from tuya2ildevice import BridgeCommand, Hub, IlTopics, Publish, preload
 from tuya2ildevice.assemble import HAZARDOUS_COVERS
 from tuya2ildevice.host import (
     DeviceWatcher,
@@ -48,6 +48,7 @@ from tuya2ildevice.host import (
 from tuya2ildevice.host.transport import Transport
 
 from .bridge_client import BridgeClient, payload_text
+from .validation import validate_topics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -141,12 +142,15 @@ class Service:
         "failed"}`; None before the first."""
         self._pack_now = asyncio.Event()
         self._pack_running = False
+        self._retire = False
         self._offline = True                       # what the stop does with the presence (`stop(offline=...)`)
 
     async def start(self, resume: bool = False) -> None:
         """`resume`: this follows a `stop(offline=False)` of the same producer (a restart), so a presence left `online`
         that nobody answers is expected, not a stale Last Will to warn about."""
         s = self.settings
+        validate_topics(s.root, s.prefix, s.source)
+        self._retire = False
         self._offline = True
         # tuya2ildevice reads its data files on first use; here, not in the event loop when the first device arrives
         await asyncio.to_thread(preload)
@@ -174,9 +178,22 @@ class Service:
             # these run after the runner's stop (registered later, so run earlier): `offline` (unless a restart keeps
             # the presence), then the flush that makes sure it reached the broker
             stack.push_async_callback(self._flush_il, f"{will.topic}/flush")
+            stack.push_async_callback(self._retire_topics)
             stack.push_async_callback(self._say_offline, will.topic)
 
             await self._refuse_if_another_producer(will.topic, resume)
+            previous = await _retained(self.il, f"{s.prefix}/#", 0.5, 5.0)
+            old_ids = _owned_ids(previous, s.prefix, s.source)
+
+            def reconcile_previous(wanted: set[str]) -> None:
+                nonlocal previous
+                # Queue tombstones before current descriptors on the same Runner, so an
+                # immediately re-added device cannot be erased by an asynchronous cleanup.
+                self.runner.run([Publish("il", t, "", retain=True, qos=1)
+                                 for t in _device_topics(previous, s.prefix, old_ids - wanted)])
+                previous = {}
+
+            self.bridge_client.on_reconcile = reconcile_previous
             save = self.override_watcher.save_settings if options["device_settings"] else None
             self.runner = Runner(self.hub, self.il, on_bridge_command=self.bridge_client.send_command, on_settings=save)
             self.bridge_client.runner = self.runner
@@ -184,6 +201,7 @@ class Service:
                 self.override_watcher.runner = self.runner
             await self.runner.start()
             stack.push_async_callback(self.runner.stop, False)             # the presence is `_say_offline`'s
+            stack.callback(self.bridge_client.stop)
             await self.bridge_client.start()
             self.bridge_client.sync_devices(s.devices)
 
@@ -241,18 +259,30 @@ class Service:
         self._pack_now.set()
         return True
 
-    async def stop(self, offline: bool = True) -> None:
+    async def stop(self, offline: bool = True, *, successor: Settings | None = None) -> None:
         """Presence goes offline, pending bridge commands are sent, then both transports close. Idempotent.
         `offline=False` is for a restart (`start(resume=True)` follows at once): the presence stays `online` and the
         connection closes cleanly (no Last Will), so il consumers see no gap — every device staying available, where
-        going `unavailable` and back fires whatever follows their state (an event entity looks pressed again)."""
+        going `unavailable` and back fires whatever follows their state (an event entity looks pressed again).
+        `successor` applies the same policy for a restart on this broker: preserve presence for the same prefix/source,
+        or retire the old retained namespace before closing when either changes."""
         stack, self._stack = self._stack, None
         if stack is None:
             return
+        if successor is not None:
+            self._retire = (self.settings.prefix, self.settings.source) != (successor.prefix, successor.source)
+            offline = self._retire
         self._offline = offline
-        if self.bridge_client is not None:
-            await self.bridge_client.drain()
-        await stack.aclose()
+        try:
+            if self.bridge_client is not None:
+                self.bridge_client.stop()
+                await self.bridge_client.drain()
+        finally:
+            await stack.aclose()
+
+    async def _retire_topics(self) -> None:
+        if self._retire:
+            await purge_il(self.il, self.settings.prefix, self.settings.source)
 
     async def _say_offline(self, topic: str) -> None:
         if not self._offline:
@@ -293,6 +323,27 @@ class Service:
         self.bridge_client.sync_devices(records)
 
 
+def _owned_ids(retained: dict, prefix: str, source: str) -> set[str]:
+    ids = set()
+    for topic, payload in retained.items():
+        device_id = topic[len(prefix) + 1:]
+        if "/" in device_id or device_id.startswith("_"):
+            continue
+        try:
+            desc = json.loads(payload)
+        except ValueError:
+            continue
+        if isinstance(desc, dict) and desc.get("source") == source:
+            ids.add(device_id)
+    return ids
+
+
+def _device_topics(retained: dict, prefix: str, ids: set[str]) -> list[str]:
+    descriptors = {f"{prefix}/{i}" for i in ids}
+    return sorted((t for t in retained if t[len(prefix) + 1:].split("/", 1)[0] in ids),
+                  key=lambda t: (t in descriptors, t))
+
+
 async def purge_il(il: Transport, prefix: str, source: str, *, settle: float = 0.5, timeout: float = 5.0) -> list[str]:
     """Take a producer out of IL for good (the integration deleted, not just stopped): every retained topic it left is
     cleared, so IL consumers drop its devices. `stop()` only says `offline`; the descriptors and values stay retained on
@@ -305,21 +356,8 @@ async def purge_il(il: Transport, prefix: str, source: str, *, settle: float = 0
     if await producer_running(il, presence):
         raise AnotherProducer(f"a producer is still running for {presence}; stop it before removing its devices")
     retained = await _retained(il, f"{prefix}/#", settle, timeout)
-    ids = []
-    for topic, payload in retained.items():
-        device_id = topic[len(prefix) + 1:]                  # `<prefix>/#` only brings topics below the prefix
-        if "/" in device_id or device_id.startswith("_"):
-            continue
-        try:
-            desc = json.loads(payload)
-        except ValueError:
-            continue
-        if isinstance(desc, dict) and desc.get("source") == source:
-            ids.append(device_id)
-    descriptors = {f"{prefix}/{i}" for i in ids}
-    clear = [t for t in retained if t[len(prefix) + 1:].split("/", 1)[0] in ids]
-    # values first, each descriptor last (M-11), and the presence once its devices are gone
-    for topic in sorted(clear, key=lambda t: (t in descriptors, t)):
+    ids = _owned_ids(retained, prefix, source)
+    for topic in _device_topics(retained, prefix, ids):
         await il.publish(topic, "", 1, True)
     await il.publish(presence, "", 1, True)
     await _flush(il, f"{presence}/flush", timeout)

@@ -21,6 +21,7 @@ async def chain():
     await runner.start()
     await bridge_client.start(timeout=0.05)
     yield bridge, il, runner, bridge_client
+    bridge_client.stop()
     await runner.stop()
 
 
@@ -169,25 +170,6 @@ async def test_one_status_request_at_a_time_and_once_more_if_asked_meanwhile(cha
     assert advertised(il) == {"a", "b"} and len(status_requests(bridge)) == 2
 
 
-async def test_a_request_whose_reply_is_lost_is_given_up(chain, monkeypatch):
-    import rustuya_local.bridge_client as bc
-
-    bridge, il, runner, bridge_client = chain
-    monkeypatch.setattr(bc, "STATUS_CYCLE_TIMEOUT", 0.05)
-    bridge_client.sync_devices([lamp("a")])             # asks; the reply never comes
-    await settle(runner, bridge_client, bridge, il)
-    await __import__("asyncio").sleep(0.1)
-    await reply(bridge, status_reply(["a"]))            # a late page is not taken for it
-    await settle(runner, bridge_client, bridge, il)
-    assert advertised(il) == set()
-    bridge_client._request_status()                     # a new request goes out instead of waiting forever
-    await settle(runner, bridge_client, bridge, il)
-    assert len(status_requests(bridge)) == 2
-    await reply(bridge, status_reply(["a"]))
-    await settle(runner, bridge_client, bridge, il)
-    assert advertised(il) == {"a"}
-
-
 async def test_commands_take_the_command_templates_form():
     """r5c's templates: a one-DP write is the bare value on `.../set/<id>/<dp>` (pyrustuyabridge.render_command, checked
     against the bridge's own parser), a multi-DP write stays one command, and nothing is left as a literal `{dp}`."""
@@ -247,3 +229,39 @@ async def test_a_restart_republishes_devices_as_they_were_without_a_flap():
         assert gets == ["rustuya/command/get/a/-"]
     finally:
         await runner.stop()
+
+
+async def test_foreign_tail_cannot_replace_a_snapshot(chain):
+    bridge, il, runner, client = chain
+    client.sync_devices([lamp("a"), lamp("b")])
+    await reply(bridge, status_reply(["b"], offset=50, total=51))
+    assert client._registered is None
+    await reply(bridge, status_reply(["a"], has_more=True, total=2))
+    # Duplicate page zero and a tail of a different-sized snapshot are ignored.
+    await reply(bridge, status_reply(["b"], total=1))
+    await reply(bridge, status_reply(["b"], offset=1, total=3))
+    assert client._registered is None
+    await reply(bridge, status_reply(["b"], offset=1, total=2))
+    await settle(runner, client, bridge, il)
+    assert advertised(il) == {"a", "b"}
+    client.stop()
+
+
+async def test_lost_status_retries_without_external_trigger(chain, monkeypatch):
+    import asyncio
+
+    import rustuya_local.bridge_client as bc
+
+    bridge, il, runner, client = chain
+    monkeypatch.setattr(bc, "STATUS_CYCLE_TIMEOUT", 0.02)
+    client.sync_devices([lamp("a")])
+    await asyncio.sleep(0.05)
+    await client.drain()
+    assert len(status_requests(bridge)) >= 2
+    await reply(bridge, status_reply(["a"], total=1))
+    await settle(runner, client, bridge, il)
+    assert advertised(il) == {"a"}
+    client.stop()
+    count = len(status_requests(bridge))
+    await asyncio.sleep(0.05)
+    assert len(status_requests(bridge)) == count

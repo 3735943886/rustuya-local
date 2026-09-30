@@ -15,7 +15,7 @@ that are both in the device file and registered on the bridge: removing a device
 (retained topics cleared) and adding it puts it back, instead of IL advertising the whole cloud list regardless.
 
 `status` replies go to every client on the response topic, whoever asked, and a large fleet comes in pages. Only the
-pages of this client's own request are taken, one request at a time: another client's pages (rustuya-manager, the
+contiguous pages matching the expected offset and total are taken, one request at a time: another client's pages (rustuya-manager, the
 Home Assistant config flow) used to be read as this client's, and a repeated last page then committed as the whole
 list (61 devices read as the 11 of the last page), taking the rest out of IL.
 """
@@ -173,10 +173,30 @@ class BridgeClient(_BridgeFollower):
         self._status_accum: dict[str, Any] | None = None
         self._status_since: float | None = None            # this client's open `status` request: when it went out
         self._status_rerun = False                          # asked for again while one was open: once more when it ends
+        self._status_timer: asyncio.TimerHandle | None = None
+        self._status_offset = 0
+        self._status_total: int | None = None
+        self.on_reconcile = None
         self._devices_updated_at: Any = None
         # the latest thing heard per device, replayed when a device becomes driven after it was already heard
         self._last_conn: dict[str, Connected | Disconnected] = {}
         self._last_state: dict[str, dict] = {}
+
+    def stop(self) -> None:
+        if self._status_timer is not None:
+            self._status_timer.cancel()
+            self._status_timer = None
+        self._status_since = None
+        super().stop()
+
+    def _arm_status_timeout(self) -> None:
+        if self._status_timer is not None:
+            self._status_timer.cancel()
+        self._status_timer = asyncio.get_running_loop().call_later(STATUS_CYCLE_TIMEOUT, self._retry_status)
+
+    def _retry_status(self) -> None:
+        self._status_since = None
+        self._request_status()
 
     def send_command(self, cmd: BridgeCommand) -> None:
         """Bind this to `Runner(..., on_bridge_command=...)`. Synchronous (Hub's output dispatch is sync); the
@@ -220,11 +240,9 @@ class BridgeClient(_BridgeFollower):
     # ---- bridge/config ------------------------------------------------------------------------------
 
     def _config_applied(self, cfg: dict) -> None:
-        updated = cfg.get("devices_updated_at")
-        if updated != self._devices_updated_at:
-            self._devices_updated_at = updated
-            if updated is not None:
-                self._request_status()                      # a bridge >= 0.4 announces registry changes here
+        self._devices_updated_at = cfg.get("devices_updated_at")
+        # Config is replayed after reconnect, even when the timestamp did not change.
+        self._request_status()
 
     def _templates_changed(self) -> None:
         if self._records is not None:
@@ -250,12 +268,16 @@ class BridgeClient(_BridgeFollower):
             self._status_rerun = True                       # one request at a time; its pages would be mixed up
             return
         self._status_since, self._status_rerun, self._status_accum = now, False, None
+        self._status_offset, self._status_total = 0, None
+        self._arm_status_timeout()
         self._spawn(self._publish("status", "bridge", {}))
 
     def _reconcile(self) -> None:
         if self.runner is None or self._records is None or self._registered is None:
             return
         wanted = [rec for did, rec in self._records.items() if did in self._registered]
+        if self.on_reconcile is not None:
+            self.on_reconcile({rec["id"] for rec in wanted})
         self.runner.sync_devices(wanted, seed=self._seed)
 
     def _seed(self, device_id: str) -> list:
@@ -343,14 +365,35 @@ class BridgeClient(_BridgeFollower):
         if self._status_since is None or now - self._status_since >= STATUS_CYCLE_TIMEOUT:
             _LOGGER.debug("status page (offset %s) of another client's request; ignored", offset)
             return
-        self._status_since = now                            # pages are coming: the request is alive
-        returned = parsed.get("returned", len(parsed["devices"]))
-        if offset == 0 or self._status_accum is None:
-            self._status_accum = {}
-        self._status_accum.update(parsed["devices"])
-        if parsed.get("has_more") and returned > 0:
-            self._spawn(self._publish("status", "bridge", {"offset": offset + returned}))
+        # The wire protocol has no request ID. Accept only the expected contiguous page,
+        # and verify a stable total and disjoint IDs before committing a snapshot.
+        devices = parsed["devices"]
+        returned = parsed.get("returned", len(devices))
+        total = parsed.get("device_count")
+        more = parsed.get("has_more", False)
+        if type(offset) is not int or offset != self._status_offset:
             return
+        if (type(returned) is not int or returned != len(devices)
+                or type(more) is not bool or (more and not returned)
+                or (total is not None and (type(total) is not int or total < offset + returned))):
+            return
+        if self._status_accum is None:
+            self._status_accum = {}
+            self._status_total = total
+        if total != self._status_total or self._status_accum.keys() & devices.keys():
+            return
+        if total is not None and more != (offset + returned < total):
+            return
+        self._status_since = now
+        self._status_accum.update(devices)
+        self._status_offset += returned
+        if more:
+            self._arm_status_timeout()
+            self._spawn(self._publish("status", "bridge", {"offset": self._status_offset}))
+            return
+        if self._status_timer is not None:
+            self._status_timer.cancel()
+            self._status_timer = None
         before = self._registered
         self._registered = set(self._status_accum)
         self._status_accum, self._status_since = None, None

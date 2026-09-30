@@ -32,6 +32,8 @@ import weakref
 from pathlib import Path
 from typing import Any
 
+from ..validation import client_id
+
 _LOGGER = logging.getLogger(__name__)
 
 NAME = "rustuya-local"
@@ -83,7 +85,7 @@ class Plugin:
 
         async def connect(will=None):
             from tuya2ildevice.host import MqttTransport
-            t = MqttTransport(bc.host, bc.port, client_id=f"rustuya-local-{kind}", username=bc.username,
+            t = MqttTransport(bc.host, bc.port, client_id=client_id(kind), username=bc.username,
                               password=bc.password, will=will, tls=bool(getattr(bc, "tls", False)))
             await t.connect()
             return t
@@ -95,34 +97,40 @@ class Plugin:
         from ..service import AnotherProducer, Service, wait_event
 
         data = self.ctx.data_dir(NAME)
-        while True:
-            self._restart.clear()
-            try:
-                settings = await asyncio.to_thread(load_settings, data, self.ctx.bridge_client.root,
-                                                   usable(self.ctx.devices()))
-            except (OSError, ValueError, TypeError) as e:
-                self.error = f"settings: {e}"
-                await self.publish_status()
-                await self._restart.wait()
-                continue
-            bridge, il = self._connect("bridge"), self._connect("il")
-            service = Service(settings, connect_bridge=bridge, connect_il=il)
-            try:
-                await service.start()
-            except AnotherProducer as e:
-                self.error = str(e)
-                await self.publish_status()
-                await wait_event(self._restart, RETRY_INTERVAL)
-                continue
-            self.service, self.error = service, None
-            try:
+        try:
+            while True:
+                self._restart.clear()
+                try:
+                    settings = await asyncio.to_thread(load_settings, data, self.ctx.bridge_client.root,
+                                                       usable(self.ctx.devices()))
+                except (OSError, ValueError, TypeError) as e:
+                    # Keep a working service when a settings edit is invalid.
+                    self.error = f"settings: {e}"
+                    await self.publish_status()
+                    await self._restart.wait()
+                    continue
+                resume = False
+                if self.service is not None:
+                    previous, self.service = self.service, None
+                    resume = (previous.settings.prefix, previous.settings.source) == (settings.prefix, settings.source)
+                    await previous.stop(successor=settings)
+                service = Service(settings, connect_bridge=self._connect("bridge"), connect_il=self._connect("il"))
+                try:
+                    await service.start(resume=resume)
+                except AnotherProducer as e:
+                    self.error = str(e)
+                    await self.publish_status()
+                    await wait_event(self._restart, RETRY_INTERVAL)
+                    continue
+                self.service, self.error = service, None
                 while not self._restart.is_set():
                     await self.publish_status()
                     await wait_event(self._restart, STATUS_INTERVAL)
-            finally:
-                service, self.service = self.service, None
+        finally:
+            service, self.service = self.service, None
+            if service is not None:
                 await service.stop()
-                await self.publish_status()
+            await self.publish_status()
 
     async def on_devices(self, records: dict[str, dict]) -> None:
         if self.service is not None:

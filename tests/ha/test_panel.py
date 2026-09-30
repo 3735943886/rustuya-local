@@ -655,3 +655,33 @@ async def test_edit_rejects_invalid_device(hass, loaded, hass_client, monkeypatc
     client = await hass_client()
     assert (await client.patch('/api/rustuya/bridge', json=body)).status == status
     assert manager.commands == []
+
+
+async def test_failed_restart_restores_previous_settings(hass, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"devices_path": "good.json"}, options={CONF_PANEL: True})
+    entry.add_to_hass(hass)
+    monkeypatch.setattr(hass.config_entries, "async_unload", AsyncMock(return_value=True))
+    setup = AsyncMock(side_effect=[False, True])
+    monkeypatch.setattr(hass.config_entries, "async_setup", setup)
+    with pytest.raises(panel.RestartFailed, match="Previous settings restored"):
+        await panel._restart(hass, entry, data={"devices_path": "bad.json"})
+    assert entry.data["devices_path"] == "good.json"
+    assert setup.await_count == 2
+
+
+async def test_settings_remain_editable_after_startup_failure(hass, loaded, hass_client, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    entry, _ = await loaded({CONF_PANEL: True})
+    entry.mock_state(hass, ConfigEntryState.SETUP_ERROR)
+    hass.data[DOMAIN].pop(entry.entry_id)
+    apply = AsyncMock()
+    monkeypatch.setattr(panel, "_apply", apply)
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "il_prefix": "il", "il_source": "tuya"})
+    client = await hass_client()
+    assert (await client.get("/api/rustuya/settings")).status == 200
+    response = await client.put("/api/rustuya/settings", json={"devices_path": "fixed.json"})
+    assert response.status == 200
+    assert apply.await_count == 1

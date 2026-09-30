@@ -46,4 +46,6 @@ def transport(data: dict[str, Any], client_id: str, will: Any = None) -> Any:
 
 def topic_ok(value: str) -> bool:
     """An MQTT topic to publish on: not empty, no wildcards, no empty levels."""
-    return bool(value) and not any(c in value for c in "+#\0") and "" not in value.split("/")
+    from rustuya_local.validation import topic_ok as valid_topic
+
+    return valid_topic(value)

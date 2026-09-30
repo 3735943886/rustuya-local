@@ -29,6 +29,7 @@ from typing import Any
 from tuya2ildevice.host import MqttTransport, load_devices
 
 from .service import Settings
+from .validation import boolean, interval, validate_topics
 
 KEYS = frozenset({"bridge", "il", "devices", "options", "watch_interval", "custom_converters", "pack"})
 OPTIONS = frozenset({"allow_hazardous", "expose_unused", "overrides", "converters", "use_quirks", "device_settings"})
@@ -46,6 +47,14 @@ class Broker:
     def from_dict(cls, data: dict) -> Broker:
         """The broker keys of a `bridge` / `il` block; its other keys (`root`, `prefix`, `source`) are the Config's."""
         names = {f.name for f in fields(cls)}
+        if not isinstance(data.get("host", "localhost"), str) or not data.get("host", "localhost").strip():
+            raise ValueError("broker host must be non-empty text")
+        port = data.get("port", 1883)
+        if type(port) is not int or not 1 <= port <= 65535:
+            raise ValueError("broker port must be an integer between 1 and 65535")
+        for key in ("username", "password"):
+            if data.get(key) is not None and not isinstance(data[key], str):
+                raise ValueError(f"broker {key} must be text or null")
         return cls(**{k: v for k, v in data.items() if k in names})
 
     async def connect(self, client_id: str, will: Any = None) -> MqttTransport:
@@ -79,17 +88,38 @@ class Config:
 
     @classmethod
     def from_dict(cls, data: dict, base: Path | None = None) -> Config:
+        if not isinstance(data, dict):
+            raise ValueError("config must be an object")  # noqa: TRY004 -- configuration errors use ValueError
+        for key in ("bridge", "il", "options"):
+            if key in data and not isinstance(data[key], dict):
+                raise ValueError(f"{key} must be an object")
         if unknown := set(data) - KEYS:
             raise ValueError(f"unknown config keys: {sorted(unknown)}")
         options = dict(data.get("options", {}))
         if bad := set(options) - OPTIONS:
             raise ValueError(f"unknown options: {sorted(bad)}")
         bridge, il = data.get("bridge", {}), data.get("il", {})
+        for key in OPTIONS - {"overrides", "converters"}:
+            if key in options:
+                boolean(options[key], key)
+        for key in ("overrides", "converters"):
+            if key in options and not isinstance(options[key], dict):
+                raise ValueError(f"{key} must be an object")
+        for name, block, extra in (("bridge", bridge, {"root"}), ("il", il, {"prefix", "source"})):
+            if set(block) - {"host", "port", "username", "password"} - extra:
+                raise ValueError(f"unknown {name} keys")
+        validate_topics(bridge.get("root", _DEFAULT.root), il.get("prefix", _DEFAULT.prefix),
+                        il.get("source", _DEFAULT.source))
         devices, devices_path = data.get("devices", []), None
         if isinstance(devices, str):
             devices_path = _resolve(devices, base)
             devices = load_devices(devices_path)
+        if not isinstance(devices, list) or any(not isinstance(r, dict) or not r.get("id") or not r.get("category")
+                                                for r in devices):
+            raise ValueError("devices must be a list of records with id and category")
         converters = data.get("custom_converters")
+        if converters is not None and (not isinstance(converters, str) or not converters):
+            raise ValueError("custom_converters must be a non-empty path or null")
         return cls(
             bridge=Broker.from_dict(bridge),
             il=Broker.from_dict(il),
@@ -99,8 +129,8 @@ class Config:
             devices=list(devices),
             devices_path=devices_path,
             overrides_path=_resolve(converters, base) if converters else None,
-            watch_interval=float(data.get("watch_interval", _DEFAULT.watch_interval)),
-            pack=bool(data.get("pack", True)),
+            watch_interval=interval(data.get("watch_interval", _DEFAULT.watch_interval), "watch_interval"),
+            pack=boolean(data.get("pack", True), "pack"),
             hub_options=options,
         )
 

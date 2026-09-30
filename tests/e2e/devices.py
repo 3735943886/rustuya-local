@@ -42,10 +42,10 @@ def fan_levels(dev_id="fan1"):
             "local_strategy": strat({"1": ("switch", "Boolean"), "3": ("fan_speed_enum", "Enum")})}
 
 
-def status_reply(ids, offset=0, has_more=False):
+def status_reply(ids, offset=0, has_more=False, total=None):
     """What rustuya-bridge answers to `{"action": "status"}`: the devices it holds (a page of them)."""
     return json.dumps({"action": "status", "status": "ok", "devices": {i: {"id": i} for i in ids}, "offset": offset,
-                       "returned": len(ids), "has_more": has_more, "device_count": len(ids)})
+                       "returned": len(ids), "has_more": has_more, **({"device_count": total} if total is not None else {})})
 
 
 GOLDEN = pathlib.Path(__file__).resolve().parents[3] / "tuya2ildevice/tests/golden"      # the sibling checkout

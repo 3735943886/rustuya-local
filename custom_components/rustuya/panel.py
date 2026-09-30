@@ -117,15 +117,22 @@ def _entry_view(handler: Callable[..., Awaitable[web.Response]]) -> Callable[...
         if not request["hass_user"].is_admin:
             return self.json_message("administrators only", HTTPStatus.FORBIDDEN)
         found = _runtime(request.app["hass"])
+        if found is None and self.allow_unloaded:
+            found = next(((entry, None) for entry in request.app["hass"].config_entries.async_entries(DOMAIN)
+                          if entry.disabled_by is None and entry.options.get(CONF_PANEL, False)), None)
         if found is None:
             return self.json_message("the Rustuya panel is off", HTTPStatus.NOT_FOUND)
-        return await handler(self, request, *found, **match)
+        try:
+            return await handler(self, request, *found, **match)
+        except RestartFailed as e:
+            return self.json_message(str(e), HTTPStatus.SERVICE_UNAVAILABLE)
 
     return view
 
 
 class _View(HomeAssistantView):
     requires_auth = True
+    allow_unloaded = False
 
     async def _files(self, request: web.Request, fn: Callable[..., dict[str, Any]], *args: Any,
                      extend: Callable[[dict[str, Any]], dict[str, Any]] | None = None) -> web.Response:
@@ -199,6 +206,7 @@ class OptionsView(_View):
     remote control of hazardous devices, exposing unused data points, the override pack. A change is an options
     update, which reloads the entry as Configure's did."""
 
+    allow_unloaded = True
     url = "/api/rustuya/options"
     name = "api:rustuya:options"
 
@@ -255,6 +263,7 @@ class SettingsView(_View):
     device file, the embedded bridge's state file and log level. A change restarts the integration (`_apply`); a new
     root for an external bridge is checked first, as setup does."""
 
+    allow_unloaded = True
     url = "/api/rustuya/settings"
     name = "api:rustuya:settings"
 
@@ -300,22 +309,43 @@ async def _apply(hass: HomeAssistant, entry: Any, old: dict[str, Any], data: dic
     await _restart(hass, entry, data=data, between=clear)
 
 
+class RestartFailed(RuntimeError):
+    """A settings restart failed; the previous configuration was restored."""
+
+
 async def _restart(hass: HomeAssistant, entry: Any, *, data: dict[str, Any] | None = None,
                    options: dict[str, Any] | None = None, between: Callable[[], Any] | None = None) -> None:
     """Stop the entry, run `between`, store the new data / options, start it again — all awaited, so the panel's save
     answers once the restart is over (the page then reloads onto the restarted entry, not onto one about to go).
     Stopped, the entry has no update listener, so storing does not start a second reload. An options-only restart
     keeps the IL presence online across it (`mark_restart`); new data may move the broker or the IL topics."""
-    if data is None:
-        from . import mark_restart
+    lock = hass.data.setdefault(f"{DOMAIN}_settings_lock", asyncio.Lock())
+    async with lock:
+        old_data, old_options = dict(entry.data), dict(entry.options)
+        if data is None:
+            from . import mark_restart
 
-        mark_restart(hass, entry)
-    await hass.config_entries.async_unload(entry.entry_id)
-    if between is not None:
-        await between()
-    changes = {k: v for k, v in (("data", data), ("options", options)) if v is not None}
-    hass.config_entries.async_update_entry(entry, **changes)
-    await hass.config_entries.async_setup(entry.entry_id)
+            mark_restart(hass, entry)
+        if not await hass.config_entries.async_unload(entry.entry_id):
+            raise RestartFailed("Could not stop the integration; settings were not changed")
+        try:
+            if between is not None:
+                await between()
+            changes = {k: v for k, v in (("data", data), ("options", options)) if v is not None}
+            hass.config_entries.async_update_entry(entry, **changes)
+            if not await hass.config_entries.async_setup(entry.entry_id):
+                raise RestartFailed("The integration could not start with these settings")
+        except Exception as e:
+            # Failed setup leaves SETUP_ERROR/SETUP_RETRY, which cannot be set up
+            # directly. Unload also cancels any scheduled retry with the bad data.
+            await hass.config_entries.async_unload(entry.entry_id)
+            hass.config_entries.async_update_entry(entry, data=old_data, options=old_options)
+            try:
+                restored = await hass.config_entries.async_setup(entry.entry_id)
+            except Exception:  # noqa: BLE001 -- keep the recovery API usable even if rollback startup fails
+                restored = False
+            suffix = "Previous settings restored" if restored else "Previous settings restored, but startup still fails"
+            raise RestartFailed(f"{e}. {suffix}; settings remain editable") from e
 
 
 class PackView(_View):
