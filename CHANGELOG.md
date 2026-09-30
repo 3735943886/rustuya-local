@@ -9,7 +9,11 @@ stable release.
 ## [Unreleased]
 
 ### Changed
-- The panel's Fetch from Tuya Cloud form starts with the saved Tuya login's user code, as the config flow's does.
+- The panel's Fetch from Tuya Cloud opens in a dialog (with its QR code), instead of a box in the bridge card.
+- Its form starts with the saved Tuya login's user code, as the config flow's does.
+
+### Fixed
+- The fetch form hides while a fetch runs (its row's `display: flex` kept it on screen).
 
 ## [0.0.46] — 2026-09-30
 

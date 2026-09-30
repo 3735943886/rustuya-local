@@ -47,10 +47,10 @@ const STYLE = `
   button.primary { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
   button:disabled { opacity: .5; cursor: default; }
   .note { margin-top: 8px; }
-  .cloud { border: 1px solid var(--divider-color); border-radius: 8px; padding: 12px; margin: 12px 0; display: grid; gap: 8px; }
-  .cloud[hidden] { display: none; }
-  .cloud .qr { width: 220px; height: 220px; image-rendering: pixelated; background: #fff; padding: 8px; border-radius: 8px; }
-  .cloud .qr[hidden] { display: none; }
+  .cloud { display: grid; gap: 8px; }
+  .cloud [hidden] { display: none; }                  /* .row's display: flex would otherwise keep a hidden form */
+  .cloud .qr { justify-self: center; width: 220px; height: 220px; image-rendering: pixelated; background: #fff;
+               padding: 8px; border-radius: 8px; }
   .settings { display: grid; gap: 12px; margin-top: 12px; }
   .check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
   .check .muted { font-size: 12px; }
@@ -322,7 +322,7 @@ function store(key, value) {
   } catch (e) { /* private window or blocked storage: the default next time */ }
 }
 
-// ---- fetching the device list from Tuya Cloud (CloudView): a saved login is reused, a QR only without one ---------
+// ---- fetching the device list from Tuya Cloud (CloudView), in a modal: a saved login is reused, a QR only without one
 
 class CloudFetchBox {
   constructor(panel, onDone) {
@@ -335,14 +335,19 @@ class CloudFetchBox {
     this.msg = el("div", { class: "muted" });
     this.qr = el("img", { class: "qr", alt: t("cloud_qr_alt") });
     this.form = el("div", { class: "row" }, this.code, this.startBtn);
-    this.root = el("div", { class: "cloud", hidden: true },
-      el("div", { class: "muted" }, t("cloud_intro")),
-      this.form, this.msg, this.qr, el("div", { class: "row note" }, this.cancelBtn));
+    this.root = el("dialog", {},
+      el("h3", {}, t("fetch_button")),
+      el("div", { class: "cloud" }, el("div", { class: "muted" }, t("cloud_intro")), this.form, this.msg, this.qr),
+      el("div", { class: "foot" }, this.cancelBtn));
+    this.root.addEventListener("cancel", (event) => {    // Escape: a running fetch is cancelled, not left behind
+      event.preventDefault();
+      this.cancel();
+    });
     this.qr.hidden = true;
   }
 
   open() {
-    this.root.hidden = false;
+    if (!this.root.open) this.root.showModal();
     this.form.hidden = false;
     this.msg.textContent = "";
     this.msg.className = "muted";
@@ -413,7 +418,7 @@ class CloudFetchBox {
 
   close() {
     clearTimeout(this.timer);
-    this.root.hidden = true;
+    this.root.close();
     this.qr.hidden = true;
   }
 }
@@ -461,8 +466,7 @@ class BridgeSection {
           el("button", { class: "icon-button", title: t("close_panel"), "aria-label": t("close_panel"),
             onclick: () => panel._hide() }, el("ha-icon", { icon: "mdi:close" })))),
       el("div", { class: "muted" }, t("bridge_intro")),
-      this.cloud.root,
-      this.chips, this.status, this.list, this.dialog);
+      this.chips, this.status, this.list, this.dialog, this.cloud.root);
   }
 
   async load(selection) {
