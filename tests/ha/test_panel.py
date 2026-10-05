@@ -685,3 +685,21 @@ async def test_settings_remain_editable_after_startup_failure(hass, loaded, hass
     response = await client.put("/api/rustuya/settings", json={"devices_path": "fixed.json"})
     assert response.status == 200
     assert apply.await_count == 1
+
+
+async def test_registration_waits_for_registry_refresh_before_closing(hass, loaded, hass_client, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from fake_manager import FakeManager, install
+
+    monkeypatch.setattr(panel.BridgeView, "SETTLE", 0)
+    manager = FakeManager(sync_result=_diff())
+    manager.wait_registry_refresh = AsyncMock()
+    install(monkeypatch, manager)
+    await loaded({CONF_PANEL: True})
+    client = await hass_client()
+    response = await client.post("/api/rustuya/bridge", json={"add": ["sub1", "lamp"]})
+    assert response.status == 200
+    assert (await response.json())["sent"] == 2
+    manager.wait_registry_refresh.assert_awaited_once()
+    assert manager.closed

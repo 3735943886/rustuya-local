@@ -577,6 +577,13 @@ class BridgeView(_View):
             return self.json_message(str(e), HTTPStatus.BAD_REQUEST)
         return await self._session(request, entry, runtime, None, manual=device, editing=True)
 
+    @staticmethod
+    async def _wait_registry_refresh(manager: Any) -> None:
+        # Older manager versions refresh immediately and have no wait method.
+        wait = getattr(manager, "wait_registry_refresh", None)
+        if wait is not None:
+            await wait()
+
     async def _session(self, request: web.Request, entry: Any, runtime: Any,
                        selection: dict[str, list[str]] | None, *, manual: dict[str, str] | None = None,
                        editing: bool = False) -> web.Response:
@@ -606,16 +613,21 @@ class BridgeView(_View):
                                               extra={k: v for k, v in manual.items() if k not in ("id", "name")} or None)
                 sent = 1
                 await asyncio.sleep(self.SETTLE)
+                await self._wait_registry_refresh(manager)
                 diff = await manager.sync()
             if selection is not None:
                 sent = await bridge_sync.apply(manager, diff, selection)      # gateways first, as the flows do
                 if sent:
                     await asyncio.sleep(self.SETTLE)
+                    await self._wait_registry_refresh(manager)
                     diff = await manager.sync()
             state = getattr(manager, "state", None)
             return self.json({"devices": bridge_sync.listing(diff, getattr(state, "bridge", None)), "sent": sent,
                               "cloud_loaded": bool(getattr(state, "cloud", True)),
                               "online": _online(runtime.service)})
+        except TimeoutError:
+            return self.json_message("timed out waiting for the bridge registry refresh",
+                                     HTTPStatus.BAD_GATEWAY)
         except RuntimeError as e:                                  # a publish failed
             return self.json_message(f"could not send the command to the bridge: {e}", HTTPStatus.BAD_GATEWAY)
         finally:

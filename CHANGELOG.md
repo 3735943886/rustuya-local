@@ -8,6 +8,15 @@ stable release.
 
 ## [Unreleased]
 
+## [0.0.49] — 2026-10-05
+
+### Changed
+- Require rustuya-manager 0.2.2 for immediate device state queries after registration and bridge status refreshes debounced by five seconds.
+
+### Fixed
+- Keep panel registration sessions open until the delayed bridge status snapshot completes, including every page, before returning the updated device list.
+- Return a clear gateway error when the bridge registry refresh times out.
+
 ## [0.0.48] — 2026-09-30
 
 ### Fixed
