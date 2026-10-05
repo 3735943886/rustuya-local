@@ -21,7 +21,7 @@ rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il
 ## Daemon
 
 ```
-uv venv && uv pip install -e .        # sibling checkouts: see pyproject.toml's [tool.uv.sources]
+uv venv && uv pip install -e .
 rustuya-local run --config config.json
 ```
 

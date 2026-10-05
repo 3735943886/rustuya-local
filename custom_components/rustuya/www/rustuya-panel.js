@@ -454,7 +454,7 @@ class BridgeSection {
     const sortSelect = el("select", { title: t("sort_title"), onchange: (e) => { this.sort = e.target.value; store("rustuya.sort", this.sort); this.paint(); } },
       el("option", { value: "", disabled: true }, t("sort_title")),
       ...SORTS.map((k) => el("option", { value: k, selected: k === this.sort }, t(`sort_${k}`))));
-    const menu = el("details", { class: "panel-menu" },
+    const menu = this.menu = el("details", { class: "panel-menu" },
       el("summary", { title: t("menu"), "aria-label": t("menu") }, "☰"),
       el("div", { class: "menu-items" }, sortSelect,
         el("button", { onclick: () => this.openManual() }, t("manual_add")), this.fetchBtn, this.refreshBtn));
@@ -465,7 +465,9 @@ class BridgeSection {
       if (event.key === "Escape") { menu.open = false; menu.querySelector("summary").focus(); }
     });
     menu.addEventListener("focusout", (event) => {
-      if (!menu.contains(event.relatedTarget)) menu.open = false;
+      // Safari can blur the summary with relatedTarget=null when tapping a
+      // menu button. Closing here hides that button before its click fires.
+      if (event.relatedTarget && !menu.contains(event.relatedTarget)) menu.open = false;
     });
     this.dialog = el("dialog");
     this.root = el("div", { class: "card" },
@@ -852,6 +854,10 @@ class RustuyaPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
+    this.shadowRoot.addEventListener("pointerdown", (event) => {
+      const menu = this._bridge?.menu;
+      if (menu?.open && !event.composedPath().includes(menu)) menu.open = false;
+    });
     this._files = [];
     this._selected = null;      // the name of the file in the editor, as loaded (null: a new file)
   }

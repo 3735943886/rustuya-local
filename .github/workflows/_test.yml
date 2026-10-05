@@ -3,11 +3,9 @@ name: Test (reusable)
 # Single source of truth for rustuya-local's pre-merge / pre-publish checks. Called from ci.yml
 # on push/PR and as a gate from release.yml, so a commit that fails these can't reach PyPI.
 #
-# rustuya-local depends on sibling repos that are not on PyPI yet (il-ha, rustuya-manager,
-# tuyamock -- see pyproject.toml's [tool.uv.sources]), so this checks them out as siblings under
-# $GITHUB_WORKSPACE and installs with `uv`: `uv` is what resolves [tool.uv.sources]'s local-path
-# overrides, plain `pip install -e ".[test]"` cannot see them and would try (and fail) to fetch
-# "il-ha" from PyPI.
+# il-ha is not on PyPI yet, so check out ildevice-homeassistant and explicitly
+# install that checkout together with rustuya-local's test extras.
+# Other package dependencies are installed from PyPI.
 
 on:
   workflow_call:
@@ -33,26 +31,12 @@ jobs:
         with:
           path: rustuya-local
 
-      # Siblings for the path dependencies in rustuya-local's [tool.uv.sources]. None of the
-      # three is on PyPI yet -- if a checkout here 404s, that sibling repo hasn't been pushed to
-      # GitHub (or renamed/moved) and this needs updating to match.
-      - name: Check out il-ha
+      # The repository publishes its Python package under the name il-ha.
+      - name: Check out ildevice-homeassistant
         uses: actions/checkout@v7
         with:
           repository: 3735943886/ildevice-homeassistant
-          path: il-ha
-
-      - name: Check out rustuya-manager
-        uses: actions/checkout@v7
-        with:
-          repository: 3735943886/rustuya-manager
-          path: rustuya-manager
-
-      - name: Check out tuyamock
-        uses: actions/checkout@v7
-        with:
-          repository: 3735943886/tuyamock
-          path: tuyamock
+          path: ildevice-homeassistant
 
       # tuya2ildevice is on PyPI (installed below via uv), so this isn't for dependency
       # resolution -- it's so tests/e2e/test_full_stack_devices.py can reach its sibling
@@ -96,7 +80,7 @@ jobs:
 
       - name: Install rustuya-local + test extras
         working-directory: rustuya-local
-        run: uv pip install --system -e ".[test,test-ha,fullstack,manager]"
+        run: uv pip install --system -e ../ildevice-homeassistant -e ".[test,test-ha,fullstack,manager]"
 
       - name: ruff
         working-directory: rustuya-local
@@ -107,7 +91,7 @@ jobs:
         run: pytest -q
 
   package:
-    # The test job installs the siblings from checkouts; this one checks what a user gets: the wheel in a fresh
+    # The test job uses an il-ha checkout; this one checks what a user gets: the wheel in a fresh
     # environment, every dependency from PyPI, importing and starting the CLI.
     name: installs from PyPI alone
     runs-on: ubuntu-latest

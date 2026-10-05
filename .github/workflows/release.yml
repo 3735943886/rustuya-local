@@ -96,8 +96,7 @@ jobs:
         run: python -m pip install --upgrade pip build twine
 
       - name: Build sdist + wheel
-        # Building only needs rustuya-local's own checkout: [tool.uv.sources]'s sibling paths are
-        # a uv dev-install convenience, not something `python -m build` resolves or needs.
+        # Building only needs rustuya-local's own checkout; test checkouts are managed by _test.yml.
         run: python -m build --sdist --wheel
 
       - name: Check distribution metadata

@@ -8,6 +8,14 @@ stable release.
 
 ## [Unreleased]
 
+## [0.0.51] — 2026-10-06
+
+### Fixed
+- Keep panel menu buttons visible through Safari focus changes so manual registration and Cloud Fetch can open on iPhone.
+
+### Changed
+- Remove local uv source overrides; GitHub Actions explicitly installs the ildevice-homeassistant checkout for tests and fetches tuyamock and rustuya-manager from PyPI.
+
 ## [0.0.50] — 2026-10-05
 
 ### Fixed
