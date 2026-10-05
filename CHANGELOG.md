@@ -8,6 +8,11 @@ stable release.
 
 ## [Unreleased]
 
+## [0.0.50] — 2026-10-05
+
+### Fixed
+- Require tuya2ildevice 0.3.17 so numeric sensors publish values with their native units. Plug current reported in mA is no longer labeled A, fixing the 1,000-fold error; RAW electricity measurements also retain their native units.
+
 ## [0.0.49] — 2026-10-05
 
 ### Changed
