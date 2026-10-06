@@ -93,7 +93,9 @@ const STYLE = `
                           background: color-mix(in srgb, var(--cat, transparent) 12%, var(--card-background-color)); }
   .devices { display: flex; flex-direction: column; gap: 6px; }
   .dev { border: 1px solid var(--divider-color); border-left: 4px solid var(--cat); border-radius: 8px; padding: 8px 10px;
-         background: color-mix(in srgb, var(--cat) 8%, var(--card-background-color)); cursor: pointer; }
+         background: color-mix(in srgb, var(--cat) 8%, var(--card-background-color)); cursor: pointer;
+         -webkit-user-select: text; user-select: text; }
+  .dev .fields, .dev .reasons { cursor: text; }
   .dev.cat-synced { background: var(--card-background-color); }
   .dev.cat-synced.offline { --cat: #94a3b8; }
   .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-sizing: border-box; }
@@ -645,7 +647,16 @@ class BridgeSection {
     if (d.category !== "missing") acts.append(act(t("act_remove"), "trash-can-outline", "orphan", () => this.one("remove", d)));
     const card = el("div", { class: `dev cat-${d.category}${child ? " child" : ""}${live === "offline" ? " offline" : ""}`,
       title: `${t(`cat_${d.category}`)} · ${s.type}${live ? ` · ${live === "online" ? t("link_online") : t("link_offline")}` : ""}`,
-      onclick: () => { this.expanded.has(d.id) ? this.expanded.delete(d.id) : this.expanded.add(d.id); this.paint(); } },
+      onclick: (e) => {
+        // Selecting text can also fire click. Repainting here would discard
+        // the selection, including selections inside the panel's shadow root.
+        const root = e.currentTarget.getRootNode();
+        const selection = typeof root.getSelection === "function" ? root.getSelection() : window.getSelection();
+        if (selection && !selection.isCollapsed) return;
+        if (e.target.closest(".fields, .reasons")) return;
+        this.expanded.has(d.id) ? this.expanded.delete(d.id) : this.expanded.add(d.id);
+        this.paint();
+      } },
       el("div", { class: "top" }, child ? el("span", { class: "tree" }, "└") : "", el("span", { class: "name" }, name), acts),
       name !== d.id ? el("div", { class: "id" }, d.id) : "");
     const open = this.expanded.has(d.id);
