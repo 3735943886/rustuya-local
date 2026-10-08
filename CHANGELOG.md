@@ -8,6 +8,14 @@ stable release.
 
 ## [Unreleased]
 
+## [0.0.52] — 2026-10-08
+
+### Changed
+- Require tuya2ildevice 0.3.18: delta DP counters can count passive reports and retain their totals across reloads.
+
+### Fixed
+- Preserve text selection when clicking device cards in the bridge panel.
+
 ## [0.0.51] — 2026-10-06
 
 ### Fixed
