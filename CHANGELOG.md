@@ -8,6 +8,11 @@ stable release.
 
 ## [Unreleased]
 
+## [0.0.53] — 2026-10-11
+
+### Fixed
+- Require tuya2ildevice 0.3.19 so delta sensor totals apply the DP scale and publish values in their native units. A raw energy increment of 5 with scale 3 now adds 0.005 kWh.
+
 ## [0.0.52] — 2026-10-08
 
 ### Changed
