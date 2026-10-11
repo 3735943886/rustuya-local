@@ -1,22 +1,17 @@
 name: Release
 
-# Builds + publishes rustuya-local when a `v*` tag is pushed. Routes based on the tag shape:
-#   v0.1.0        -> PyPI      (plain MAJOR.MINOR.PATCH = final release)
-#   v0.1.0rc1     -> TestPyPI  (any PEP 440 pre-release/dev/post suffix)
-#   v0.0.1.dev0   -> TestPyPI
+# Builds + publishes rustuya-local to PyPI when a `v*` tag is pushed:
+#   v0.1.0        -> PyPI, a final release
+#   v0.1.0.dev1   -> PyPI, a pre-release (any PEP 440 pre-release/dev/post suffix): pip and Home Assistant install it
+#                    only when a requirement names a pre-release (the integration's manifest does, to test one)
 #
-# PyPI refuses re-uploads of the same version forever, so the pre-release cycle on TestPyPI is
-# the safety net: tag a pre-release, verify the wheel installs, fix any issues, then tag the
-# plain version for the real index.
+# PyPI refuses re-uploads of the same version forever: a broken pre-release is yanked and the next one tagged.
 #
 # The GitHub Release's notes are the version's section in CHANGELOG.md (scripts/release_notes.py); a
 # plain version without one fails before anything is published.
 #
-# OIDC trusted publishing -- no API tokens stored in repo secrets. One-time setup needed on BOTH
-# registries before the first tag (the trust DBs are separate):
+# OIDC trusted publishing -- no API tokens stored in repo secrets. One-time setup on PyPI:
 #   https://pypi.org/manage/account/publishing/
-#   https://test.pypi.org/manage/account/publishing/
-# Same entry on each:
 #   Project name: rustuya-local
 #   Owner:        3735943886
 #   Repository:   rustuya-local
@@ -69,17 +64,15 @@ jobs:
             exit 1
           fi
 
-      - name: Decide TestPyPI vs PyPI from the tag shape
+      - name: Decide final vs pre-release from the tag shape
         id: target
         run: |
           TAG="${GITHUB_REF_NAME#v}"
+          echo "url=https://upload.pypi.org/legacy/" >> "$GITHUB_OUTPUT"
+          echo "name=PyPI" >> "$GITHUB_OUTPUT"
           if [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "url=https://upload.pypi.org/legacy/" >> "$GITHUB_OUTPUT"
-            echo "name=PyPI" >> "$GITHUB_OUTPUT"
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           else
-            echo "url=https://test.pypi.org/legacy/" >> "$GITHUB_OUTPUT"
-            echo "name=TestPyPI" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
           echo "Target: $TAG -> $(grep '^name=' "$GITHUB_OUTPUT" | tail -1)"

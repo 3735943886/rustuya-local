@@ -4,7 +4,7 @@
     python scripts/release_notes.py VERSION [--prerelease] [--changelog CHANGELOG.md]
 
 A section is everything under `## [VERSION] ...` up to the next `## ` heading. A stable version without a non-empty
-section is an error (exit 1), so the release workflow stops before publishing to PyPI. A pre-release (TestPyPI) falls
+section is an error (exit 1), so the release workflow stops before publishing to PyPI. A pre-release falls
 back to `## [Unreleased]`, where its changes are written until the stable version gets its section.
 """
 

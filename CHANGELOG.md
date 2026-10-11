@@ -8,6 +8,8 @@ stable release.
 
 ## [Unreleased]
 
+## [0.1.0.dev1] — 2026-10-11
+
 ### Changed
 - Require tuya2ildevice 0.4 and pass decoded rule data explicitly to its Sans-I/O Rust driver.
 - Move device registry, IL MQTT mapping, transports, timers and file watchers into `rustuya_local.host` for all three hosts.
