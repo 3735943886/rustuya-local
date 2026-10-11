@@ -20,8 +20,10 @@ from typing import Any
 
 from tuya2ildevice import OverrideError, merge_all
 
-from rustuya_local.host.rules import load_rules_tolerant, upgrade_overrides
+from rustuya_local.host.rules import load_rules_tolerant, rule_files, upgrade_overrides
 
+from ..async_tools import cancel_task, run_in_thread
+from ..files import atomic_write
 from .runner import Runner
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,15 +35,6 @@ class OverrideSet:
     rules: dict | None = None
     overrides: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
-
-
-def _files(path: Path) -> list[Path]:
-    if path.is_file():
-        return [path]
-    if not path.is_dir():
-        return []
-    return sorted(p for p in path.iterdir()
-                  if p.is_file() and p.suffix == ".json" and p.name[0] not in "._")
 
 
 def load_overrides(path: str | Path) -> OverrideSet:
@@ -59,13 +52,15 @@ class OverrideWatcher:
     engine refuses is left out and reported (`load_overrides`); overrides the Hub refuses as a whole (`OverrideError`,
     a bad `base`) are reported and the ones in effect stay."""
 
-    def __init__(self, path: str | Path, runner: Runner, interval: float = 5.0, base: dict | None = None) -> None:
+    def __init__(self, path: str | Path, runner: Runner | None, interval: float = 5.0,
+                 base: dict | None = None) -> None:
         self.path = Path(path)
         self.runner = runner
         self.interval = interval
         self.base = base or {}
         self._stamp: Any = None
         self._task: asyncio.Task | None = None
+        self._lock = asyncio.Lock()
 
     def load(self) -> OverrideSet:
         loaded = load_overrides(self.path)
@@ -82,24 +77,25 @@ class OverrideWatcher:
     async def load_initial(self) -> OverrideSet:
         """Load what is there now, off the event loop, and remember it as applied: pass the result to the Hub you
         create, then `watch()`."""
-        def work() -> OverrideSet:
-            self._stamp = self._stat()
-            return self.load()
-        return await asyncio.to_thread(work)
+        async with self._lock:
+            self._stamp, loaded = await run_in_thread(self._snapshot)
+            return loaded
+
+    def _snapshot(self) -> tuple[Any, OverrideSet]:
+        return self._stat(), self.load()
 
     def watch(self) -> None:
         """Start following the directory from the state last loaded."""
         if self._task is None:
-            self._task = asyncio.ensure_future(self._loop())
+            self._task = asyncio.create_task(self._loop())
 
     async def stop(self) -> None:
-        if self._task:
-            self._task.cancel()
-            self._task = None
+        task, self._task = self._task, None
+        await cancel_task(task)
 
     def _stat(self) -> Any:
         stamp = []
-        for p in _files(self.path):
+        for p in rule_files([self.path]):
             try:
                 st = p.stat()
             except OSError:
@@ -112,8 +108,8 @@ class OverrideWatcher:
         stamp = self._stat()
         if stamp == self._stamp:
             return False
-        self._stamp = stamp
         self._apply(self.load())
+        self._stamp = stamp
         return True
 
     def _apply(self, loaded: OverrideSet) -> None:
@@ -131,18 +127,18 @@ class OverrideWatcher:
         if self.path.is_file() or (self.path.suffix == ".json" and not self.path.is_dir()):
             _LOGGER.warning("overrides are the one file %s: the settings of %s are not saved", self.path, device_id)
             return
-        try:
-            await asyncio.to_thread(self._write_settings, device_id, block)
-        except Exception:
-            _LOGGER.exception("could not save the settings of %s in %s", device_id, self.path / SETTINGS_FILE)
-            return
-        try:
-            def work() -> tuple[Any, OverrideSet]:
-                return self._stat(), self.load()
-            self._stamp, loaded = await asyncio.to_thread(work)
-            self._apply(loaded)
-        except Exception:
-            _LOGGER.exception("could not apply the settings of %s", device_id)
+        async with self._lock:
+            try:
+                await run_in_thread(self._write_settings, device_id, block)
+            except Exception:
+                _LOGGER.exception("could not save the settings of %s in %s", device_id, self.path / SETTINGS_FILE)
+                return
+            try:
+                stamp, loaded = await run_in_thread(self._snapshot)
+                self._apply(loaded)
+                self._stamp = stamp
+            except Exception:
+                _LOGGER.exception("could not apply the settings of %s", device_id)
 
     def _write_settings(self, device_id: str, block: dict) -> None:
         path = self.path / SETTINGS_FILE
@@ -160,17 +156,20 @@ class OverrideWatcher:
             entries[device_id] = block
         else:
             entries.pop(device_id, None)
-        tmp = path.with_name(f".{path.name}.tmp")             # a dot file: never loaded
-        tmp.write_text(json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n", "utf-8")
-        os.replace(tmp, path)
+        atomic_write(path, json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
 
     async def _loop(self) -> None:
         # the file work (stat, read) runs in a worker thread: a host such as Home Assistant
         # must not block its event loop on it; only the reload itself runs on the loop
         while True:
             await asyncio.sleep(self.interval)
-            stamp = await asyncio.to_thread(self._stat)
-            if stamp == self._stamp:
-                continue
-            self._stamp = stamp
-            self._apply(await asyncio.to_thread(self.load))
+            async with self._lock:
+                try:
+                    stamp = await run_in_thread(self._stat)
+                    if stamp == self._stamp:
+                        continue
+                    stamp, loaded = await run_in_thread(self._snapshot)
+                    self._apply(loaded)
+                    self._stamp = stamp
+                except Exception:
+                    _LOGGER.exception("could not reload overrides in %s; will retry", self.path)

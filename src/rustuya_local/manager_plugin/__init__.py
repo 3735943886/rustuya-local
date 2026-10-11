@@ -7,7 +7,7 @@ its documented contract (api_version >= 4). What it takes from the manager:
 - the broker (host, port, credentials, TLS) and the bridge root of the manager's own bridge connection; the service
   opens its own connections with them (the manager's DP bus has no device online/offline, which IL needs);
 - the device list: `ctx.devices()` (the cloud records the manager loaded), followed with `ctx.watch_devices`;
-- `ctx.data_dir("rustuya-local")`: `settings.json` (optional) and `custom_converters/` (user overrides and code
+- `ctx.data_dir("rustuya-local")`: `settings.json` (optional) and `custom_converters/` (user overrides and declarative
   converters, followed live).
 
 `settings.json`, every key optional:

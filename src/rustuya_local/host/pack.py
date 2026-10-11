@@ -26,13 +26,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import re
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..files import atomic_write
 from .overrides import SETTINGS_FILE
 
 _LOGGER = logging.getLogger(__name__)
@@ -85,12 +85,6 @@ def _download(url: str) -> bytes:
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-def _write(path: Path, data: bytes) -> None:
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, path)
 
 
 def fetch_manifest(base_url: str = BASE_URL) -> dict[str, Any]:
@@ -167,7 +161,7 @@ def sync(directory: str | Path, *, base_url: str = BASE_URL, manifest: dict[str,
             if _sha(data) != sha:
                 raise PackError(f"{name}: does not match the manifest's hash")
             _check(name, data)
-            _write(path, data)
+            atomic_write(path, data)
         except (PackError, OSError) as e:
             out.failed.append(str(e) if str(e).startswith(name) else f"{name}: {e}")
             if name in before and current is not None:
@@ -194,7 +188,7 @@ def sync(directory: str | Path, *, base_url: str = BASE_URL, manifest: dict[str,
 
     ledger = json.dumps({"version": 1, "files": dict(sorted(owned.items()))}, indent=2) + "\n"
     if owned or before:
-        _write(directory / LEDGER, ledger.encode())
+        atomic_write(directory / LEDGER, ledger)
     for kind, names in (("added", out.added), ("updated", out.updated), ("removed", out.removed)):
         if names:
             _LOGGER.info("pack: %s %s", kind, ", ".join(names))

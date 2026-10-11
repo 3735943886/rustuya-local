@@ -9,13 +9,12 @@ still an admin surface, since they change how every device is driven.
 
 import hashlib
 import json
-import os
 import re
-import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Annotated, Any
 
+from ..files import atomic_write
 from ..validation import topic_ok
 
 DEFAULTS: dict[str, Any] = {"il": {"prefix": "il", "source": "tuya"},
@@ -28,17 +27,6 @@ _FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.json$")
 
 class Invalid(ValueError):
     pass
-
-
-def _write_atomic(path: Path, text: str) -> None:
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
 
 
 # ---- settings ---------------------------------------------------------------------------------------------------
@@ -80,7 +68,7 @@ def validate_settings(body: Any) -> dict[str, Any]:
 def save_settings(data_dir: Path, body: Any) -> dict[str, Any]:
     settings = validate_settings(body)
     data_dir.mkdir(parents=True, exist_ok=True)
-    _write_atomic(data_dir / SETTINGS_FILE, json.dumps(settings, indent=2) + "\n")
+    atomic_write(data_dir / SETTINGS_FILE, json.dumps(settings, indent=2) + "\n")
     return settings
 
 
@@ -133,7 +121,7 @@ def save_converter(directory: Path, name: str, content: Any) -> dict[str, Any]:
     except ValueError as e:
         raise Invalid(f"not JSON: {e}") from e
     directory.mkdir(parents=True, exist_ok=True)
-    _write_atomic(path, content)
+    atomic_write(path, content)
     return {"name": name, "warnings": check(directory)}
 
 

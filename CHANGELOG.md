@@ -8,6 +8,20 @@ stable release.
 
 ## [Unreleased]
 
+## [0.1.0.dev2] — 2026-10-11
+
+### Fixed
+- Serialize device setting saves and override reloads so simultaneous commands preserve every device's settings,
+  including when a save is cancelled during file work.
+- Release a Hub's native rule pack on service shutdown, failed construction, and failed rule replacement; retain
+  shared packs until their last owner releases them.
+- Remove Runner reconnect callbacks and subscriptions on shutdown or failed startup, and await background cleanup.
+- Retry transient override-loading failures and read watched device files off the event loop.
+
+### Changed
+- Share atomic file replacement across settings, converter files and the override pack, using unique temporary files.
+- Refresh the roadmap and document the cover motion-source selector and position-source settings.
+
 ## [0.1.0.dev1] — 2026-10-11
 
 ### Changed

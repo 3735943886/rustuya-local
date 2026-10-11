@@ -25,6 +25,7 @@ from rustuya_local.host.il import (
     Unschedule,
 )
 
+from ..async_tools import cancel_task
 from .hub import Hub
 from .transport import Message, Transport, Unsubscribe
 
@@ -87,42 +88,54 @@ class Runner:
         self._out: asyncio.Queue = asyncio.Queue()
         self._worker: asyncio.Task | None = None
         self._presence_unsub: Unsubscribe | None = None
+        self._accepting = False
         self._failed: dict[str, dict] = {}         # records sync_devices could not drive, tried again on reload
 
     async def start(self) -> None:
         """Subscribe on the IL side, publish presence and every descriptor (retained)."""
-        self._worker = asyncio.ensure_future(self._publish_loop())
-        for sub in self.hub.subscriptions():
-            self._unsubs.append(await self.il.subscribe(sub.topic, self._on_il, qos=sub.qos))
-        # another producer on the same presence topic (one being replaced, stopping after this one started) publishes
-        # `offline` as it goes, and it is retained over this one's `online`: say `online` again while running
-        self._presence_unsub = await self.il.subscribe(self.hub.il.presence, self._on_presence)
-        self._unsubs.append(await self.il.subscribe(f"{self.hub.il.presence}/probe", self._on_probe))
-        hooks = getattr(self.il, "on_connect", None)
-        if hooks is not None:
-            hooks.append(self._reconnected)
-        self.run(self.hub.start(now=self.clock()))
+        if self._worker is not None:
+            return
+        self._worker = asyncio.create_task(self._publish_loop())
+        self._accepting = True
+        try:
+            for sub in self.hub.subscriptions():
+                self._unsubs.append(await self.il.subscribe(sub.topic, self._on_il, qos=sub.qos))
+            # Answer a replaced producer's offline message while this Runner is active.
+            self._presence_unsub = await self.il.subscribe(self.hub.il.presence, self._on_presence)
+            self._unsubs.append(await self.il.subscribe(f"{self.hub.il.presence}/probe", self._on_probe))
+            hooks = getattr(self.il, "on_connect", None)
+            if hooks is not None:
+                hooks.append(self._reconnected)
+            self.run(self.hub.start(now=self.clock()))
+        except BaseException:
+            await self.stop(offline=False)
+            raise
 
     async def stop(self, offline: bool = True) -> None:
         """Presence goes offline, the queue drains, then subscriptions and timers are released. `offline=False` leaves
         the presence `online` for a host that starts again at once (a restart): il consumers then see no gap."""
         if self._worker is None:                   # not started, or already stopped
             return
+        self._accepting = False
+        hooks = getattr(self.il, "on_connect", None)
+        if hooks is not None and self._reconnected in hooks:
+            hooks.remove(self._reconnected)
         if self._presence_unsub is not None:       # first: this one's own `offline` is not to be answered
             self._presence_unsub()
             self._presence_unsub = None
-        if offline:
-            self.run(self.hub.stop())
-        await self.drain()
         for unsub in self._unsubs:
             unsub()
         self._unsubs = []
-        for handle in self._timers.values():
-            handle.cancel()
-        self._timers.clear()
-        if self._worker:
-            self._worker.cancel()
-            self._worker = None
+        self._cancel_timers()
+        try:
+            if offline:
+                self.run(self.hub.stop())
+            await self.drain()
+        finally:
+            # A settings reload may have scheduled timers while draining.
+            self._cancel_timers()
+            worker, self._worker = self._worker, None
+            await cancel_task(worker)
 
     async def drain(self) -> None:
         while self._tasks:                         # settings being saved: their reload publishes too
@@ -200,7 +213,7 @@ class Runner:
             _LOGGER.exception("could not save the settings of %s", p.device_id)
             return
         if inspect.isawaitable(out):
-            task = asyncio.ensure_future(self._saving(p.device_id, out))
+            task = asyncio.create_task(self._saving(p.device_id, out))
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
 
@@ -214,6 +227,11 @@ class Runner:
     def _cancel(self, device_id: str, name: str) -> None:
         if handle := self._timers.pop((device_id, name), None):
             handle.cancel()
+
+    def _cancel_timers(self) -> None:
+        for handle in self._timers.values():
+            handle.cancel()
+        self._timers.clear()
 
     def _fire(self, device_id: str, name: str) -> None:
         self._timers.pop((device_id, name), None)
@@ -240,13 +258,16 @@ class Runner:
         self._guard(lambda: self.hub.on_bridge_message(self.clock(), device_id, inp, retained))
 
     def _guard(self, produce: Callable[[], list]) -> None:
+        if not self._accepting:
+            return
         try:
             self.run(produce())
         except Exception:  # a bad message must not stop the runner
             _LOGGER.exception("could not handle a message")
 
     def _reconnected(self) -> None:
-        self.run(self.hub.start(now=self.clock()))                 # a Last Will took the presence away; descriptors are retained anyway
+        if self._accepting:
+            self.run(self.hub.start(now=self.clock()))             # restore presence and descriptors after reconnect
 
     async def _publish_loop(self) -> None:
         while True:

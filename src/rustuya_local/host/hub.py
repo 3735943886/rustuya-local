@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+import weakref
 from collections import Counter
 from collections.abc import Sequence
 from typing import Any
@@ -27,6 +28,12 @@ from .rules import upgrade_overrides
 _pack_users: Counter[str] = Counter()
 
 
+def _acquire(rules: dict) -> str:
+    rules_id = register_rules(rules)
+    _pack_users[rules_id] += 1
+    return rules_id
+
+
 def _release(rules_id: str) -> None:
     _pack_users[rules_id] -= 1
     if _pack_users[rules_id] <= 0:
@@ -42,16 +49,27 @@ class Hub:
         self.il = il or IlTopics()
         self._kw = {**driver_kwargs, 'rules': rules if rules is not None else default_rules()}
         self._kw['overrides'] = upgrade_overrides(self._kw.get('overrides'))
-        self._rules_id = register_rules(self._kw['rules'])
-        _pack_users[self._rules_id] += 1
         for device in devices:
             self._check_id(device['id'])
         self._devices = {d['id']: d for d in devices}
-        self.drivers = {i: self._create(d, self._kw) for i, d in self._devices.items()}
+        self.drivers: dict[str, TuyaDriver] = {}
+        self._rules_id = _acquire(self._kw['rules'])
+        self._release_rules = weakref.finalize(self, _release, self._rules_id)
+        try:
+            self.drivers = {i: TuyaDriver(d, **self._kw) for i, d in self._devices.items()}
+        except BaseException:
+            self.close()
+            raise
 
-    @staticmethod
-    def _create(device, options):
-        return TuyaDriver(device, **options)
+    def close(self) -> None:
+        """Release this Hub's drivers and rule pack once; stop() only publishes presence."""
+        self.drivers.clear()
+        self._devices.clear()
+        self._release_rules()
+
+    def _check_open(self) -> None:
+        if not self._release_rules.alive:
+            raise RuntimeError('Hub is closed')
 
     @property
     def records(self) -> dict[str, dict]:
@@ -87,8 +105,9 @@ class Hub:
 
     def set_device(self, device: dict, seed: Sequence[Connected | Disconnected | Message] = (),
                    now: float | None = None) -> list:
+        self._check_open()
         self._check_id(device['id'])
-        new = self._create(device, self._kw)
+        new = TuyaDriver(device, **self._kw)
         old = self.drivers.get(device['id'])
         if not seed and old is not None and old.linked:
             seed = [Connected()]
@@ -110,19 +129,27 @@ class Hub:
                 *self.il.clear(device_id, old.descriptor['props'], descriptor=True)]
 
     def reload(self, overrides: dict | None, *, rules: dict | None = None, now: float | None = None) -> list:
+        self._check_open()
         options = {**self._kw, 'overrides': upgrade_overrides(overrides)}
-        rules_id = self._rules_id
         if rules is not None:
             options['rules'] = rules
-            rules_id = register_rules(rules)
+        rules_id = _acquire(options['rules'])
         try:
-            fresh = {i: self._create(d, options) for i, d in self._devices.items()}
-        except Exception:
-            if not _pack_users[rules_id]:           # refused: a pack nobody took is not kept
-                unregister_rules(rules_id)
+            fresh = {i: TuyaDriver(d, **options) for i, d in self._devices.items()}
+            actions, replacements = self._replacements(fresh, options['rules'], time.time() if now is None else now)
+        except BaseException:
+            _release(rules_id)
             raise
+        self.drivers.update(replacements)
+        self._kw = options
+        self._release_rules()
+        self._rules_id = rules_id
+        self._release_rules = weakref.finalize(self, _release, rules_id)
+        return actions
+
+    def _replacements(self, fresh: dict[str, TuyaDriver], rules: dict,
+                      now: float) -> tuple[list, dict[str, TuyaDriver]]:
         actions = []
-        now = time.time() if now is None else now
         replacements = {}
         for device_id, new in fresh.items():
             old = self.drivers[device_id]
@@ -131,17 +158,11 @@ class Hub:
             seed = [Connected()] if old.linked else []
             if old.synced:
                 seed.append(Message('state', old.dps))
-            actions.extend(self._adopt(old, new, seed, now, rules=options['rules']))
+            actions.extend(self._adopt(old, new, seed, now, rules=rules))
             if old.linked and not old.synced:
                 actions.append(BridgeCommand(device_id, 'get'))
             replacements[device_id] = new
-        self.drivers.update(replacements)
-        self._kw = options
-        if rules_id != self._rules_id:              # every driver was replaced: none uses the old pack now
-            _pack_users[rules_id] += 1
-            _release(self._rules_id)
-            self._rules_id = rules_id
-        return actions
+        return actions, replacements
 
     def subscriptions(self) -> list[Subscribe]:
         return [Subscribe(IL, self.il.set_subscription())]
@@ -150,6 +171,7 @@ class Hub:
         return Publish(IL, self.il.presence, 'online' if online else 'offline', True)
 
     def start(self, now: float | None = None) -> list:
+        self._check_open()
         now = time.time() if now is None else now
         actions = [self.presence(True)]
         for device_id, driver in self.drivers.items():

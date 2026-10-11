@@ -107,6 +107,51 @@ async def test_a_restart_can_leave_the_presence_online(running):
     assert not [p for p in il.published if p[0] == "il/_producer/tuya" and p[1] == "offline"]
 
 
+async def test_stopped_runner_ignores_late_callbacks_and_can_restart():
+    il = InProcessTransport()
+    external_hook = lambda: None
+    il.on_connect = [external_hook]
+    hub = Hub([lamp('lamp1')])
+    runner = Runner(hub, il)
+    try:
+        await runner.start()
+        await runner.start()
+        assert il.on_connect.count(runner._reconnected) == 1
+        await runner.drain()
+        callback = runner._reconnected
+        await runner.stop()
+        assert il.on_connect == [external_hook]
+        callback()
+        runner.on_bridge_message('lamp1', Connected())
+        assert runner._out.empty()
+        await runner.start()
+        await runner.drain()
+        assert il.retained['il/_producer/tuya'].payload == 'online'
+    finally:
+        await runner.stop()
+        hub.close()
+
+
+async def test_failed_runner_start_removes_subscriptions_and_finishes_the_worker():
+    class BrokenTransport(InProcessTransport):
+        async def subscribe(self, topic, callback, qos=1):
+            if self._subs:
+                raise OSError('subscription failed')
+            return await super().subscribe(topic, callback, qos)
+
+    il = BrokenTransport()
+    hub = Hub([])
+    runner = Runner(hub, il)
+    try:
+        with pytest.raises(OSError, match='subscription failed'):
+            await runner.start()
+        assert runner._worker is None and not il._subs
+        assert not runner._accepting and not runner._timers
+        await runner.stop()
+    finally:
+        hub.close()
+
+
 async def test_sync_adds_changes_and_removes_and_clears_before_removing(running):
     il, runner, hub, _ = running
     runner.set_device(lamp("gone"))
@@ -167,6 +212,68 @@ async def test_the_watcher_follows_the_file_and_keeps_devices_when_it_cannot_be_
     assert watcher.check() and set(hub.records) == {"lamp1"}
     path.write_text(json.dumps([lamp("lamp1"), lamp("late")]))
     assert watcher.check() and set(hub.records) == {"lamp1", "late"}
+
+
+async def test_device_watcher_reads_off_the_loop_and_syncs_on_the_loop(tmp_path, monkeypatch):
+    import threading
+
+    from rustuya_local.host import devices
+
+    path = tmp_path / 'devices.json'
+    path.write_text('[]')
+    updated = asyncio.Event()
+    loop_thread = threading.get_ident()
+    load = devices.load_devices
+    received = []
+
+    def checked_load(path):
+        assert threading.get_ident() != loop_thread
+        return load(path)
+
+    class Registry:
+        def sync_devices(self, records):
+            assert threading.get_ident() == loop_thread
+            received.extend(records)
+            updated.set()
+
+    monkeypatch.setattr(devices, 'load_devices', checked_load)
+    watcher = DeviceWatcher(path, Registry(), interval=0.01)
+    watcher.start()
+    try:
+        path.write_text(json.dumps([lamp('new')]))
+        await asyncio.wait_for(updated.wait(), 2)
+        assert received == [lamp('new')]
+    finally:
+        await watcher.stop()
+
+
+async def test_override_watcher_retries_after_a_transient_read_error(tmp_path, monkeypatch, caplog):
+    updated = asyncio.Event()
+
+    class Registry:
+        def reload(self, overrides, *, rules):
+            assert overrides['p']['device']['label'] == 'recovered'
+            updated.set()
+
+    watcher = OverrideWatcher(tmp_path, Registry(), interval=0.01)
+    load = watcher.load
+    failed = False
+
+    def transient_load():
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError('temporarily unreadable')
+        return load()
+
+    monkeypatch.setattr(watcher, 'load', transient_load)
+    watcher.start()
+    try:
+        (tmp_path / '10_user.json').write_text(json.dumps({'overrides': {'p': {'device': {'label': 'recovered'}}}}))
+        await asyncio.wait_for(updated.wait(), 2)
+        assert 'will retry' in caplog.text
+    finally:
+        await watcher.stop()
 
 
 LIT = {"props": {"lit": {"type": "text"}}, "word": "on",

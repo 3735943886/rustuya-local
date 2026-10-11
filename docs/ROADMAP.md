@@ -1,6 +1,16 @@
-# 남은 일 (2026-09-28 기준)
+# 남은 일 (2026-10-11 갱신)
 
-재설계(REDESIGN.md 9장)는 끝났다. 현재 배포: tuya2ildevice 0.3.16, rustuya-local 0.0.45(PyPI, HACS, 매니저 카탈로그 drop-in), rustuya-manager 0.2.1, pyrustuyabridge 0.4.0(PyPI).
+현재 작업 트리는 `rustuya-local 0.1.0.dev2`이며 `tuya2ildevice>=0.4.0.dev3`, `pyrustuyabridge>=0.4`를 요구한다.
+HA 통합과 매니저 플러그인 테스트는 `rustuya-manager>=0.2.2`를 사용한다. 변환은 Sans-I/O Rust 드라이버가 맡고,
+기기 레지스트리·IL MQTT 어댑터·전송·타이머·규칙 파일 로딩은 `rustuya_local.host`로 옮겼다.
+버전별 변경은 [CHANGELOG.md](../CHANGELOG.md)에 기록한다. 이 문서는 실제 배포 서버의 최신 상태를 확인하는 자료가 아니다.
+
+2026-10-11 코드 검토 후 동시 설정 저장을 직렬화하고, Hub 규칙 팩과 Runner 재연결 콜백의 종료 처리를 보강했다.
+파일 원자적 교체와 비동기 작업 종료 처리를 공통화했고, 기기 목록 감시의 파일 읽기를 이벤트 루프 밖으로 옮겼다.
+실기기 검증은 아래 M2에 기록된 범위이며, 이번 코드·자동 테스트 검증으로 완료 처리하지 않는다.
+
+아래 마일스톤의 완료 항목은 2026-09-28까지의 이력이다. 당시 배포 기준은 tuya2ildevice 0.3.16,
+rustuya-local 0.0.45, rustuya-manager 0.2.1, pyrustuyabridge 0.4.0이었다.
 rustuya-homeassistant 는 폐기 안내만 푸시했다(아카이브 안 함). 2026-09-27 에 저장소 이름을 rustuya-homeassistant 로 바꿨다가 같은 날
 되돌렸다(HA 전용이 아니고 이름이 여러 개면 헷갈림): 저장소·PyPI·import·CLI·플러그인 id 모두 `rustuya-local`.
 아래는 그 뒤에 남은 것을 마일스톤 순서로 정리한 것이다. 저장소 표기: **T** tuya2ildevice, **L** rustuya-local, **H** il-ha,

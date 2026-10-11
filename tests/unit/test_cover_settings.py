@@ -1,7 +1,10 @@
 """A cover's settings written through IL are saved by the host (`SaveSettings` -> `OverrideWatcher.save_settings` ->
 `zz_settings.json`), applied at once and kept across restarts."""
+import asyncio
 import json
+import threading
 
+import pytest
 from tuya2ildevice import Command, Connected, Message
 
 from rustuya_local.host import (
@@ -131,4 +134,45 @@ async def test_source_settings_roundtrip_saved_and_restarted(tmp_path):
     assert not [c for c in commands if c.action == "set"]
     await runner.stop()
 
+
+
+
+@pytest.mark.parametrize('cancel_first', [False, True])
+async def test_concurrent_saves_keep_both_devices_even_when_one_is_cancelled(tmp_path, monkeypatch, cancel_first):
+    watcher = OverrideWatcher(tmp_path, None)
+    entered = asyncio.Event()
+    release = threading.Event()
+    second_entered = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    write = watcher._write_settings
+
+    def blocked(device_id, block):
+        if device_id == 'a':
+            loop.call_soon_threadsafe(entered.set)
+            if not release.wait(5):
+                raise TimeoutError('test did not release the first save')
+        else:
+            loop.call_soon_threadsafe(second_entered.set)
+        write(device_id, block)
+
+    monkeypatch.setattr(watcher, '_write_settings', blocked)
+    first = asyncio.create_task(watcher.save_settings('a', {'cover': {'invert_position': True}}))
+    second = None
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        if cancel_first:
+            first.cancel()
+        second = asyncio.create_task(watcher.save_settings('b', {'cover': {'invert_control': True}}))
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(second_entered.wait(), 0.05)
+    finally:
+        release.set()
+        results = await asyncio.gather(first, *([second] if second is not None else []), return_exceptions=True)
+    assert isinstance(results[0], asyncio.CancelledError) if cancel_first else results[0] is None
+    assert results[1] is None
+    assert json.loads((tmp_path / SETTINGS_FILE).read_text())['overrides'] == {
+        'a': {'cover': {'invert_position': True}},
+        'b': {'cover': {'invert_control': True}},
+    }
+    assert list(tmp_path.iterdir()) == [tmp_path / SETTINGS_FILE]
 

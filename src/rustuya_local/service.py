@@ -52,6 +52,7 @@ from rustuya_local.host import (
 from rustuya_local.host.rules import rules
 from rustuya_local.host.transport import Transport
 
+from .async_tools import cancel_task, run_in_thread
 from .bridge_client import BridgeClient, payload_text
 from .validation import validate_topics
 
@@ -178,6 +179,7 @@ class Service:
             options["device_settings"] = s.overrides_dir is not None and options.get("device_settings", True)
             # no devices yet: the bridge client hands the Hub the ones the bridge holds
             self.hub = Hub([], il=IlTopics(s.prefix, s.source), **options)
+            stack.callback(self.hub.close)
             will = self.hub.presence(False)
             self.il = await self._connect_il((will.topic, will.payload, will.qos, will.retain))
             _close_later(stack, self.il)
@@ -205,8 +207,8 @@ class Service:
             self.bridge_client.runner = self.runner
             if self.override_watcher is not None:
                 self.override_watcher.runner = self.runner
-            await self.runner.start()
             stack.push_async_callback(self.runner.stop, False)             # the presence is `_say_offline`'s
+            await self.runner.start()
             stack.callback(self.bridge_client.stop)
             await self.bridge_client.start()
             self.bridge_client.sync_devices(s.devices)
@@ -219,8 +221,8 @@ class Service:
                 self.override_watcher.watch()
                 stack.push_async_callback(self.override_watcher.stop)
             if s.pack and s.overrides_dir is not None:
-                task = asyncio.ensure_future(self._pack_loop(s.overrides_dir))
-                stack.callback(task.cancel)
+                task = asyncio.create_task(self._pack_loop(s.overrides_dir))
+                stack.push_async_callback(cancel_task, task)
                 stack.callback(setattr, self, "_pack_running", False)
             self._stack = stack.pop_all()
         _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s", len(s.devices), s.root)
@@ -247,7 +249,7 @@ class Service:
         while True:
             self._pack_now.clear()
             try:
-                result = await asyncio.to_thread(pack.sync, directory, base_url=url)
+                result = await run_in_thread(pack.sync, directory, base_url=url)
                 self.pack_status = {"at": time.time(), **result.as_dict()}
             except pack.PackError as e:
                 _LOGGER.warning("override pack: %s", e)

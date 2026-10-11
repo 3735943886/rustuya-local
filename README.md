@@ -84,21 +84,26 @@ put there, and leaves a file alone once you edit it.
 
 ### Cover settings
 
-A curtain or blind whose position runs the other way, or that never shows *opening* / *closing*, is fixed from its
-own configuration switches, not a file. Each appears only where it changes something:
+A curtain or blind whose position runs the other way, or whose *opening* / *closing* state is wrong, can be fixed
+from its own configuration switches and motion-source selector. Each appears only where it changes something:
 
-| switch | shown when the cover has | turn it on when |
+| setting | shown when the cover has | use it when |
 |---|---|---|
 | *Invert current position* | a position it reports | fully opened, it shows 0% |
 | *Invert target position* | a target position, separate from the reported one | *Open* closes it |
 | *Invert control* | an open / close command and no target position | *Open* closes it |
-| *Infer motion* (on by default) | a reported position and a target or a command | off: when *opening* / *closing* is wrong |
+| *Use target as current position* | distinct reported and target position sources | the target DP should supply the displayed position |
+| *Motion state source* | a position or control DP, with no custom converter owning the motion state | choose `inferred` for motion inference, `control` for control reports, or `none` to disable motion generation; `control` requires a control DP |
+| *Invert reported motion* | the `control` motion source | the reported *opening* and *closing* meanings are reversed |
 
-With one position data point for both, *Invert current position* turns both. A switch changes nothing on the device:
+With one position data point for both, *Invert current position* turns both. Motion defaults to `inferred` when
+device settings are enabled, unless an override selects another source. A setting changes nothing on the device:
 the setting is saved as the device's block in `zz_settings.json` in the converters directory and applied at once, so it
 survives a restart and can be edited there too. Without a converters directory (a daemon with no
 `custom_converters`) the switches are not offered; `"options": {"device_settings": false}` turns them off.
-A block with the same `cover` keys in your own file or the pack sets a model's starting point; the switches win.
+A block with the same `cover` keys in your own file or the pack sets a model's starting point; the saved settings win.
+Older `cover.infer_motion` and `converters.cover_motion` blocks are upgraded on loading to `cover.state_source`
+(`inferred`, or `none` for `infer_motion: false`) and `cover.settle`; see [migration notes](docs/MIGRATING.md).
 
 In Home Assistant the files can be edited from a sidebar panel: the integration's *Configure* → *Add the Rustuya
 panel to the sidebar* adds it and links to it. The panel is for administrators. It fetches the device list from Tuya Cloud, shows the

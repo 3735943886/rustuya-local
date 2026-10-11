@@ -3,7 +3,7 @@
 // <config>/rustuya_converters and the override pack (the rustuya-manager plugin tab's file API).
 //
 // Home Assistant sets `hass`, `narrow` and `panel` on the element; every call goes through hass.callApi, which carries
-// the user's token. The views are for administrators only (converters run code in Home Assistant's process).
+// the user's token. The views are for administrators only (rule files change how devices are driven).
 
 const ORIGIN = { pack: "origin_pack", pack_edited: "origin_pack_edited" };      // I18N keys
 const PACK_CHANGES = ["added", "updated", "removed", "kept"];                    // a pack sync's lists, in this order

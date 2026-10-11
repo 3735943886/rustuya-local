@@ -1,10 +1,14 @@
 """The host's rule directory is the engine's rule format: the filename order and Rust validation over decoded layers."""
 import copy
+import gc
 import json
+import weakref
 
+import pytest
 from tuya2ildevice import Connected, TuyaDriver, merge_rules
 
 from rustuya_local.host import Hub, OverrideWatcher, load_overrides
+from rustuya_local.host.hub import _pack_users
 from rustuya_local.host.rules import load_rules, rules
 
 DEVICE = {'id': 'd', 'product_id': 'p', 'category': 'kg',
@@ -94,3 +98,73 @@ def test_a_rule_pack_the_hub_moves_off_is_released_once_no_hub_uses_it():
 
 def labelled(label):
     return merge_rules([{'overrides': {'p': {'device': {'label': label}}}}], base=rules())['rules']
+
+
+def test_close_releases_only_the_last_owner_and_is_idempotent():
+    from tuya2ildevice.native import unregister_rules
+
+    pack = labelled('shared close regression')
+    first, second = Hub([DEVICE], rules=pack), Hub([DEVICE], rules=pack)
+    key = first._rules_id
+    try:
+        first.close()
+        first.close()
+        assert _pack_users[key] == 1
+        second.drivers['d'].handle(0, Connected())
+        with pytest.raises(RuntimeError, match='closed'):
+            first.set_device(DEVICE)
+    finally:
+        first.close()
+        second.close()
+    assert key not in _pack_users
+    assert not unregister_rules(key)
+
+
+def test_a_discarded_hub_releases_its_pack():
+    from tuya2ildevice.native import unregister_rules
+
+    hub = Hub([DEVICE], rules=labelled('garbage collection regression'))
+    key, reference = hub._rules_id, weakref.ref(hub)
+    del hub
+    gc.collect()
+    assert reference() is None and key not in _pack_users
+    assert not unregister_rules(key)
+
+
+def test_failed_construction_releases_its_pack():
+    from tuya2ildevice import OverrideError
+    from tuya2ildevice.native import register_rules, unregister_rules
+
+    pack = labelled('failed construction regression')
+    key = register_rules(pack)
+    unregister_rules(key)
+    with pytest.raises(OverrideError):
+        Hub([DEVICE], rules=pack, overrides={'p': {'bogus': True}})
+    assert key not in _pack_users
+    assert not unregister_rules(key)
+
+
+def test_failed_adoption_releases_the_candidate_and_keeps_the_existing_drivers(monkeypatch):
+    from tuya2ildevice.native import register_rules, unregister_rules
+
+    hub = Hub([DEVICE, dict(DEVICE, id='e')], rules=labelled('before failed adoption'))
+    pack = labelled('failed adoption regression')
+    candidate = register_rules(pack)
+    unregister_rules(candidate)
+    old_key, old_drivers = hub._rules_id, dict(hub.drivers)
+    adopt = hub._adopt
+
+    def fail_second(old, new, seed, now, *, rules):
+        if new.descriptor['id'] == 'e':
+            raise RuntimeError('cannot describe replacement')
+        return adopt(old, new, seed, now, rules=rules)
+
+    monkeypatch.setattr(hub, '_adopt', fail_second)
+    try:
+        with pytest.raises(RuntimeError, match='cannot describe replacement'):
+            hub.reload(None, rules=pack)
+        assert hub._rules_id == old_key and hub.drivers == old_drivers
+        hub.drivers['d'].handle(0, Connected())
+        assert candidate not in _pack_users and not unregister_rules(candidate)
+    finally:
+        hub.close()

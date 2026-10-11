@@ -1,6 +1,7 @@
 """`Service`, the assembly every shell runs, on in-memory brokers: devices the bridge holds reach IL, a user overrides
 directory (JSON rule layers and declarative converters) is applied at start and followed, a failed start releases what it
 connected, and stop is idempotent."""
+import asyncio
 import json
 
 import pytest
@@ -39,7 +40,7 @@ async def _answer_status(bus: InProcessTransport, ids):
     async def reply(msg):
         if json.loads(msg.payload).get("action") == "status":
             await bus.publish("rustuya/response/bridge", status_reply(ids), 1, False)
-    await bus.subscribe("rustuya/command", lambda m: __import__("asyncio").ensure_future(reply(m)))
+    await bus.subscribe("rustuya/command", reply)
 
 
 async def settle(service, t):
@@ -70,6 +71,7 @@ async def test_devices_the_bridge_holds_reach_il_and_stop_goes_offline(tmp_path,
     await service.stop()                                                          # idempotent
     assert t.il.retained["il/_producer/tuya"].payload == "offline"
     assert t.closed == ["il", "bridge"]
+    assert not service.hub._release_rules.alive
 
 
 async def test_an_overrides_directory_is_applied_and_followed(tmp_path, monkeypatch):
@@ -164,6 +166,7 @@ async def test_a_failed_start_releases_what_it_connected(tmp_path):
     with pytest.raises(ConnectionRefusedError):
         await service.start()
     assert t.closed == ["bridge"]
+    assert not service.hub._release_rules.alive
     await service.stop()                                          # nothing to stop: no error
 
 
@@ -208,7 +211,7 @@ async def test_the_override_pack_is_synced_in_the_background(tmp_path, monkeypat
     for _ in range(100):
         if service.pack_status:
             break
-        await __import__("asyncio").sleep(0.02)
+        await asyncio.sleep(0.02)
     assert service.pack_status["added"] == ["00_pack_lamp.json"] and (conv / "00_pack_lamp.json").is_file()
     (conv / "00_pack_lamp.json").unlink()
     first, service.pack_status = service.pack_status, None
@@ -216,7 +219,7 @@ async def test_the_override_pack_is_synced_in_the_background(tmp_path, monkeypat
     for _ in range(100):
         if service.pack_status:
             break
-        await __import__("asyncio").sleep(0.02)
+        await asyncio.sleep(0.02)
     assert service.pack_status["added"] == ["00_pack_lamp.json"] and service.pack_status["at"] >= first["at"]
     await service.stop()
     assert not service.sync_pack_now()
@@ -226,7 +229,7 @@ async def test_the_override_pack_is_synced_in_the_background(tmp_path, monkeypat
     for _ in range(100):
         if service.pack_status:
             break
-        await __import__("asyncio").sleep(0.02)
+        await asyncio.sleep(0.02)
     assert "error" in service.pack_status and (conv / "00_pack_lamp.json").is_file()
     await service.stop()
 
@@ -295,12 +298,11 @@ async def test_stop_cleans_up_even_when_command_drain_fails():
         await service.stop()
     assert t.closed == ["il", "bridge"]
     assert t.il.retained["il/_producer/tuya"].payload == "offline"
+    assert not service.hub._release_rules.alive
     await service.stop()
 
 
 async def test_stop_cleans_up_when_cancelled_while_draining():
-    import asyncio
-
     t = Transports()
     await t.bridge.publish("rustuya/bridge/config", "{}", 1, True)
     service = Service(Settings(), connect_bridge=t.connect_bridge, connect_il=t.connect_il)
@@ -320,3 +322,43 @@ async def test_stop_cleans_up_when_cancelled_while_draining():
         await stopping
     assert t.closed == ["il", "bridge"]
     assert t.il.retained["il/_producer/tuya"].payload == "offline"
+    assert not service.hub._release_rules.alive
+
+
+async def test_stop_waits_for_an_override_pack_write_in_progress(tmp_path, monkeypatch):
+    import threading
+
+    from rustuya_local.host import pack
+
+    entered = asyncio.Event()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+    path = tmp_path / 'conv' / '00_pack_test.json'
+
+    def blocked_sync(directory, *, base_url):
+        loop.call_soon_threadsafe(entered.set)
+        if not release.wait(5):
+            raise TimeoutError('test did not release pack sync')
+        directory.mkdir(parents=True, exist_ok=True)
+        path.write_text('{}')
+        return pack.SyncResult(added=[path.name])
+
+    monkeypatch.setattr(pack, 'sync', blocked_sync)
+    t = Transports()
+    await t.bridge.publish('rustuya/bridge/config', '{}', 1, True)
+    service = _service(t, tmp_path, overrides_path=path.parent, pack=True)
+    await service.start()
+    stopping = None
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        stopping = asyncio.create_task(service.stop())
+        await asyncio.sleep(0.05)
+        assert not stopping.done() and not t.closed
+    finally:
+        release.set()
+        if stopping is not None:
+            await stopping
+        else:
+            await service.stop()
+    assert path.read_text() == '{}' and t.closed == ['il', 'bridge']
+    assert not service.sync_pack_now()
