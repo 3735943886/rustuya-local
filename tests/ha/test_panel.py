@@ -27,6 +27,9 @@ class FakeService:
     async def stop(self, offline: bool = True) -> None:
         pass
 
+    async def check_pack(self) -> dict[str, Any]:
+        return {"available": True}
+
     def sync_pack_now(self) -> bool:
         self.syncs.append(1)
         return self.pack_on
@@ -121,6 +124,9 @@ async def test_the_file_api(hass, loaded, hass_client, tmp_path):
     assert (await c.delete("/api/rustuya/converters/10_mine.json")).status == 200
     assert not (tmp_path / "rustuya_converters" / "10_mine.json").exists()
 
+    r = await c.get("/api/rustuya/pack")
+    assert r.status == 200 and await r.json() == {"available": True}
+    assert service.syncs == []
     r = await c.post("/api/rustuya/pack")
     assert (await r.json()) == {"started": True} and service.syncs == [1]
 
@@ -212,6 +218,10 @@ async def test_the_bridge_list_when_it_cannot_be_had(hass, loaded, hass_client, 
     monkeypatch.setattr(manager_session, "available", lambda: False)
     assert (await c.get("/api/rustuya/bridge")).status == 501
 
+    async def open_panel(hass, data, service):
+        return await manager_session.open_for_entry(hass, data)
+
+    monkeypatch.setattr(manager_session, "open_panel_for_entry", open_panel)
     async def busy(**kw):
         raise manager_session.Busy
 
@@ -703,3 +713,43 @@ async def test_registration_waits_for_registry_refresh_before_closing(hass, load
     assert (await response.json())["sent"] == 2
     manager.wait_registry_refresh.assert_awaited_once()
     assert manager.closed
+
+
+async def test_panel_registry_and_commands_use_the_service_without_opening_manager(
+        hass, loaded, hass_client, tmp_path, monkeypatch):
+    import json
+
+    from custom_components.rustuya import manager_session
+
+    _, service = await loaded({CONF_PANEL: True})
+    records = {'gw': {'id': 'gw', 'name': 'Gateway'},
+               'sub': {'id': 'sub', 'name': 'Button', 'cid': 'c1', 'parent_id': 'gw'}}
+    (tmp_path / 'tuyadevices.json').write_text(json.dumps(list(records.values())))
+    refreshes, commands = [], []
+
+    class Client:
+        async def registry(self, *, refresh=False):
+            refreshes.append(refresh)
+            return {id: dict(record) for id, record in records.items()}
+
+        async def publish_command(self, action, *, target_id, **kw):
+            commands.append((action, target_id))
+            if action == 'remove':
+                records.pop(target_id)
+
+    async def forbidden(**kw):
+        raise AssertionError('panel opened a second MQTT manager')
+
+    service.bridge_client = Client()
+    monkeypatch.setattr(manager_session, 'open_manager', forbidden)
+    monkeypatch.setattr(panel.BridgeView, 'SETTLE', 0)
+    c = await hass_client()
+    r = await c.get('/api/rustuya/bridge')
+    assert r.status == 200
+    body = await r.json()
+    assert {d['id'] for d in body['devices'] if d['category'] == 'synced'} == {'gw', 'sub'}
+    assert all(not refresh for refresh in refreshes)
+    r = await c.post('/api/rustuya/bridge', json={'remove': ['gw']})
+    assert r.status == 200
+    assert commands == [('remove', 'gw')] and refreshes.count(True) == 1
+    assert next(d for d in (await r.json())['devices'] if d['id'] == 'gw')['category'] == 'missing'

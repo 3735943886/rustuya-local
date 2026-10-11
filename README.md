@@ -81,9 +81,13 @@ ship with tuya2ildevice and update when that package is upgraded. They are appli
 
 Online updates fetch the latest [builtin rules](https://github.com/3735943886/tuya2ildevice/tree/feat/rust-rule-engine/rules/builtin)
 into `rules/builtin/` inside the overrides directory at start and daily. In the Rustuya panel, use *Update builtin rules*
-to fetch them now or *Automatically update builtin rules* to control automatic updates. The daemon uses `"pack": false`
-to disable online updates; the manager plugin has the same option in its settings. Installed builtin rules remain
-available when online updates are off. Updates only replace or remove files they downloaded, preserving user edits.
+to fetch them now or *Automatically update builtin rules* to control automatic updates. Opening the panel checks for
+updates: with automatic updates on, available changes are installed immediately without a yellow dot. With automatic
+updates off, available changes enable the manual update button with a yellow dot. The button is disabled while checking
+or when the installed rules are current. The daemon uses `"pack": false`
+to disable automatic updates; the manager plugin has the same option in its settings. Installed builtin rules remain
+available when automatic updates are off, and the panel still allows manual updates. Updates only replace or remove
+files they downloaded, preserving user edits.
 
 ### Cover settings
 
@@ -110,9 +114,12 @@ Older `cover.infer_motion` and `converters.cover_motion` blocks are upgraded on 
 
 In Home Assistant the files can be edited from a sidebar panel: the integration's *Configure* → *Add the Rustuya
 panel to the sidebar* adds it and links to it. The panel is for administrators. It fetches the device list from Tuya Cloud, shows the
-bridge's devices against the cloud list as rustuya-manager does (missing, bridge only, mismatch, synced, each a filter you can
+bridge's devices using the running service's complete registry and MQTT connection against the cloud list (missing, bridge only, mismatch, online and offline, each a filter you can
 turn off; sub-devices under their gateway; each device's bridge connection, live while the panel is open) with add /
-update / remove. *Register manually* adds Wi-Fi devices or sub-devices without a cloud login, using the same
+update / remove. Online and offline split devices whose cloud and bridge records match; selecting both shows the
+previous synced view. Sub-devices use their own link state, falling back to their gateway when unavailable; an offline
+gateway makes its sub-devices offline. Unknown state is grouped under offline. A gateway stays visible for context
+when one of its children matches the filters. *Register manually* adds Wi-Fi devices or sub-devices without a cloud login, using the same
 fields as rustuya-manager. Devices absent from the cloud list appear under *Bridge only*; their removal is not
 preselected in bulk sync. The panel lists, edits and deletes user converter files (drop JSON rule files on it to copy them in),
 updates builtin rules on demand, and has the

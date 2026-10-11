@@ -137,6 +137,10 @@ def install(monkeypatch, manager: FakeManager) -> None:
     async def close_manager(m):
         await m.__aexit__(None, None, None)
 
+    async def open_panel_for_entry(hass, data, service):
+        return await manager_session.open_for_entry(hass, data)
+
+    monkeypatch.setattr(manager_session, "open_panel_for_entry", open_panel_for_entry)
     monkeypatch.setattr(manager_session, "open_manager", open_manager)
     monkeypatch.setattr(manager_session, "close_manager", close_manager)
     monkeypatch.setattr(manager_session, "available", lambda: True)

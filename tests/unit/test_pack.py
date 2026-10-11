@@ -135,3 +135,36 @@ def test_the_published_pack_loads(tmp_path):
     r = sync(tmp_path / "d", base_url=PUBLISHED.as_uri() + "/")
     assert not r.failed
     assert not load_overrides(tmp_path / "d").warnings
+
+
+def test_check_is_read_only_and_tracks_add_update_remove(served):
+    src, dest = served
+    src.put("00_pack_a.json", FIX)
+    assert pack.check(dest, base_url=src.url)
+    assert not dest.exists()
+    sync(dest, base_url=src.url)
+    before = {p.name: p.read_bytes() for p in dest.iterdir()}
+    assert not pack.check(dest, base_url=src.url)
+    src.put("00_pack_a.json", FIX + " ")
+    assert pack.check(dest, base_url=src.url)
+    assert {p.name: p.read_bytes() for p in dest.iterdir()} == before
+    src.drop("00_pack_a.json")
+    assert pack.check(dest, base_url=src.url)
+    (dest / "00_pack_a.json").write_text("{}")
+    assert not pack.check(dest, base_url=src.url)
+
+
+def test_check_compares_bundled_rules_and_preserves_user_copies(served, tmp_path):
+    src, dest = served
+    bundled = tmp_path / "bundled"
+    bundled.mkdir()
+    src.put("00_pack_a.json", FIX)
+    (bundled / "00_pack_a.json").write_text(FIX)
+    assert not pack.check(dest, base_url=src.url, bundled=bundled)
+    src.put("00_pack_a.json", FIX + " ")
+    assert pack.check(dest, base_url=src.url, bundled=bundled)
+    dest.mkdir()
+    (dest / "00_pack_a.json").write_text("{}")
+    assert not pack.check(dest, base_url=src.url, bundled=bundled)
+    src.put("00_pack_future.json", FIX, requires=pack.LEVEL + 1)
+    assert not pack.check(dest, base_url=src.url, bundled=bundled)

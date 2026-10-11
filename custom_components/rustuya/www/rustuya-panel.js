@@ -45,6 +45,8 @@ const STYLE = `
   button { font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 6px; cursor: pointer;
            border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); }
   button.primary { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
+  button.update-available::before { content: ""; display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; background: #fbc02d; margin-inline-end: 8px; }
   button:disabled { opacity: .5; cursor: default; }
   .note { margin-top: 8px; }
   .cloud { display: grid; gap: 8px; }
@@ -59,7 +61,7 @@ const STYLE = `
   :host([narrow]) .setting { grid-template-columns: 1fr; }
   :host([narrow]) .setting > .muted { grid-column: 1; }
   /* bridge devices: rustuya-manager's category colors (sky / rose / amber / emerald) */
-  .cat-missing { --cat: #0ea5e9; } .cat-orphan { --cat: #f43f5e; } .cat-mismatch { --cat: #f59e0b; } .cat-synced { --cat: #10b981; }
+  .cat-missing { --cat: #0ea5e9; } .cat-orphan { --cat: #f43f5e; } .cat-mismatch { --cat: #f59e0b; } .cat-synced, .cat-online { --cat: #10b981; } .cat-offline { --cat: #94a3b8; }
   .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .head h2 { margin: 0; }
   .head .end { margin-left: auto; display: flex; gap: 8px; align-items: center; }
@@ -96,7 +98,7 @@ const STYLE = `
          background: color-mix(in srgb, var(--cat) 8%, var(--card-background-color)); cursor: pointer;
          -webkit-user-select: text; user-select: text; }
   .dev .fields, .dev .reasons { cursor: text; }
-  .dev.cat-synced { background: var(--card-background-color); }
+  .dev.cat-online, .dev.cat-offline, .dev.cat-synced { background: var(--card-background-color); }
   .dev.cat-synced.offline { --cat: #94a3b8; }
   .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-sizing: border-box; }
   .dot.online { background: #10b981; }
@@ -150,7 +152,7 @@ const I18N = {
     close_panel: "Close panel",
     menu: "Panel menu", edit_device: "Edit device", edit_hint: "Edit the bridge values. Device ID and type cannot be changed.",
     manual_add: "Register manually", manual_hint: "Register without Tuya Cloud. Leave IP/version blank for automatic detection. ID may be generated from IP or CID and name.",
-    cat_all: "all", cat_missing: "missing", cat_orphan: "Bridge only", cat_mismatch: "mismatch", cat_synced: "synced",
+    cat_all: "all", cat_missing: "missing", cat_orphan: "Bridge only", cat_mismatch: "mismatch", cat_synced: "synced", cat_online: "online", cat_offline: "offline",
     cloud_code: "User code (only for a new login)", cloud_fetch: "Fetch", cancel: "Cancel",
     cloud_qr_alt: "QR code to scan with the Smart Life or Tuya Smart app",
     cloud_intro: "A saved Tuya login is reused. Without one (or when it has expired) a QR code to scan follows; the user code is only needed for that first login (Smart Life → Me → Settings → Account and Security).",
@@ -204,6 +206,8 @@ const I18N = {
     confirm_hide_unsaved: "Unsaved changes in {names} will be lost. Remove the Rustuya panel from the sidebar anyway?",
     and: " and ", not_hidden: "Not hidden: {error}", files_unreadable: "Cannot list the files: {error}",
     no_files: "No files yet. Built-in fixes apply without any.",
+    pack_checking: "Checking for updates…", pack_current: "Builtin rules are up to date.",
+    pack_available: "Builtin rule updates are available.", pack_check_error: "Cannot check for updates: {error}",
     pack_syncing: "Updating…", pack_off: "Online updates are off. Using the installed rules.", pack_never: "Using bundled rules; no online update yet.",
     pack_added: "added", pack_updated: "updated", pack_removed: "removed", pack_kept: "kept",
     pack_failed: "; failed: {list}", pack_error: "Update failed ({error}), {when}", pack_synced: "Updated {when}",
@@ -212,14 +216,14 @@ const I18N = {
     name_first: "Name the file first (*.json)",
     confirm_edit_pack: "{name} comes from the override pack. Once edited it is yours: the pack no longer updates or removes it.",
     saved: "Saved {name}", confirm_delete: "Delete {name}?", deleted: "Deleted {name}", not_deleted: "Not deleted: {error}",
-    pack_is_off: "Builtin rule updates are off", cannot_sync: "Cannot update: {error}", pack_changed: "Builtin rules updated",
+    pack_unavailable: "Builtin rule updater is unavailable", cannot_sync: "Cannot update: {error}", pack_changed: "Builtin rules updated",
   },
   ko: {
     origin_pack: "팩", origin_pack_edited: "팩, 수정됨",
     close_panel: "패널 닫기",
     menu: "패널 메뉴", edit_device: "기기 수정", edit_hint: "브리지에 등록된 값을 수정합니다. 기기 ID와 유형은 변경할 수 없습니다.",
     manual_add: "수동 등록", manual_hint: "클라우드 없이 등록합니다. IP·버전을 비우면 자동 탐색합니다. ID는 IP 또는 CID와 이름으로 자동 생성할 수 있습니다.",
-    cat_all: "전체", cat_missing: "없음", cat_orphan: "브릿지 전용", cat_mismatch: "불일치", cat_synced: "일치",
+    cat_all: "전체", cat_missing: "없음", cat_orphan: "브릿지 전용", cat_mismatch: "불일치", cat_synced: "일치", cat_online: "온라인", cat_offline: "오프라인",
     cloud_code: "사용자 코드 (새 로그인일 때만)", cloud_fetch: "가져오기", cancel: "취소",
     cloud_qr_alt: "Smart Life 또는 Tuya Smart 앱으로 스캔할 QR 코드",
     cloud_intro: "저장된 Tuya 로그인이 있으면 그대로 씁니다. 없거나 만료됐으면 스캔할 QR 코드가 이어서 나옵니다. 사용자 코드는 그 첫 로그인에만 필요합니다(Smart Life → 나 → 설정 → 계정 및 보안).",
@@ -273,6 +277,8 @@ const I18N = {
     confirm_hide_unsaved: "{names}의 저장하지 않은 변경이 사라집니다. 그래도 사이드바에서 Rustuya 패널을 없앨까요?",
     and: ", ", not_hidden: "숨기지 못했습니다: {error}", files_unreadable: "파일 목록을 읽을 수 없습니다: {error}",
     no_files: "아직 파일이 없습니다. 기본 수정은 파일 없이도 적용됩니다.",
+    pack_checking: "업데이트 확인 중…", pack_current: "최신 Builtin 규칙을 사용 중입니다.",
+    pack_available: "Builtin 규칙 업데이트가 있습니다.", pack_check_error: "업데이트 확인 실패: {error}",
     pack_syncing: "업데이트하는 중…", pack_off: "온라인 업데이트가 꺼져 있습니다. 설치된 규칙을 사용합니다.", pack_never: "패키지에 포함된 규칙 사용 중; 아직 온라인 업데이트하지 않았습니다.",
     pack_added: "추가", pack_updated: "갱신", pack_removed: "삭제", pack_kept: "유지",
     pack_failed: "; 실패: {list}", pack_error: "업데이트 실패 ({error}), {when}", pack_synced: "{when}에 업데이트함",
@@ -281,7 +287,7 @@ const I18N = {
     name_first: "먼저 파일 이름을 정하세요 (*.json)",
     confirm_edit_pack: "{name}은(는) 오버라이드 팩의 파일입니다. 수정하면 내 파일이 되어 팩이 더 이상 갱신하거나 지우지 않습니다.",
     saved: "{name} 저장함", confirm_delete: "{name}을(를) 삭제할까요?", deleted: "{name} 삭제함", not_deleted: "삭제하지 못했습니다: {error}",
-    pack_is_off: "Builtin 규칙 업데이트가 꺼져 있습니다", cannot_sync: "업데이트할 수 없습니다: {error}", pack_changed: "Builtin 규칙이 업데이트되었습니다",
+    pack_unavailable: "Builtin 규칙 업데이트를 실행할 수 없습니다", cannot_sync: "업데이트할 수 없습니다: {error}", pack_changed: "Builtin 규칙이 업데이트되었습니다",
   },
 };
 
@@ -302,7 +308,7 @@ function t(key, vars = {}) {
 
 // ---- bridge devices ------------------------------------------------------------------------------------------------
 
-const CATEGORIES = ["missing", "orphan", "mismatch", "synced"];     // rustuya-manager's order and filter tabs
+const CATEGORIES = ["missing", "orphan", "mismatch", "online", "offline"];
 const RANK = Object.fromEntries(CATEGORIES.map((c, i) => [c, i]));
 const SORTS = ["id", "name", "category"];                           // label: t(`sort_${key}`)
 
@@ -441,7 +447,7 @@ class BridgeSection {
     this.links = {};                                      // live from rustuya/subscribe_links while the panel is open
     this.unsub = null;
     const f = stored("rustuya.filters", CATEGORIES);
-    this.filters = new Set(Array.isArray(f) ? f.filter((c) => CATEGORIES.includes(c)) : CATEGORIES);
+    this.filters = new Set(Array.isArray(f) ? f.flatMap((c) => c === "synced" ? ["online", "offline"] : CATEGORIES.includes(c) ? [c] : []) : CATEGORIES);
     const sort = stored("rustuya.sort", "id");
     this.sort = SORTS.includes(sort) ? sort : "id";
     this.expanded = new Set();
@@ -534,14 +540,26 @@ class BridgeSection {
     requestAnimationFrame(() => { this.painting = false; this.paint(); });
   }
 
-  link(id) {
-    if (id in this.links) return this.links[id];
-    if (id in this.online) return { online: this.online[id], code: null, message: "" };
-    return null;
+  link(id, seen = new Set()) {
+    if (seen.has(id)) return null;
+    seen.add(id);
+    const own = this.links[id] || (id in this.online ? { online: this.online[id], code: null, message: "" } : null);
+    const d = (this.devices || []).find((d) => d.id === id);
+    const s = d && (d.bridge || side(d));
+    if (s?.type === "SubDevice" && s.parent_id) {
+      const parent = this.link(s.parent_id, seen);
+      if (parent && !parent.online) return parent;
+      return own || parent;
+    }
+    return own;
+  }
+
+  category(d) {
+    return d.category === "synced" ? (this.link(d.id)?.online ? "online" : "offline") : d.category;
   }
 
   count(cat) {
-    return (this.devices || []).filter((d) => d.category === cat).length;
+    return (this.devices || []).filter((d) => this.category(d) === cat).length;
   }
 
   paint() {
@@ -586,7 +604,7 @@ class BridgeSection {
 
   // Gateways and WiFi devices at the top level with their sub-devices under them; a sub-device whose gateway is in
   // neither list hangs under a placeholder. An entry shows when it or one of its sub-devices passes the filters; a
-  // shown gateway shows all its sub-devices, for context (as in rustuya-manager).
+  // shown gateway shows its children for context, except when filtering synced devices by one link state.
   tree() {
     const byId = new Map(this.devices.map((d) => [d.id, d]));
     const kids = new Map();
@@ -604,7 +622,7 @@ class BridgeSection {
     for (const d of top) kids.delete(d.id);
     for (const [id, list] of kids) if (!byId.has(id)) entries.push({ id, device: null, kids: list });
     const value = (d) => this.sort === "name" ? (side(d).name || "").toLowerCase()
-      : this.sort === "category" ? RANK[d.category] : d.id;
+      : this.sort === "category" ? RANK[this.category(d)] : d.id;
     // a placeholder (a missing gateway) sorts as a missing device, by its id
     const key = (e) => (e.device ? value(e.device) : this.sort === "category" ? RANK.missing : e.id);
     const cmp = (a, b) => {
@@ -613,9 +631,11 @@ class BridgeSection {
     };
     const out = [];
     for (const e of entries) {
-      const shown = e.device ? this.filters.has(e.device.category) : this.filters.has("missing");
-      const passing = e.kids.filter((k) => this.filters.has(k.category));
-      if (shown || passing.length) out.push({ ...e, kids: shown ? e.kids : passing });
+      const shown = e.device ? this.filters.has(this.category(e.device)) : this.filters.has("missing");
+      const passing = e.kids.filter((k) => this.filters.has(this.category(k)));
+      const context = shown && (!e.device || e.device.category !== "synced"
+        || (this.filters.has("online") && this.filters.has("offline")));
+      if (shown || passing.length) out.push({ ...e, kids: context ? e.kids : passing });
     }
     out.sort(cmp);
     for (const e of out) e.kids.sort((a, b) => cmp({ device: a, id: a.id }, { device: b, id: b.id }));
@@ -631,22 +651,23 @@ class BridgeSection {
   card(d, child) {
     const s = side(d);
     const name = nameOf(d) || d.id;
+    const category = this.category(d);
     // the bridge's word on the connection (live while the panel is open, else the service's); none for a missing one
     const ln = d.category === "missing" ? null : this.link(d.id);
     const live = ln ? (ln.online ? "online" : "offline") : null;
     const acts = el("span", { class: "acts" },
       live ? el("span", { class: `dot ${live}`, title: live === "online" ? t("link_online") : t("link_offline") }) : "",
-      el("span", { class: `pill cat-${d.category}` }, t(`cat_${d.category}`)));
+      el("span", { class: `pill cat-${category}` }, t(`cat_${category}`)));
     const act = (label, icon, cat, fn) => el("button", {
       class: `act icon-button cat-${cat}`, title: label, "aria-label": label,
       onclick: (e) => { e.stopPropagation(); fn(); },
     }, el("ha-icon", { icon: `mdi:${icon}` }));
     if (d.category === "missing") acts.append(act(t("act_add"), "plus", "missing", () => this.one("add", d)));
     if (d.category === "mismatch") acts.append(act(t("act_update"), "sync", "mismatch", () => this.one("update", d)));
-    if (d.category !== "missing") acts.append(act(t("edit_device"), "pencil", d.category, () => this.openManual(d)));
+    if (d.category !== "missing") acts.append(act(t("edit_device"), "pencil", category, () => this.openManual(d)));
     if (d.category !== "missing") acts.append(act(t("act_remove"), "trash-can-outline", "orphan", () => this.one("remove", d)));
-    const card = el("div", { class: `dev cat-${d.category}${child ? " child" : ""}${live === "offline" ? " offline" : ""}`,
-      title: `${t(`cat_${d.category}`)} · ${s.type}${live ? ` · ${live === "online" ? t("link_online") : t("link_offline")}` : ""}`,
+    const card = el("div", { class: `dev cat-${category}${child ? " child" : ""}${live === "offline" ? " offline" : ""}`,
+      title: `${t(`cat_${category}`)} · ${s.type}${live ? ` · ${live === "online" ? t("link_online") : t("link_offline")}` : ""}`,
       onclick: (e) => {
         // Selecting text can also fire click. Repainting here would discard
         // the selection, including selections inside the panel's shadow root.
@@ -885,14 +906,14 @@ class RustuyaPanel extends HTMLElement {
     if (!this._built) {
       this._built = true;
       this._build();
-      this._refresh();
+      this._refresh().then(() => this._checkPack());
       this._bridge.load();
       if (this.isConnected) this._bridge.watch();
     }
   }
 
   connectedCallback() {
-    if (this._bridge) this._bridge.watch();
+    if (this._bridge) { this._bridge.watch(); this._refresh().then(() => this._checkPack()); }
   }
 
   disconnectedCallback() {
@@ -929,7 +950,7 @@ class RustuyaPanel extends HTMLElement {
     this._options = new OptionsSection(this);
     this._settings = new SettingsSection(this);
     this._pack = el("div", { class: "muted" }, "…");
-    this._syncBtn = el("button", { onclick: () => this._syncPack() }, t("sync_now"));
+    this._syncBtn = el("button", { disabled: true, onclick: () => this._syncPack() }, t("sync_now"));
     this._list = el("ul", { class: "files" });
     this._warnings = el("div", { class: "warn note" });
     this._name = el("input", { placeholder: "10_mine.json", spellcheck: "false" });
@@ -1087,15 +1108,22 @@ class RustuyaPanel extends HTMLElement {
   }
 
   _paintPack(pack) {
-    this._syncBtn.disabled = this._syncing || !pack || !pack.enabled;
+    this._packState = pack;
+    const check = this._packCheck;
+    const available = !this._checkingPack && check?.available && !check.error;
+    this._syncBtn.disabled = this._syncing || !pack || !available;
+    this._syncBtn.classList.toggle("update-available", !!(pack && !pack.enabled && available && !this._syncing));
     const show = (text, cls = "muted") => {
       this._pack.textContent = text;
       this._pack.className = cls;
     };
     if (this._syncing) return show(t("pack_syncing"));
-    if (!pack || !pack.enabled) return show(t("pack_off"));
+    if (!pack) return show(t("pack_checking"));
+    if (this._checkingPack || !check) return show(t("pack_checking"));
+    if (check.error) return show(t("pack_check_error", { error: check.error }), "warn");
+    if (available) return show(t("pack_available"), pack.enabled ? "muted" : "warn");
     const p = pack.status;
-    if (!p) return show(t("pack_never"));
+    if (!p || (!p.error && !(p.failed || []).length)) return show(t("pack_current"));
     const when = new Date(p.at * 1000).toLocaleString(LANG);
     if (p.error) return show(t("pack_error", { error: p.error, when }), "warn");
     const changes = PACK_CHANGES.filter((k) => p[k] && p[k].length).map((k) => `${t(`pack_${k}`)} ${p[k].join(", ")}`);
@@ -1166,26 +1194,50 @@ class RustuyaPanel extends HTMLElement {
     }
   }
 
+  async _checkPack(autoUpdate = true) {
+    if (this._checkingPack || this._syncing) return;
+    this._checkingPack = true;
+    this._paintPack(this._packState);
+    try {
+      this._packCheck = await this._api("GET", "pack");
+    } catch (e) {
+      this._packCheck = { available: false, error: message(e) };
+    } finally {
+      this._checkingPack = false;
+      this._paintPack(this._packState);
+    }
+    if (autoUpdate && this._packState?.enabled && this._packCheck?.available && !this._packCheck.error) {
+      await this._syncPack();
+    }
+  }
+
   async _syncPack() {
+    if (this._syncBtn.disabled) return;
+    this._syncing = true;
+    this._paintPack(this._packState);
     const before = this._files.length, r0 = await this._refresh();
     const at = r0 && r0.pack && r0.pack.status ? r0.pack.status.at : 0;
     try {
       const r = await this._api("POST", "pack");
       if (!r.started) {
-        this._toast(t("pack_is_off"));
+        this._toast(t("pack_unavailable"));
+        this._syncing = false;
+        this._paintPack(this._packState);
         return;
       }
     } catch (e) {
       this._toast(t("cannot_sync", { error: message(e) }));
+      this._syncing = false;
+      this._paintPack(this._packState);
       return;
     }
-    this._syncing = true;
     for (let i = 0; i < 30; i++) {                                   // up to ~30 s; the result lands in pack.status
       await new Promise((ok) => setTimeout(ok, 1000));
       const r = await this._refresh();
       if (!r || (r.pack && r.pack.status && r.pack.status.at > at)) break;
     }
     this._syncing = false;
+    await this._checkPack(false);
     await this._refresh();
     if (this._files.length !== before) this._toast(t("pack_changed"));
   }

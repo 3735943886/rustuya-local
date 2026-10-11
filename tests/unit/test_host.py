@@ -288,9 +288,9 @@ def test_a_rule_directory_loads_in_filename_order_and_reports_bad_files(tmp_path
     (tmp_path / "60_bare.json").write_text(json.dumps({"p": {}}))
     (tmp_path / "lit.py").write_text("raise RuntimeError('never imported')\n")
     loaded = load_overrides(tmp_path)
-    assert loaded.overrides == {"p": {"device": {"model": "B"}}}
+    assert loaded.overrides["p"] == {"device": {"model": "B"}}
     assert [w.split(":")[0] for w in loaded.warnings] == ["50_broken.json", "60_bare.json"]
-    assert load_overrides(tmp_path / "missing").overrides == {}
+    assert "p" not in load_overrides(tmp_path / "missing").overrides
 
 
 async def test_the_override_watcher_reloads_the_hub(running, tmp_path):

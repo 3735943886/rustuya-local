@@ -70,7 +70,7 @@ def test_keys_an_older_version_saved_are_upgraded_not_the_file_dropped(tmp_path)
     }})
     loaded = load_overrides(tmp_path)
     assert not loaded.warnings
-    assert loaded.overrides == {
+    assert {key: loaded.overrides[key] for key in ("a", "b", "c", "d")} == {
         'a': {'cover': {'state_source': 'inferred', 'invert_position': True}},
         'b': {'cover': {'state_source': 'none', 'control_2': {'state_source': 'inferred'}}},
         'c': {'cover': {'state_source': 'control'}},

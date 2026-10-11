@@ -17,7 +17,7 @@ integration, the rustuya-manager plugin or a daemon) serves them, since every de
 stop the start.
 
 With `pack` on, the override pack (tuya2ildevice's `rules/builtin/`) is copied into the overrides directory in the background at
-start and every `pack_interval` seconds; the directory watcher loads what it brings.
+start and every `pack_interval` seconds; the directory watcher loads what it brings. Manual requests work with `pack` off.
 
 A device's settings (a cover's direction toggles, tuya2ildevice's `device_settings`) are IL properties like any other;
 writing one saves it into the overrides directory (`rustuya_local.host.SETTINGS_FILE`), which the watcher applies at
@@ -115,7 +115,7 @@ class Settings:
     devices_path: Path | None = None           # followed every `watch_interval` s when set (read at start if not)
     overrides_path: Path | None = None         # a custom_converters directory (or one .json), followed likewise
     watch_interval: float = 5.0
-    pack: bool = False                         # sync tuya2ildevice's override pack into `overrides_path` (a directory)
+    pack: bool = False                         # automatically sync rules; manual sync remains available
     pack_interval: float = 86400.0
     pack_url: str | None = None                # the pack's base URL; tuya2ildevice's `master` when None
     hub_options: dict[str, Any] = field(default_factory=dict)
@@ -220,7 +220,9 @@ class Service:
             if self.override_watcher is not None and s.watch_interval > 0:
                 self.override_watcher.watch()
                 stack.push_async_callback(self.override_watcher.stop)
-            if s.pack and s.overrides_dir is not None:
+            if s.overrides_dir is not None:
+                self._pack_now.clear()
+                self._pack_running = True
                 task = asyncio.create_task(self._pack_loop(s.overrides_dir))
                 stack.push_async_callback(cancel_task, task)
                 stack.callback(setattr, self, "_pack_running", False)
@@ -247,6 +249,8 @@ class Service:
         url = self.settings.pack_url or pack.BASE_URL
         self._pack_running = True
         while True:
+            if not self.settings.pack:
+                await self._pack_now.wait()
             self._pack_now.clear()
             try:
                 # Retire unedited files owned by the old flat pack, preserving user files.
@@ -262,10 +266,27 @@ class Service:
             except Exception as e:
                 _LOGGER.exception("override pack")
                 self.pack_status = {"at": time.time(), "error": f"{type(e).__name__}: {e}"}
-            await wait_event(self._pack_now, self.settings.pack_interval)
+            if self.settings.pack:
+                await wait_event(self._pack_now, self.settings.pack_interval)
+
+    async def check_pack(self) -> dict[str, Any]:
+        """Read-only check of remote rules against downloaded and bundled rules."""
+        from rustuya_local.host import pack
+        from rustuya_local.host.rules import rule_paths
+
+        directory = self.settings.overrides_dir
+        if directory is None:
+            return {"available": False}
+        try:
+            available = await run_in_thread(
+                pack.check, directory / 'rules' / 'builtin',
+                base_url=self.settings.pack_url or pack.BASE_URL, bundled=rule_paths()[0])
+            return {"available": available}
+        except (pack.PackError, OSError) as e:
+            return {"available": False, "error": str(e)}
 
     def sync_pack_now(self) -> bool:
-        """Run the pack sync now instead of at the end of its interval; False when the pack is off (nothing runs).
+        """Request a sync independently of automatic updates; False when no sync worker is running.
         `pack_status` changes once it is done."""
         if not self._pack_running:
             return False

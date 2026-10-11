@@ -349,10 +349,14 @@ async def _restart(hass: HomeAssistant, entry: Any, *, data: dict[str, Any] | No
 
 
 class PackView(_View):
-    """POST: sync the override pack now rather than at the end of its day; `pack` in the list shows the result."""
+    """GET checks for updates without writes; POST requests a sync."""
 
     url = "/api/rustuya/pack"
     name = "api:rustuya:pack"
+
+    @_entry_view
+    async def get(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
+        return self.json(await runtime.service.check_pack())
 
     @_entry_view
     async def post(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
@@ -536,8 +540,8 @@ def _manual_device(body: Any) -> dict[str, str]:
 
 
 class BridgeView(_View):
-    """The cloud list against what the bridge holds, through a rustuya-manager session like the options flow's
-    `bridge_sync` step (and sharing its lock: one session at a time). GET: every device with its category. POST
+    """The cloud list against the running service's complete bridge registry, sharing the management session lock.
+    GET: every device with its category. POST
     `{"add": [...], "update": [...], "remove": [...]}`: those commands (only for ids the diff has in that category),
     then the list again. PATCH edits an existing device; PUT registers a manual device (id/name, WiFi key/ip/version or SubDevice cid/parent_id).
     `online` is the running service's link state by id."""
@@ -592,7 +596,7 @@ class BridgeView(_View):
         if not manager_session.available():
             return self.json_message("rustuya-manager is not installed", HTTPStatus.NOT_IMPLEMENTED)
         try:
-            manager = await manager_session.open_for_entry(request.app["hass"], entry.data)
+            manager = await manager_session.open_panel_for_entry(request.app["hass"], entry.data, runtime.service)
         except manager_session.Busy:
             return self.json_message("a Tuya login or device sync window is open; close it and try again",
                                      HTTPStatus.CONFLICT)

@@ -136,6 +136,29 @@ def _wanted(doc: dict[str, Any]) -> dict[str, str]:
     return out
 
 
+def check(directory: str | Path, *, base_url: str = BASE_URL,
+          bundled: str | Path | None = None) -> bool:
+    """Check for applicable changes without downloading rule files or writing anything.
+
+    Bundled rules are already installed; user-owned copies are preserved just as in sync().
+    """
+    directory = Path(directory)
+    wanted = _wanted(fetch_manifest(base_url))
+    before = read_ledger(directory)
+    for name, sha in wanted.items():
+        path = directory / name
+        current = _sha(path.read_bytes()) if path.is_file() else None
+        if current == sha or (current is not None and before.get(name) != current):
+            continue
+        if current is None and bundled is not None:
+            installed = Path(bundled) / name
+            if installed.is_file() and _sha(installed.read_bytes()) == sha:
+                continue
+        return True
+    return any(name not in wanted and (directory / name).is_file()
+               and _sha((directory / name).read_bytes()) == sha for name, sha in before.items())
+
+
 def sync(directory: str | Path, *, base_url: str = BASE_URL, manifest: dict[str, Any] | None = None) -> SyncResult:
     """Make the pack files in `directory` those of the manifest (fetched from `base_url` unless given). Raises
     `PackError` only when the manifest cannot be had; a bad file is reported in the result and the rest go on."""

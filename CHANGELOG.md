@@ -8,6 +8,17 @@ stable release.
 
 ## [Unreleased]
 
+## [0.1.0.dev5] — 2026-10-11
+
+### Fixed
+- Share the running service's complete bridge registry and MQTT command connection with the panel, so panel listing and edits do not open a second registry requester. Require complete contiguous registry pages for standalone setup sessions.
+- Keep explicit offline connection errors from being overwritten by replayed device state snapshots in the panel.
+
+### Changed
+- Split the HA panel synced filter into online and offline, with live sub-device/gateway state and migration of saved filters.
+- Check builtin rules when opening the HA panel; automatically install available updates when enabled, or enable the manual update button with a yellow dot when automatic updates are off.
+- Allow manual builtin rule updates while automatic updates are disabled.
+
 ## [0.1.0.dev4] — 2026-10-11
 
 ### Fixed

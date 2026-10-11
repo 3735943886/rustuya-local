@@ -214,15 +214,19 @@ async def test_the_override_pack_is_synced_in_the_background(tmp_path, monkeypat
         {"name": "00_pack_lamp.json", "sha256": hashlib.sha256(fix.encode()).hexdigest()}]}))
     t = Transports()
     service = _service(t, tmp_path, overrides_path=conv, pack=True, pack_url=served.as_uri() + "/")
+    assert await service.check_pack() == {"available": True}
+    assert not (conv / "rules").exists() and service.pack_status is None
     await service.start()
     for _ in range(100):
         if service.pack_status:
             break
         await asyncio.sleep(0.02)
     assert service.pack_status["added"] == ["00_pack_lamp.json"] and (conv / "rules" / "builtin" / "00_pack_lamp.json").is_file()
+    assert await service.check_pack() == {"available": False}
     assert not (conv / '00_pack_old.json').exists()
     assert (conv / '00_pack_edited.json').read_text() == '{"overrides": {}}'
     (conv / "rules" / "builtin" / "00_pack_lamp.json").unlink()
+    assert await service.check_pack() == {"available": True}
     first, service.pack_status = service.pack_status, None
     assert service.sync_pack_now()                                      # not a day later: now
     for _ in range(100):
@@ -372,4 +376,40 @@ async def test_stop_waits_for_an_override_pack_write_in_progress(tmp_path, monke
         else:
             await service.stop()
     assert path.read_text() == '{}' and t.closed == ['il', 'bridge']
+    assert not service.sync_pack_now()
+
+
+async def test_manual_pack_updates_work_without_automatic_updates(tmp_path, monkeypatch):
+    from rustuya_local.host import pack
+
+    calls = []
+
+    def sync(directory, *, base_url=pack.BASE_URL, manifest=None):
+        if manifest is None:
+            calls.append(directory)
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / '00_pack_manual.json').write_text('{}')
+        return pack.SyncResult()
+
+    monkeypatch.setattr(pack, 'sync', sync)
+    t = Transports()
+    await t.bridge.publish('rustuya/bridge/config', '{}', 1, True)
+    service = _service(t, tmp_path, overrides_path=tmp_path / 'conv', pack=False, pack_interval=0.01)
+    assert not service.sync_pack_now()
+    await service.start()
+    try:
+        await asyncio.sleep(0.05)
+        assert calls == [] and service.pack_status is None
+        for count in (1, 2):
+            service.pack_status = None
+            assert service.sync_pack_now()
+            async with asyncio.timeout(2):
+                while service.pack_status is None:
+                    await asyncio.sleep(0.01)
+            assert len(calls) == count
+            assert (tmp_path / 'conv/rules/builtin/00_pack_manual.json').read_text() == '{}'
+            await asyncio.sleep(0.05)
+            assert len(calls) == count
+    finally:
+        await service.stop()
     assert not service.sync_pack_now()

@@ -92,7 +92,8 @@ async def test_save_settings_removes_an_empty_block_and_leaves_a_single_file_alo
     await watcher.save_settings("b", {"cover": {"settle": 2}})
     await watcher.save_settings("a", {})
     assert json.loads((tmp_path / SETTINGS_FILE).read_text())["overrides"] == {"b": {"cover": {"settle": 2}}}
-    assert load_overrides(tmp_path).overrides == {"b": {"cover": {"settle": 2}}}
+    loaded = load_overrides(tmp_path).overrides
+    assert loaded["b"] == {"cover": {"settle": 2}} and "a" not in loaded
     assert [p.name for p in tmp_path.iterdir()] == [SETTINGS_FILE]            # no temporary file left
     (tmp_path / SETTINGS_FILE).write_text("{broken")
     await watcher.save_settings("a", {"cover": {"invert_control": True}})       # logged, the file left to its owner

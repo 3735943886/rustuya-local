@@ -264,3 +264,73 @@ async def test_lost_status_retries_without_external_trigger(chain, monkeypatch):
     count = len(status_requests(bridge))
     await asyncio.sleep(0.05)
     assert len(status_requests(bridge)) == count
+
+
+async def test_shared_registry_waits_for_full_pages_and_coalesces_refreshes(chain):
+    import asyncio
+
+    bridge, il, runner, client = chain
+    client.sync_devices([])
+    first = asyncio.create_task(client.registry())
+    second = asyncio.create_task(client.registry())
+    await reply(bridge, status_reply(['a'], offset=0, has_more=True, total=2))
+    await settle(runner, client, bridge, il)
+    assert not first.done() and not second.done()
+    assert len(status_requests(bridge)) == 2  # one first-page request and its next page
+    await reply(bridge, status_reply(['b'], offset=1, total=2))
+    await settle(runner, client, bridge, il)
+    assert set(await first) == set(await second) == {'a', 'b'}
+    first = asyncio.create_task(client.registry(refresh=True))
+    second = asyncio.create_task(client.registry(refresh=True))
+    await asyncio.sleep(0)
+    await settle(runner, client, bridge, il)
+    assert len(status_requests(bridge)) == 3
+    await reply(bridge, status_reply(['a']))
+    await settle(runner, client, bridge, il)
+    assert not first.done() and not second.done()  # queued refresh still in flight
+    assert len(status_requests(bridge)) == 4
+    await reply(bridge, status_reply([]))
+    await settle(runner, client, bridge, il)
+    assert await first == await second == {}
+
+
+async def test_panel_uses_service_registry_and_transport_without_a_manager_connection(chain, tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+
+    from custom_components.rustuya.panel_bridge import PanelBridge
+
+    bridge, il, runner, client = chain
+    client.sync_devices([])
+    path = tmp_path / 'devices.json'
+    path.write_text(json.dumps([{'id': 'a', 'name': 'N/A'}, {'id': 'sub', 'cid': 'c1', 'parent_id': 'a'}]))
+
+    class Hass:
+        async def async_add_executor_job(self, fn):
+            return await asyncio.to_thread(fn)
+
+    panel = PanelBridge(Hass(), SimpleNamespace(bridge_client=client), str(path))
+    ready = asyncio.create_task(panel.ready())
+    snapshot = json.loads(status_reply(['a', 'sub']))
+    snapshot['devices']['sub'].update(cid='c1', parent_id='a')
+    snapshot['devices']['sub'].pop('ip', None)
+    await reply(bridge, json.dumps(snapshot))
+    await settle(runner, client, bridge, il)
+    await ready
+    asked = len(status_requests(bridge))
+    diff = await panel.sync()
+    assert {d.id for d in diff.synced} == {'a', 'sub'}
+    assert len(status_requests(bridge)) == asked
+    await panel.publish_command('add', target_id='new', target_name='New', extra={'cid': 'c2', 'parent_id': 'a'})
+    assert json.loads(bridge.published[-1][1]) == {
+        'action': 'add', 'id': 'new', 'name': 'New', 'cid': 'c2', 'parent_id': 'a'}
+    await panel.remove_device('a')
+    refresh = asyncio.create_task(panel.wait_registry_refresh())
+    await asyncio.sleep(0)
+    await settle(runner, client, bridge, il)
+    await reply(bridge, status_reply(['sub', 'new']))
+    await settle(runner, client, bridge, il)
+    await refresh
+    diff = await panel.sync()
+    assert [d.id for d in diff.missing] == ['a']
+    assert [d.id for d in diff.orphaned] == ['new']

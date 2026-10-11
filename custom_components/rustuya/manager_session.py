@@ -68,7 +68,9 @@ async def open_manager(*, broker: str, root: str, devices_path: str, username: s
         # `sync()`'s diff is only meaningful once the bridge's device list has arrived; without this every cloud
         # device looks "missing" (an empty bridge side), which is how a whole device list ended up offered for
         # registration.
-        await manager.wait_ready()
+        from .manager_registry import ready_registry
+
+        await ready_registry(manager, WAIT)
     except BaseException:
         await close_manager(manager)
         raise
@@ -105,6 +107,26 @@ async def open_for_entry(hass: Any, data: dict[str, Any], *, run_bridge: bool = 
     username, password = broker.credentials(data)
     return await open_manager(broker=broker.url(data), root=data[CONF_BRIDGE_ROOT],
                               devices_path=data[CONF_DEVICES_PATH], username=username, password=password, **bridge)
+
+
+async def open_panel_for_entry(hass: Any, data: dict[str, Any], service: Any):
+    """Share the loaded service's registry and command transport; no Manager MQTT connection."""
+    from .const import CONF_DEVICES_PATH
+    from .panel_bridge import PanelBridge
+
+    lock = _lock()
+    try:
+        await asyncio.wait_for(lock.acquire(), WAIT)
+    except TimeoutError as e:
+        raise Busy from e
+    session = PanelBridge(hass, service, data[CONF_DEVICES_PATH])
+    _HOLDERS[session] = lock
+    try:
+        await session.ready()
+    except BaseException:
+        await close_manager(session)
+        raise
+    return session
 
 
 async def saved_user_code(hass: Any, data: dict[str, Any]) -> str | None:

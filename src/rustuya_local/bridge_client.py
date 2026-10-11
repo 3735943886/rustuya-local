@@ -177,6 +177,8 @@ class BridgeClient(_BridgeFollower):
         self._status_timer: asyncio.TimerHandle | None = None
         self._status_offset = 0
         self._status_total: int | None = None
+        self._registry: dict[str, dict[str, Any]] | None = None
+        self._registry_ready = asyncio.Event()
         self.on_reconcile = None
         self._devices_updated_at: Any = None
         # the latest thing heard per device, replayed when a device becomes driven after it was already heard
@@ -184,6 +186,7 @@ class BridgeClient(_BridgeFollower):
         self._last_state: dict[str, dict] = {}
 
     def stop(self) -> None:
+        self._registry_ready.clear()
         if self._status_timer is not None:
             self._status_timer.cancel()
             self._status_timer = None
@@ -212,8 +215,24 @@ class BridgeClient(_BridgeFollower):
     async def _send_command(self, cmd: BridgeCommand) -> None:
         await self._publish(cmd.action, cmd.device_id, {"dps": cmd.dps} if cmd.dps is not None else {})
 
-    async def _publish(self, action: str, device_id: str, extra: dict[str, Any]) -> None:
+    async def registry(self, *, refresh: bool = False, timeout: float = 15.0) -> dict[str, dict[str, Any]]:
+        """Share this service's complete snapshot; coalesce refreshes with its own status cycle."""
+        if refresh:
+            self._request_status()
+        await asyncio.wait_for(self._registry_ready.wait(), timeout)
+        return {key: dict(value) for key, value in (self._registry or {}).items()}
+
+    async def publish_command(self, action: str, *, target_id: str, target_name: str | None = None,
+                              extra: dict[str, Any] | None = None) -> None:
+        """Send a panel command through the service's established connection."""
+        await asyncio.wait_for(self._ready.wait(), 15.0)
+        await self._publish(action, target_id, {**(extra or {}), **({"name": target_name} if target_name else {})},
+                            strict=True)
+
+    async def _publish(self, action: str, device_id: str, extra: dict[str, Any], *, strict: bool = False) -> None:
         if self._templates is None:
+            if strict:
+                raise RuntimeError("bridge subscriptions are not ready")
             _LOGGER.warning("dropping a bridge command for %s: no bridge config received yet", device_id)
             return
         request = {"action": action, "id": device_id, **extra}
@@ -227,6 +246,8 @@ class BridgeClient(_BridgeFollower):
         # `.../set/<id>/<dp>`, checked against the bridge's parser
         rendered = render_command(self._templates.command, request)
         if rendered is None:
+            if strict:
+                raise RuntimeError(f"command topic cannot carry {action}")
             _LOGGER.warning("dropping a bridge %s for %s: the command topic %r cannot carry it", action, device_id,
                             self._templates.command)
             return
@@ -264,6 +285,7 @@ class BridgeClient(_BridgeFollower):
     def _request_status(self) -> None:
         if self._templates is None or self._records is None:
             return
+        self._registry_ready.clear()
         now = asyncio.get_running_loop().time()
         if self._status_since is not None and now - self._status_since < STATUS_CYCLE_TIMEOUT:
             self._status_rerun = True                       # one request at a time; its pages would be mixed up
@@ -396,12 +418,15 @@ class BridgeClient(_BridgeFollower):
             self._status_timer.cancel()
             self._status_timer = None
         before = self._registered
+        self._registry = dict(self._status_accum)
         self._registered = set(self._status_accum)
         self._status_accum, self._status_since = None, None
         if before != self._registered:
             _LOGGER.info("the bridge holds %d device(s)", len(self._registered))
         if self._status_rerun:
             self._request_status()
+        else:
+            self._registry_ready.set()
         for device_id in [d for d in self._last_conn if d not in self._registered]:
             self._forget(device_id)
         self._reconcile()
@@ -445,8 +470,10 @@ class LinkWatcher(_BridgeFollower):
                 self._set(device_id, {"online": code == 0, "code": code,
                                       "message": "" if code == 0 else error_text(parsed)})
         elif not msg.retain and (vars_ := pb.match_topic(msg.topic, t.event)) is not None and vars_.get("id"):
-            if not self.links.get(vars_["id"], {}).get("online"):
-                self._set(vars_["id"], {"online": True, "code": 0, "message": ""})     # live data: it is connected
+            # State snapshots can be replayed during bridge/service restart. Once an
+            # explicit connection result exists, data must not override an offline error.
+            if vars_["id"] not in self.links:
+                self._set(vars_["id"], {"online": True, "code": None, "message": ""})
 
     def _set(self, device_id: str, link: dict[str, Any]) -> None:
         if self.links.get(device_id) == link:
