@@ -138,7 +138,7 @@
       "wizard_failed": "Tuya Cloud에서 가져오지 못했습니다: {error}",
       "no_devices": "클라우드 목록에도 브리지에도 기기가 없습니다.",
       "manager_busy": "다른 Tuya Cloud 가져오기 또는 기기 동기화 창이 아직 열려 있습니다. 그 창을 닫고 다시 시도하세요.",
-      "panel_shown": "사이드바에 Rustuya 패널이 추가되었습니다: [열기]({url}). 패널의 Options에서 잠금장치·경보·차고문 원격 제어, 분류되지 않는 데이터 포인트, 오버라이드 팩을 설정합니다.",
+      "panel_shown": "사이드바에 Rustuya 패널이 추가되었습니다: [열기]({url}). 패널의 Options에서 잠금장치·경보·차고문 원격 제어, 분류되지 않는 데이터 포인트, Builtin 규칙 자동 업데이트를 설정합니다.",
       "panel_open": "[Rustuya 패널 열기]({url})"
     },
     "error": {

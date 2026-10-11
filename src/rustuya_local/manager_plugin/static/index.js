@@ -56,8 +56,8 @@ function paintStatus(box, data) {
   const p = data.pack;
   if (p) {
     const when = new Date(p.at * 1000).toLocaleString();
-    const text = p.error ? `Override pack: not synced (${p.error}), ${when}`
-      : `Override pack: synced ${when}` + PACK_CHANGES
+    const text = p.error ? `Builtin rules: update failed (${p.error}), ${when}`
+      : `Builtin rules: updated ${when}` + PACK_CHANGES
         .filter((k) => p[k] && p[k].length).map((k) => `; ${k} ${p[k].join(", ")}`).join("");
     box.append(el("p", { class: `text-sm mt-2 ${p.error || (p.failed && p.failed.length) ? "text-amber-600" : "text-gray-500"}` }, text));
     for (const f of p.failed || []) box.append(el("p", { class: "text-sm text-amber-600" }, f));
@@ -70,7 +70,7 @@ const OPTIONS = [
   ["use_quirks", "Apply the built-in fixes for known non-standard devices"],
   ["expose_unused", "Show dps no entity uses, as plain properties"],
   ["allow_hazardous", "Allow controlling hazardous covers (garage doors, gates)"],
-  ["pack", "Download fixes for non-standard devices published between releases (into custom converters)"],
+  ["pack", "Automatically update builtin rules at start and daily"],
 ];
 
 async function settingsBox(ctx) {

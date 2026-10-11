@@ -40,7 +40,7 @@ source are cleared (other sources on the prefix are left alone), so IL consumers
 
 The shared Rust core interprets one device and has no MQTT or rule-file loading API.
 `rustuya_local.host.Hub` owns the device registry and maps `TuyaDriver` outputs to IL MQTT wire data;
-`host.rules` discovers and loads the bundled pack and user layers, passing decoded rules to Rust for composition.
+`host.rules` discovers and loads the bundled builtin rules and user layers, passing decoded rules to Rust for composition.
 The service preloads native code and rules in a worker thread before starting devices.
 Timers, retained-message policy, bridge `get` requests, presence and settings persistence remain in this host.
 MQTT and in-process transport tests exercise the same adapter and the bidirectional Rust driver.
@@ -76,12 +76,14 @@ config; integration: `<config>/rustuya_converters`; manager plugin: its data dir
   `{"overrides": {"product_id": {"cover": {"invert_position": true}}}}`.
 - Converters are JSON programs under `converters.declarative`; Python code plugins are not loaded.
 
-See tuya2ildevice's README ("User overrides") for the format. A curated set ships in tuya2ildevice, and fixes published
-between its releases (its [override pack](https://github.com/3735943886/tuya2ildevice/tree/master/rules/builtin)) are copied
-into `rules/builtin/` inside the overrides directory at start and daily. These include `00-default.json`; your own
-files are applied after all official rules. The bundled defaults update with tuya2ildevice, even when pack sync is off.
-Turn online updates off with `"pack": false` (daemon), the Rustuya panel's *Options* (integration), or the plugin tab. The pack only replaces or removes the files it
-put there, and leaves a file alone once you edit it.
+See tuya2ildevice's README ("User overrides") for the format. Official builtin rules, including `00-default.json`,
+ship with tuya2ildevice and update when that package is upgraded. They are applied before your own rule files.
+
+Online updates fetch the latest [builtin rules](https://github.com/3735943886/tuya2ildevice/tree/feat/rust-rule-engine/rules/builtin)
+into `rules/builtin/` inside the overrides directory at start and daily. In the Rustuya panel, use *Update builtin rules*
+to fetch them now or *Automatically update builtin rules* to control automatic updates. The daemon uses `"pack": false`
+to disable online updates; the manager plugin has the same option in its settings. Installed builtin rules remain
+available when online updates are off. Updates only replace or remove files they downloaded, preserving user edits.
 
 ### Cover settings
 
@@ -102,7 +104,7 @@ device settings are enabled, unless an override selects another source. A settin
 the setting is saved as the device's block in `zz_settings.json` in the converters directory and applied at once, so it
 survives a restart and can be edited there too. Without a converters directory (a daemon with no
 `custom_converters`) the switches are not offered; `"options": {"device_settings": false}` turns them off.
-A block with the same `cover` keys in your own file or the pack sets a model's starting point; the saved settings win.
+A block with the same `cover` keys in your own file or the builtin rules sets a model's starting point; the saved settings win.
 Older `cover.infer_motion` and `converters.cover_motion` blocks are upgraded on loading to `cover.state_source`
 (`inferred`, or `none` for `infer_motion: false`) and `cover.settle`; see [migration notes](docs/MIGRATING.md).
 
@@ -112,10 +114,10 @@ bridge's devices against the cloud list as rustuya-manager does (missing, bridge
 turn off; sub-devices under their gateway; each device's bridge connection, live while the panel is open) with add /
 update / remove. *Register manually* adds Wi-Fi devices or sub-devices without a cloud login, using the same
 fields as rustuya-manager. Devices absent from the cloud list appear under *Bridge only*; their removal is not
-preselected in bulk sync. The panel lists the converter files with the pack's
-marked, edits and deletes them (drop JSON rule files on it to copy them in), runs the pack sync on demand, has the
+preselected in bulk sync. The panel lists, edits and deletes user converter files (drop JSON rule files on it to copy them in),
+updates builtin rules on demand, and has the
 *Options* (remote control of locks, alarms and garage doors; data points Home Assistant core would not classify; the
-override pack), and the *Settings* setup leaves at their defaults: the bridge topic root, the IL prefix and source, the device file, and
+automatic builtin rule updates), and the *Settings* setup leaves at their defaults: the bridge topic root, the IL prefix and source, the device file, and
 the embedded bridge's state file and log level. Saving restarts the integration; moving the IL prefix or source first
 clears what the old one left on the broker. *Hide panel* in its toolbar turns it off again. The integration and the panel follow Home Assistant's
 language: Korean, or English.
@@ -123,7 +125,7 @@ language: Korean, or English.
 ## rustuya-manager plugin
 
 Installed next to rustuya-manager, as a pip package (`pip install rustuya-local` in the manager's environment) or as
-the drop-in zip each release carries (`rustuya_local-<version>-dropin.zip`, tuya2ildevice binding, native library and rule pack vendored inside, built by
+the drop-in zip each release carries (`rustuya_local-<version>-dropin.zip`, tuya2ildevice binding, native library and builtin rules vendored inside, built by
 `scripts/build_dropin.py`; unpack it into the manager's plugin directory, or install it from the manager's plugin
 catalog once listed there), it appears as a **Tuya (IL)** tab and runs the service under the manager: the manager's broker and bridge root, the manager's device
 list (followed). Its data dir (`rustuya-local/` next to the manager's plugins) holds `settings.json` (`il`,

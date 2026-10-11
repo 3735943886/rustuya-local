@@ -8,6 +8,14 @@ stable release.
 
 ## [Unreleased]
 
+## [0.1.0.dev4] — 2026-10-11
+
+### Fixed
+- Fetch dev4 builtin rule updates from its development branch; master does not yet contain the new rules directory.
+
+### Changed
+- Label official rule updates as builtin rules in the HA panel and manager settings, and clarify that bundled rules remain available when online updates are off.
+
 ## [0.1.0.dev3] — 2026-10-11
 
 ### Changed

@@ -138,7 +138,7 @@
       "wizard_failed": "Fetching from Tuya Cloud failed: {error}",
       "no_devices": "There are no devices in the cloud list or on the bridge.",
       "manager_busy": "Another Tuya Cloud fetch or device sync window is still open. Close it and try again.",
-      "panel_shown": "The Rustuya panel was added to the sidebar: [open it]({url}). Its Options hold remote control of locks, alarms and garage doors, unused data points and the override pack.",
+      "panel_shown": "The Rustuya panel was added to the sidebar: [open it]({url}). Its Options hold remote control of locks, alarms and garage doors, unused data points and automatic builtin rule updates.",
       "panel_open": "[Open the Rustuya panel]({url})."
     },
     "error": {
