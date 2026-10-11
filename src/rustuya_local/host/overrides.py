@@ -4,7 +4,7 @@ Each `*.json` is a rule layer (product/device fixes under `overrides`), merged i
 tuya2ildevice ships and validated by its engine. `SETTINGS_FILE` (``zz_settings.json``) holds the settings written
 through IL, a block per device (`OverrideWatcher.save_settings`); it can be edited like any other file.
 
-Files starting with `.` or `_` and `schema.json` are skipped. Nothing here raises for a bad file: a file that does
+Files starting with `.` or `_` are skipped. Nothing here raises for a bad file: a file that does
 not load is left out and reported in `OverrideSet.warnings`, and the rest still loads.
 """
 
@@ -20,12 +20,11 @@ from typing import Any
 
 from tuya2ildevice import OverrideError, merge_all
 
-from rustuya_local.host.rules import load_rules_tolerant
+from rustuya_local.host.rules import load_rules_tolerant, upgrade_overrides
 
 from .runner import Runner
 
 _LOGGER = logging.getLogger(__name__)
-_SKIP = {"schema.json"}
 SETTINGS_FILE = "zz_settings.json"               # ordered with user files
 
 
@@ -42,7 +41,7 @@ def _files(path: Path) -> list[Path]:
     if not path.is_dir():
         return []
     return sorted(p for p in path.iterdir()
-                  if p.is_file() and p.suffix == ".json" and p.name not in _SKIP and p.name[0] not in "._")
+                  if p.is_file() and p.suffix == ".json" and p.name[0] not in "._")
 
 
 def load_overrides(path: str | Path) -> OverrideSet:
@@ -56,8 +55,9 @@ def load_overrides(path: str | Path) -> OverrideSet:
 
 class OverrideWatcher:
     """Follow an overrides directory: when a file is added, changed or removed, load it all again and reload the
-    runner's Hub with it (`base`, e.g. overrides from the host's own configuration, is merged on top). Overrides the
-    Hub refuses (`OverrideError`) are reported and the ones in effect stay."""
+    runner's Hub with it (`base`, e.g. overrides from the host's own configuration, is merged on top). A file the
+    engine refuses is left out and reported (`load_overrides`); overrides the Hub refuses as a whole (`OverrideError`,
+    a bad `base`) are reported and the ones in effect stay."""
 
     def __init__(self, path: str | Path, runner: Runner, interval: float = 5.0, base: dict | None = None) -> None:
         self.path = Path(path)
@@ -155,6 +155,7 @@ class OverrideWatcher:
         entries = data.setdefault('overrides', {})
         if not isinstance(entries, dict):
             raise TypeError(f'{path}: overrides must be an object')
+        entries = data['overrides'] = upgrade_overrides(entries)    # keys an older version saved, in today's form
         if block:
             entries[device_id] = block
         else:

@@ -10,7 +10,7 @@ import pytest
 from rustuya_local.host import load_overrides, pack
 from rustuya_local.host.pack import LEDGER, PackError, read_ledger, sync
 
-PUBLISHED = Path(__file__).resolve().parents[3] / "tuya2ildevice" / "pack"         # the sibling checkout
+PUBLISHED = Path(__file__).resolve().parents[3] / "tuya2ildevice" / "rules" / "pack"       # the sibling checkout
 
 
 def sha(text: str) -> str:

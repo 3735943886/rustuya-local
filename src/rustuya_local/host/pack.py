@@ -1,4 +1,4 @@
-"""The override pack: fixes for non-standard devices published on tuya2ildevice's `master` (`pack/`) and copied into
+"""The override pack: fixes for non-standard devices published on tuya2ildevice's `master` (`rules/pack/`) and copied into
 the host's rule directory, so a fix reaches users without a release. `OverrideWatcher` then loads the copied files
 like the user's own. The files are rule layers (JSON); fetching them is the host's, the engine only merges them.
 
@@ -38,7 +38,7 @@ from .overrides import SETTINGS_FILE
 _LOGGER = logging.getLogger(__name__)
 
 LEVEL = 4                                         # 2: `cover` settings; 3: `delta`; 4: rule-layer files (tuya2ildevice 0.4)
-BASE_URL = "https://raw.githubusercontent.com/3735943886/tuya2ildevice/master/pack/"
+BASE_URL = "https://raw.githubusercontent.com/3735943886/tuya2ildevice/master/rules/pack/"
 MANIFEST = "manifest.json"
 LEDGER = ".tuya2ildevice_pack.json"
 MAX_BYTES = 1024 * 1024

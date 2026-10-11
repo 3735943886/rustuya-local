@@ -1,12 +1,13 @@
 """Host-owned device registry and IL MQTT adapter over transport-independent TuyaDriver instances."""
 from __future__ import annotations
 
-import logging
 import time
+from collections import Counter
 from collections.abc import Sequence
 from typing import Any
 
 from tuya2ildevice import Command, Connected, Disconnected, Message, Timer, TuyaDriver
+from tuya2ildevice.native import register_rules, unregister_rules
 
 from .il import (
     IL,
@@ -19,8 +20,18 @@ from .il import (
     usable_id,
 )
 from .rules import rules as default_rules
+from .rules import upgrade_overrides
 
-_LOGGER = logging.getLogger(__name__)
+# Hubs using each registered rule pack. The engine keeps a pack until it is released, per process, and packs are
+# keyed by content, so Hubs can share one: the last Hub to stop using a pack releases it.
+_pack_users: Counter[str] = Counter()
+
+
+def _release(rules_id: str) -> None:
+    _pack_users[rules_id] -= 1
+    if _pack_users[rules_id] <= 0:
+        del _pack_users[rules_id]
+        unregister_rules(rules_id)
 
 
 class Hub:
@@ -30,6 +41,9 @@ class Hub:
                  **driver_kwargs: Any):
         self.il = il or IlTopics()
         self._kw = {**driver_kwargs, 'rules': rules if rules is not None else default_rules()}
+        self._kw['overrides'] = upgrade_overrides(self._kw.get('overrides'))
+        self._rules_id = register_rules(self._kw['rules'])
+        _pack_users[self._rules_id] += 1
         for device in devices:
             self._check_id(device['id'])
         self._devices = {d['id']: d for d in devices}
@@ -37,10 +51,7 @@ class Hub:
 
     @staticmethod
     def _create(device, options):
-        driver = TuyaDriver(device, **options)
-        for warning in driver.warnings:
-            _LOGGER.warning('device %s: %s', device['id'], warning)
-        return driver
+        return TuyaDriver(device, **options)
 
     @property
     def records(self) -> dict[str, dict]:
@@ -99,10 +110,17 @@ class Hub:
                 *self.il.clear(device_id, old.descriptor['props'], descriptor=True)]
 
     def reload(self, overrides: dict | None, *, rules: dict | None = None, now: float | None = None) -> list:
-        options = {**self._kw, 'overrides': overrides}
+        options = {**self._kw, 'overrides': upgrade_overrides(overrides)}
+        rules_id = self._rules_id
         if rules is not None:
             options['rules'] = rules
-        fresh = {i: self._create(d, options) for i, d in self._devices.items()}
+            rules_id = register_rules(rules)
+        try:
+            fresh = {i: self._create(d, options) for i, d in self._devices.items()}
+        except Exception:
+            if not _pack_users[rules_id]:           # refused: a pack nobody took is not kept
+                unregister_rules(rules_id)
+            raise
         actions = []
         now = time.time() if now is None else now
         replacements = {}
@@ -119,6 +137,10 @@ class Hub:
             replacements[device_id] = new
         self.drivers.update(replacements)
         self._kw = options
+        if rules_id != self._rules_id:              # every driver was replaced: none uses the old pack now
+            _pack_users[rules_id] += 1
+            _release(self._rules_id)
+            self._rules_id = rules_id
         return actions
 
     def subscriptions(self) -> list[Subscribe]:

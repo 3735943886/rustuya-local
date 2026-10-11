@@ -51,14 +51,14 @@ def _members() -> list[tuple[str, Path]]:
             # Installed wheels already contain them; include equivalent assets when building locally.
             from tuya2ildevice.native import library
 
-            from rustuya_local.host.rules import rule_paths
+            from rustuya_local.host.rules import rule_files, rule_paths
 
             native = Path(library()._name).resolve()
             prefix = f"rustuya_local/_vendor/{name}"
             members = dict(out)
             members.setdefault(f"{prefix}/{native.name}", native)
-            for asset in _files(rule_paths()[0]):
-                members.setdefault(f"{prefix}/rules/{asset.relative_to(rule_paths()[0]).as_posix()}", asset)
+            for layer in rule_files(rule_paths()[:1]):          # the rule layers a wheel bundles, nothing else
+                members.setdefault(f"{prefix}/rules/{layer.name}", layer)
             out = list(members.items())
     return sorted(out)
 

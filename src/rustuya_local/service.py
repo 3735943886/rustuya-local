@@ -16,7 +16,7 @@ integration, the rustuya-manager plugin or a daemon) serves them, since every de
 `online` that nobody answers for (a Last Will lost with the broker, or a producer on tuya2ildevice < 0.3.5) does not
 stop the start.
 
-With `pack` on, the override pack (tuya2ildevice's `pack/`) is copied into the overrides directory in the background at
+With `pack` on, the override pack (tuya2ildevice's `rules/pack/`) is copied into the overrides directory in the background at
 start and every `pack_interval` seconds; the directory watcher loads what it brings.
 
 A device's settings (a cover's direction toggles, tuya2ildevice's `device_settings`) are IL properties like any other;

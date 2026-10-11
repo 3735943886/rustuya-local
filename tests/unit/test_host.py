@@ -9,7 +9,7 @@ import subprocess
 import time
 
 import pytest
-from tuya2ildevice import Connected, Message
+from tuya2ildevice import Connected, Message, OverrideError
 
 from rustuya_local.host import (
     BridgeCommand,
@@ -126,14 +126,24 @@ async def test_sync_adds_changes_and_removes_and_clears_before_removing(running)
 
 async def test_a_device_an_override_refused_is_driven_once_the_overrides_are_fixed(running):
     il, runner, hub, _ = running
-    runner.reload({"late": {"bogus": True}})                          # no such device yet: nothing to refuse
-    assert runner.sync_devices([lamp("lamp1"), lamp("late")])["failed"] == ["late"]
-    runner.reload({"late": {"also_bogus": True}})                     # still refused
+    runner.reload({"late": {"dp": {"99": {"code": "gone"}}}})         # no such device yet: nothing to refuse
+    assert runner.sync_devices([lamp("lamp1"), lamp("late")])["failed"] == ["late"]       # it has no dp 99 to rename
+    runner.reload({"late": {"dp": {"98": {"code": "gone"}}}})         # still refused
     await runner.drain()
     assert "late" not in hub.records and "il/late" not in il.retained
     runner.reload({"late": {"device": {"label": "Late"}}})            # fixed: driven now, without a device-list change
     await runner.drain()
     assert "late" in hub.records and json.loads(il.retained["il/late"].payload)["label"] == "Late"
+
+
+async def test_overrides_the_engine_refuses_are_refused_whole_and_the_ones_in_effect_stay(running):
+    il, runner, _, _ = running
+    runner.reload({"lamp1": {"device": {"label": "Desk"}}})
+    await runner.drain()
+    with pytest.raises(OverrideError):                                # any block, even one for no device here
+        runner.reload({"lamp1": {"device": {"label": "Other"}}, "late": {"bogus": True}})
+    await runner.drain()
+    assert json.loads(il.retained["il/lamp1"].payload)["label"] == "Desk"
 
 
 # ---- the device file --------------------------------------------------------------------------------------------------
@@ -189,7 +199,12 @@ async def test_the_override_watcher_reloads_the_hub(running, tmp_path):
     await runner.drain()
     assert il.retained["il/lamp1/lit"].payload == "bright"
     assert not watcher.check()
-    (tmp_path / "a.json").write_text(json.dumps({"overrides": {"p": {"converters": {"nope": {}}}}}))      # refused: the old one stays
+    (tmp_path / "a.json").write_text(json.dumps({"overrides": {"p": {"converters": {"nope": {}}}}}))      # refused: left out
+    assert watcher.check()
+    await runner.drain()
+    assert "lit" not in json.loads(il.retained["il/lamp1"].payload)["props"]
+    assert [w.split(":")[0] for w in watcher.load().warnings] == ["a.json"]
+    (tmp_path / "a.json").write_text(json.dumps({"overrides": {"p": {"converters": {"declarative": LIT}}}}))
     assert watcher.check()
     await runner.drain()
     assert "lit" in json.loads(il.retained["il/lamp1"].payload)["props"]

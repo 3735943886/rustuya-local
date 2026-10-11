@@ -66,6 +66,9 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
    - A curtain's `invert_position` / `invert_set_position`, reversed command words and derived state are not files any
      more: each cover has configuration switches for them (README, *Cover settings*).
    - Rewrite Python converters as JSON programs under `converters.declarative`; Python plugins are not loaded in 0.4.
+   - `converters.cover_motion` and a cover's `infer_motion` are read as the cover's `state_source` (`inferred`, or
+     `none` for `infer_motion: false`), and a `cover_motion` `settle` as the cover's `settle`; its other keys are
+     dropped with a warning. `zz_settings.json` is rewritten in the new form the next time a setting is saved.
    - Leave the old pack (`00_default.json`, `00_curtain.py`, `.rustuya_pack.json`) out. Fixes arrive as `00_pack_*`
      files by themselves.
 

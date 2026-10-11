@@ -97,7 +97,7 @@ def test_reload_overrides_republishes_and_clears_removed_props():
 def test_timers_surface_as_schedule_and_on_timer():
     from rustuya_local.host import Schedule, Unschedule
 
-    hub = Hub([curtain()], overrides={"cur1": {"converters": {"cover_motion": {"invert": False, "settle": 5}}}})
+    hub = Hub([curtain()], overrides={"cur1": {"cover": {"state_source": "inferred", "settle": 5}}})
     hub.start()
     hub.on_bridge_message(0, "cur1", Connected())
     hub.on_bridge_message(1, "cur1", Message("state", {"3": 50}))

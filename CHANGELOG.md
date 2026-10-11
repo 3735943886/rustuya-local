@@ -13,6 +13,13 @@ stable release.
 - Move device registry, IL MQTT mapping, transports, timers and file watchers into `rustuya_local.host` for all three hosts.
 - Load custom JSON files as rule layers, with product/device fixes under `overrides`. Replace Python converters with JSON programs under `converters.declarative`.
 - Bundle the native library and rule pack in the rustuya-manager drop-in archive.
+- Require tuya2ildevice 0.4.0.dev3 (`>=0.4` never matched the pre-release). The override pack is fetched from its
+  `rules/pack/`.
+- Read `converters.cover_motion` and a cover's `infer_motion`, which tuya2ildevice 0.4.0.dev3 refuses, as the cover's
+  `state_source` (and `settle`), so a `zz_settings.json` saved by an older version keeps loading instead of being left
+  out with every setting in it.
+- Release a rule pack from the engine once no Hub uses it, so editing rule files does not keep every earlier pack in
+  memory.
 
 ## [0.0.53] — 2026-10-11
 
