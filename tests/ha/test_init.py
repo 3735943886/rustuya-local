@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -37,7 +38,9 @@ class Watcher:
         self.last: dict[str, str] = {}
         self.log: list[tuple[str, str]] = []             # every message, in order
         self.registered = list(registered)               # the devices the stand-in bridge "holds"
-        self._c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="watcher")
+        # an id of its own: a second client on the same id takes the session over, and paho reconnecting the
+        # first one takes it back, each dropping the other's connection
+        self._c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"watcher-{uuid.uuid4().hex[:8]}")
         self._c.on_message = self._on_message
         self._c.connect("127.0.0.1", port, 30)
         self._c.loop_start()
@@ -57,6 +60,16 @@ class Watcher:
     def close(self) -> None:
         self._c.loop_stop()
         self._c.disconnect()
+
+    async def clear_and_close(self) -> None:
+        """Clear every retained topic seen, then close: always, so a client left reconnecting cannot outlive the
+        test it belongs to."""
+        try:
+            for topic in list(self.last):
+                self.publish(topic, "", retain=True)
+            await asyncio.sleep(0.1)
+        finally:
+            self.close()
 
 
 async def until(condition, timeout: float = 10.0) -> None:
@@ -96,10 +109,7 @@ async def test_setup_publishes_and_unload_goes_offline(hass, broker, tmp_path, s
         await hass.async_block_till_done()
         await until(lambda: watcher.last.get("il/_producer/tuya") == "offline")
     finally:
-        for topic in list(watcher.last):
-            watcher.publish(topic, "", retain=True)
-        await asyncio.sleep(0.1)
-        watcher.close()
+        await watcher.clear_and_close()
 
 
 async def test_setup_is_retried_while_another_producer_runs(hass, broker, tmp_path, socket_enabled):
@@ -186,10 +196,7 @@ async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(ha
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
     finally:
-        for topic in list(watcher.last):
-            watcher.publish(topic, "", retain=True)
-        await asyncio.sleep(0.1)
-        watcher.close()
+        await watcher.clear_and_close()
 
 
 async def test_deleting_the_entry_takes_its_devices_out_of_il(hass, broker, tmp_path, socket_enabled):
@@ -231,10 +238,7 @@ async def test_deleting_the_entry_takes_its_devices_out_of_il(hass, broker, tmp_
         late.close()
         assert not [t for t, p in late.last.items() if p and t.startswith(("il/lamp1", "il/stale1", "il/_producer"))]
     finally:
-        for topic in list(watcher.last):
-            watcher.publish(topic, "", retain=True)
-        await asyncio.sleep(0.1)
-        watcher.close()
+        await watcher.clear_and_close()
 
 
 async def _remove_with(hass, broker, tmp_path, mode: str, devices_path: str):
@@ -266,9 +270,7 @@ async def test_deleting_an_embedded_entry_clears_its_bridge_and_its_files(hass, 
                     watcher.last.get("rustuya/event/state/dev1") == "")
         assert not storage.exists()
     finally:
-        for topic in list(watcher.last):
-            watcher.publish(topic, "", retain=True)
-        watcher.close()
+        await watcher.clear_and_close()
 
 
 async def test_deleting_an_external_entry_leaves_the_bridge_and_a_users_own_device_file(hass, broker, tmp_path,
@@ -284,9 +286,7 @@ async def test_deleting_an_external_entry_leaves_the_bridge_and_a_users_own_devi
         assert watcher.last["rustuya/error/dev1"] == '{"errorCode":905}'
         assert own.exists() and (tmp_path / "tuyacreds.json").exists()
     finally:
-        for topic in list(watcher.last):
-            watcher.publish(topic, "", retain=True)
-        watcher.close()
+        await watcher.clear_and_close()
 
 
 async def test_setup_without_a_device_file_starts_with_no_devices(hass, broker, tmp_path, socket_enabled):
@@ -307,8 +307,10 @@ async def test_setup_without_a_device_file_starts_with_no_devices(hass, broker, 
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
         watcher = Watcher(broker)
-        watcher.publish("il/_producer/tuya", "", retain=True)
-        watcher.close()
+        try:
+            watcher.publish("il/_producer/tuya", "", retain=True)
+        finally:
+            watcher.close()
 
 
 async def test_a_device_file_for_an_entry_that_is_not_running_restarts_it(hass, tmp_path, monkeypatch):
@@ -373,10 +375,7 @@ async def test_send_command_writes_a_raw_dp_and_refuses_a_lock(hass, broker, tmp
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
     finally:
-        for topic in list(watcher.last):
-            watcher.publish(topic, "", retain=True)
-        await asyncio.sleep(0.1)
-        watcher.close()
+        await watcher.clear_and_close()
 
 
 async def test_an_options_change_restarts_without_the_devices_going_away(hass, broker, tmp_path, socket_enabled):
@@ -415,7 +414,4 @@ async def test_an_options_change_restarts_without_the_devices_going_away(hass, b
         await hass.async_block_till_done()
         await until(lambda: watcher.last.get("il/_producer/tuya") == "offline")
     finally:
-        for topic in list(watcher.last):
-            watcher.publish(topic, "", retain=True)
-        await asyncio.sleep(0.1)
-        watcher.close()
+        await watcher.clear_and_close()
