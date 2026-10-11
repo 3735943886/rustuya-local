@@ -1,8 +1,8 @@
-"""The override pack: fixes for non-standard devices published on tuya2ildevice's `master` (`rules/pack/`) and copied into
+"""The override pack: fixes for non-standard devices published on tuya2ildevice's `master` (`rules/builtin/`) and copied into
 the host's rule directory, so a fix reaches users without a release. `OverrideWatcher` then loads the copied files
 like the user's own. The files are rule layers (JSON); fetching them is the host's, the engine only merges them.
 
-`pack/manifest.json` lists the files with their SHA-256 (built by `scripts/build_pack.py`):
+`builtin/manifest.json` lists the files with their SHA-256 (built by `scripts/build_pack.py`):
 
     {"version": 1, "files": [{"name": "00_pack_abc.json", "sha256": "...", "requires": 1, "until": 3}]}
 
@@ -38,7 +38,7 @@ from .overrides import SETTINGS_FILE
 _LOGGER = logging.getLogger(__name__)
 
 LEVEL = 4                                         # 2: `cover` settings; 3: `delta`; 4: rule-layer files (tuya2ildevice 0.4)
-BASE_URL = "https://raw.githubusercontent.com/3735943886/tuya2ildevice/master/rules/pack/"
+BASE_URL = "https://raw.githubusercontent.com/3735943886/tuya2ildevice/master/rules/builtin/"
 MANIFEST = "manifest.json"
 LEDGER = ".tuya2ildevice_pack.json"
 MAX_BYTES = 1024 * 1024
@@ -129,7 +129,7 @@ def _wanted(doc: dict[str, Any]) -> dict[str, str]:
             continue
         if entry.get("requires", 0) > LEVEL or entry.get("until", LEVEL + 1) <= LEVEL:
             continue
-        if name == SETTINGS_FILE:                 # the host's own settings: never the pack's
+        if name in (SETTINGS_FILE, MANIFEST):                 # the host's own settings: never the pack's
             _LOGGER.warning("pack: %s is the host's settings file, not taken from the pack", name)
             continue
         out[name] = sha.lower()

@@ -16,7 +16,7 @@ integration, the rustuya-manager plugin or a daemon) serves them, since every de
 `online` that nobody answers for (a Last Will lost with the broker, or a producer on tuya2ildevice < 0.3.5) does not
 stop the start.
 
-With `pack` on, the override pack (tuya2ildevice's `rules/pack/`) is copied into the overrides directory in the background at
+With `pack` on, the override pack (tuya2ildevice's `rules/builtin/`) is copied into the overrides directory in the background at
 start and every `pack_interval` seconds; the directory watcher loads what it brings.
 
 A device's settings (a cover's direction toggles, tuya2ildevice's `device_settings`) are IL properties like any other;
@@ -249,7 +249,12 @@ class Service:
         while True:
             self._pack_now.clear()
             try:
-                result = await run_in_thread(pack.sync, directory, base_url=url)
+                # Retire unedited files owned by the old flat pack, preserving user files.
+                retired = await run_in_thread(pack.sync, directory, manifest={'files': []})
+                result = await run_in_thread(pack.sync, directory / 'rules' / 'builtin', base_url=url)
+                result.removed.extend(retired.removed)
+                result.kept.extend(retired.kept)
+                result.failed.extend(retired.failed)
                 self.pack_status = {"at": time.time(), **result.as_dict()}
             except pack.PackError as e:
                 _LOGGER.warning("override pack: %s", e)

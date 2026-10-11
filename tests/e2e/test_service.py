@@ -201,7 +201,14 @@ async def test_the_override_pack_is_synced_in_the_background(tmp_path, monkeypat
     monkeypatch.setattr(bc.BridgeClient, "start", lambda self, timeout=0.05: orig(self, timeout))
     served, conv = tmp_path / "served", tmp_path / "conv"
     served.mkdir()
-    fix = json.dumps({"lamp1": {"label": "Packed"}})
+    conv.mkdir()
+    (conv / '00_pack_old.json').write_text('{}')
+    (conv / '00_pack_edited.json').write_text('{"overrides": {}}')
+    (conv / '.tuya2ildevice_pack.json').write_text(json.dumps({'files': {
+        '00_pack_old.json': hashlib.sha256(b'{}').hexdigest(),
+        '00_pack_edited.json': hashlib.sha256(b'{}').hexdigest(),
+    }}))
+    fix = json.dumps({"overrides": {"lamp1": {"device": {"label": "Packed"}}}})
     (served / "00_pack_lamp.json").write_text(fix)
     (served / "manifest.json").write_text(json.dumps({"version": 1, "files": [
         {"name": "00_pack_lamp.json", "sha256": hashlib.sha256(fix.encode()).hexdigest()}]}))
@@ -212,8 +219,10 @@ async def test_the_override_pack_is_synced_in_the_background(tmp_path, monkeypat
         if service.pack_status:
             break
         await asyncio.sleep(0.02)
-    assert service.pack_status["added"] == ["00_pack_lamp.json"] and (conv / "00_pack_lamp.json").is_file()
-    (conv / "00_pack_lamp.json").unlink()
+    assert service.pack_status["added"] == ["00_pack_lamp.json"] and (conv / "rules" / "builtin" / "00_pack_lamp.json").is_file()
+    assert not (conv / '00_pack_old.json').exists()
+    assert (conv / '00_pack_edited.json').read_text() == '{"overrides": {}}'
+    (conv / "rules" / "builtin" / "00_pack_lamp.json").unlink()
     first, service.pack_status = service.pack_status, None
     assert service.sync_pack_now()                                      # not a day later: now
     for _ in range(100):
@@ -230,7 +239,7 @@ async def test_the_override_pack_is_synced_in_the_background(tmp_path, monkeypat
         if service.pack_status:
             break
         await asyncio.sleep(0.02)
-    assert "error" in service.pack_status and (conv / "00_pack_lamp.json").is_file()
+    assert "error" in service.pack_status and (conv / "rules" / "builtin" / "00_pack_lamp.json").is_file()
     await service.stop()
 
 
@@ -333,9 +342,11 @@ async def test_stop_waits_for_an_override_pack_write_in_progress(tmp_path, monke
     entered = asyncio.Event()
     release = threading.Event()
     loop = asyncio.get_running_loop()
-    path = tmp_path / 'conv' / '00_pack_test.json'
+    path = tmp_path / 'conv' / 'rules' / 'builtin' / '00_pack_test.json'
 
-    def blocked_sync(directory, *, base_url):
+    def blocked_sync(directory, *, base_url=pack.BASE_URL, manifest=None):
+        if manifest is not None:
+            return pack.SyncResult()
         loop.call_soon_threadsafe(entered.set)
         if not release.wait(5):
             raise TimeoutError('test did not release pack sync')
@@ -346,7 +357,7 @@ async def test_stop_waits_for_an_override_pack_write_in_progress(tmp_path, monke
     monkeypatch.setattr(pack, 'sync', blocked_sync)
     t = Transports()
     await t.bridge.publish('rustuya/bridge/config', '{}', 1, True)
-    service = _service(t, tmp_path, overrides_path=path.parent, pack=True)
+    service = _service(t, tmp_path, overrides_path=tmp_path / 'conv', pack=True)
     await service.start()
     stopping = None
     try:

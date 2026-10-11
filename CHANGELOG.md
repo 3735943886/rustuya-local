@@ -8,6 +8,15 @@ stable release.
 
 ## [Unreleased]
 
+## [0.1.0.dev3] — 2026-10-11
+
+### Changed
+- Require tuya2ildevice 0.4.0.dev4 in the package and Home Assistant integration.
+- Load bundled official rules from `rules/builtin/`, exclude the manifest from rule layers, and apply user files after official rules regardless of filename.
+- Fetch the complete official pack into `rules/builtin/` inside the overrides directory and watch it for live reloads.
+- Retire unedited files owned by the old flat override pack while preserving user edits.
+- Include the official rule layers and manifest in the manager drop-in archive.
+
 ## [0.1.0.dev2] — 2026-10-11
 
 ### Fixed

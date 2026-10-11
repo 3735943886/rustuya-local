@@ -77,9 +77,10 @@ config; integration: `<config>/rustuya_converters`; manager plugin: its data dir
 - Converters are JSON programs under `converters.declarative`; Python code plugins are not loaded.
 
 See tuya2ildevice's README ("User overrides") for the format. A curated set ships in tuya2ildevice, and fixes published
-between its releases (its [override pack](https://github.com/3735943886/tuya2ildevice/tree/master/rules/pack)) are copied
-into the directory at start and daily, as `00_pack_*` files that your own files refine. Turn that off with `"pack":
-false` (daemon), the Rustuya panel's *Options* (integration), or the plugin tab. The pack only replaces or removes the files it
+between its releases (its [override pack](https://github.com/3735943886/tuya2ildevice/tree/master/rules/builtin)) are copied
+into `rules/builtin/` inside the overrides directory at start and daily. These include `00-default.json`; your own
+files are applied after all official rules. The bundled defaults update with tuya2ildevice, even when pack sync is off.
+Turn online updates off with `"pack": false` (daemon), the Rustuya panel's *Options* (integration), or the plugin tab. The pack only replaces or removes the files it
 put there, and leaves a file alone once you edit it.
 
 ### Cover settings

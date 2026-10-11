@@ -53,7 +53,7 @@ def test_watcher_reloads_global_rules_and_restores_defaults_after_removal(tmp_pa
 
 
 
-def test_host_uses_global_filename_order_for_rule_layers(tmp_path):
+def test_host_applies_user_layers_after_bundled_rules(tmp_path):
     write(tmp_path / '000_before_base.json', {'maps': {'switch_on': {'probe': True}}})
     write(tmp_path / '10_after_base.json', {'overrides': {'p': {'device': {'label': 'user'}}}})
     loaded = load_overrides(tmp_path)
@@ -168,3 +168,29 @@ def test_failed_adoption_releases_the_candidate_and_keeps_the_existing_drivers(m
         assert candidate not in _pack_users and not unregister_rules(candidate)
     finally:
         hub.close()
+
+
+def test_official_manifest_is_not_a_rule_and_user_files_run_last(tmp_path):
+    builtin = tmp_path / 'rules' / 'builtin'
+    builtin.mkdir(parents=True)
+    write(builtin / 'manifest.json', {'version': 1, 'files': []})
+    write(builtin / '99_official.json', {'overrides': {'p': {'device': {'label': 'official'}}}})
+    write(tmp_path / '000_user.json', {'overrides': {'p': {'device': {'label': 'user'}}}})
+    loaded = load_overrides(tmp_path)
+    assert not loaded.warnings
+    assert TuyaDriver(DEVICE, rules=loaded.rules).descriptor['label'] == 'user'
+
+
+def test_watcher_follows_downloaded_official_rules(tmp_path):
+    builtin = tmp_path / 'rules' / 'builtin'
+    builtin.mkdir(parents=True)
+    watcher = OverrideWatcher(tmp_path, None)
+    assert watcher.check()
+    path = builtin / '10_official.json'
+    write(path, {'overrides': {'p': {'device': {'label': 'downloaded'}}}})
+    assert watcher.check()
+    assert watcher.load().overrides['p']['device']['label'] == 'downloaded'
+    assert not watcher.check()
+    path.unlink()
+    assert watcher.check()
+    assert watcher.load().overrides.get('p', {}).get('device', {}).get('label') != 'downloaded'

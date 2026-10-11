@@ -58,7 +58,10 @@ def _members() -> list[tuple[str, Path]]:
             members = dict(out)
             members.setdefault(f"{prefix}/{native.name}", native)
             for layer in rule_files(rule_paths()[:1]):          # the rule layers a wheel bundles, nothing else
-                members.setdefault(f"{prefix}/rules/{layer.name}", layer)
+                members.setdefault(f"{prefix}/rules/builtin/{layer.name}", layer)
+            manifest = rule_paths()[0] / 'manifest.json'
+            if manifest.is_file():
+                members.setdefault(f"{prefix}/rules/builtin/manifest.json", manifest)
             out = list(members.items())
     return sorted(out)
 

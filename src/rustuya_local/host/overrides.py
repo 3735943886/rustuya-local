@@ -95,12 +95,12 @@ class OverrideWatcher:
 
     def _stat(self) -> Any:
         stamp = []
-        for p in rule_files([self.path]):
+        for p in rule_files([self.path, self.path / 'rules' / 'builtin']):
             try:
                 st = p.stat()
             except OSError:
                 continue
-            stamp.append((p.name, st.st_mtime_ns, st.st_size))
+            stamp.append((str(p), st.st_mtime_ns, st.st_size))
         return tuple(stamp)
 
     def check(self) -> bool:

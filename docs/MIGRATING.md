@@ -69,8 +69,8 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
    - `converters.cover_motion` and a cover's `infer_motion` are read as the cover's `state_source` (`inferred`, or
      `none` for `infer_motion: false`), and a `cover_motion` `settle` as the cover's `settle`; its other keys are
      dropped with a warning. `zz_settings.json` is rewritten in the new form the next time a setting is saved.
-   - Leave the old pack (`00_default.json`, `00_curtain.py`, `.rustuya_pack.json`) out. Fixes arrive as `00_pack_*`
-     files by themselves.
+   - Leave the old pack (`00_default.json`, `00_curtain.py`, `.rustuya_pack.json`) out. Official rules ship with tuya2ildevice; online updates arrive under
+     `rules/builtin/` automatically. User files are applied after all official rules.
 
    Changes to the directory are picked up while running, no restart needed.
 

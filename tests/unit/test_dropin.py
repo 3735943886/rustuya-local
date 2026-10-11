@@ -21,7 +21,7 @@ def test_one_package_with_tuya2ildevice_inside(tmp_path):
     for needed in ("rustuya_local/__init__.py", "rustuya_local/manager_plugin/static/index.js",
                    "rustuya_local/_vendor/tuya2ildevice/__init__.py", "rustuya_local/_vendor/tuya2ildevice/native.py"):
         assert needed in names
-    assert "rustuya_local/_vendor/tuya2ildevice/rules/00-default.json" in names
+    assert "rustuya_local/_vendor/tuya2ildevice/rules/builtin/00-default.json" in names
     assert any(n.startswith("rustuya_local/_vendor/tuya2ildevice/") and n.endswith((".so", ".dll", ".dylib"))
                for n in names)
     assert not any("__pycache__" in n or n.startswith("rustuya_local/_vendor/paho") for n in names)

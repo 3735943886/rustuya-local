@@ -64,8 +64,8 @@ def _upgrade_layer(data, where):
 
 def rule_paths(paths=(), *, bundled_path=None):
     package = Path(tuya2ildevice.__file__).resolve().parent
-    bundled = package / 'rules'
-    checkout = package.parents[1] / 'rules'
+    bundled = package / 'rules' / 'builtin'
+    checkout = package.parents[1] / 'rules' / 'builtin'
     location = bundled_path or (bundled if bundled.is_dir() else checkout)
     return [Path(location), *map(Path, paths)]
 
@@ -73,14 +73,16 @@ def rule_paths(paths=(), *, bundled_path=None):
 def rule_files(locations):
     files = []
     for location in map(Path, locations):
-        if location.is_file():
+        if location.is_file() and location.name != 'manifest.json':
             files.append(location)
         elif location.is_dir():
-            files.extend(p for p in location.iterdir() if p.is_file() and p.suffix == '.json' and p.name[0] not in '._')
+            files.extend(p for p in location.iterdir()
+                         if p.is_file() and p.suffix == '.json' and p.name[0] not in '._'
+                         and p.name != 'manifest.json')
     return sorted(files, key=lambda p: os.fsencode(p.name))
 
 
-def merge_rule_files(locations, *, tolerant=False):
+def merge_rule_files(locations, *, tolerant=False, base=None):
     layers, warnings = [], []
     files = rule_files(locations)
     for path in files:
@@ -91,7 +93,7 @@ def merge_rule_files(locations, *, tolerant=False):
             if not tolerant:
                 raise ValueError(f'{path}: {error}') from error
             warnings.append(f'{path.name}: {error}')
-    result = merge_rules(layers, tolerant=tolerant)
+    result = merge_rules(layers, base=base, tolerant=tolerant)
     names = {str(p): p.name for p in files}
     for warning in result['warnings']:
         source, _, message = warning.partition(': ')
@@ -99,12 +101,23 @@ def merge_rule_files(locations, *, tolerant=False):
     return {**result, 'warnings': warnings}
 
 
+def _load_rules(paths=(), *, bundled_path=None, tolerant=False):
+    locations = rule_paths(paths, bundled_path=bundled_path)
+    official = merge_rule_files(locations[:1])
+    # Downloaded official rules refine the bundled pack; user files always run last.
+    downloaded = [Path(p) / 'rules' / 'builtin' for p in paths if Path(p).is_dir()]
+    official = merge_rule_files(downloaded, base=official['rules'], tolerant=tolerant)
+    result = merge_rule_files(locations[1:], base=official['rules'], tolerant=tolerant)
+    result['warnings'] = official['warnings'] + result['warnings']
+    return result
+
+
 def load_rules(paths=(), *, bundled_path=None):
-    return merge_rule_files(rule_paths(paths, bundled_path=bundled_path))['rules']
+    return _load_rules(paths, bundled_path=bundled_path)['rules']
 
 
 def load_rules_tolerant(paths=(), *, bundled_path=None):
-    return merge_rule_files(rule_paths(paths, bundled_path=bundled_path), tolerant=True)
+    return _load_rules(paths, bundled_path=bundled_path, tolerant=True)
 
 
 @functools.cache
