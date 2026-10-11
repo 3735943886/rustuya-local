@@ -7,7 +7,7 @@
 
 const ORIGIN = { pack: "origin_pack", pack_edited: "origin_pack_edited" };      // I18N keys
 const PACK_CHANGES = ["added", "updated", "removed", "kept"];                    // a pack sync's lists, in this order
-const CONVERTER_FILE = /\.(json|py)$/;
+const CONVERTER_FILE = /\.json$/;
 
 const STYLE = `
   :host { display: block; min-height: 100vh; background: var(--primary-background-color); color: var(--primary-text-color);
@@ -195,9 +195,9 @@ const I18N = {
     hide: "Hide panel", pack_title: "Override pack",
     pack_intro: "Fixes for non-standard devices, published between releases and copied into the converters directory.",
     converters_title: "Custom converters",
-    converters_intro: "Override blocks (*.json) and code converters (*.py) in rustuya_converters/. Saved files apply within seconds. Code converters run inside Home Assistant. See tuya2ildevice's README, \"User overrides\". Drop files here to copy them in.",
+    converters_intro: "Rule files (*.json: override blocks and declarative converters) in rustuya_converters/. Saved files apply within seconds. See tuya2ildevice's README, \"User overrides\". Drop files here to copy them in.",
     new_file: "New file", save: "Save", delete: "Delete",
-    only_converters: "{name} (only *.json and *.py files are converters)",
+    only_converters: "{name} (only *.json files are converters)",
     confirm_replace_pack: "{name} comes from the override pack. Replaced, it is yours: the pack no longer updates or removes it.",
     confirm_replace: "{name} already exists. Replace it?",
     copied: "Copied {names}", not_copied: "Not copied: {names}",
@@ -209,7 +209,7 @@ const I18N = {
     pack_failed: "; failed: {list}", pack_error: "Not synced ({error}), {when}", pack_synced: "Synced {when}",
     origin_note_pack: "From the override pack: the next sync updates it. Saving an edit makes it yours.",
     origin_note_pack_edited: "An edited pack file: the pack no longer updates it. Delete it to get the pack's copy back at the next sync.",
-    name_first: "Name the file first (*.json or *.py)",
+    name_first: "Name the file first (*.json)",
     confirm_edit_pack: "{name} comes from the override pack. Once edited it is yours: the pack no longer updates or removes it.",
     saved: "Saved {name}", confirm_delete: "Delete {name}?", deleted: "Deleted {name}", not_deleted: "Not deleted: {error}",
     pack_is_off: "The pack is off", cannot_sync: "Cannot sync: {error}", pack_changed: "The pack changed the converter files",
@@ -264,9 +264,9 @@ const I18N = {
     hide: "패널 숨기기", pack_title: "오버라이드 팩",
     pack_intro: "릴리즈 사이에 나온 비표준 기기 수정으로, 컨버터 디렉터리에 복사됩니다.",
     converters_title: "커스텀 컨버터",
-    converters_intro: "rustuya_converters/ 안의 오버라이드 블록(*.json)과 코드 컨버터(*.py). 저장한 파일은 몇 초 안에 적용됩니다. 코드 컨버터는 Home Assistant 안에서 실행됩니다. tuya2ildevice README의 \"User overrides\"를 참고하세요. 여기에 파일을 끌어다 놓으면 복사됩니다.",
+    converters_intro: "rustuya_converters/ 안의 규칙 파일(*.json: 오버라이드 블록과 선언형 컨버터). 저장한 파일은 몇 초 안에 적용됩니다. tuya2ildevice README의 \"User overrides\"를 참고하세요. 여기에 파일을 끌어다 놓으면 복사됩니다.",
     new_file: "새 파일", save: "저장", delete: "삭제",
-    only_converters: "{name} (*.json과 *.py 파일만 컨버터입니다)",
+    only_converters: "{name} (*.json 파일만 컨버터입니다)",
     confirm_replace_pack: "{name}은(는) 오버라이드 팩의 파일입니다. 바꾸면 내 파일이 되어 팩이 더 이상 갱신하거나 지우지 않습니다.",
     confirm_replace: "{name}이(가) 이미 있습니다. 바꿀까요?",
     copied: "{names} 복사함", not_copied: "복사하지 못함: {names}",
@@ -278,7 +278,7 @@ const I18N = {
     pack_failed: "; 실패: {list}", pack_error: "동기화하지 못함 ({error}), {when}", pack_synced: "{when}에 동기화함",
     origin_note_pack: "오버라이드 팩의 파일입니다. 다음 동기화 때 갱신됩니다. 수정해서 저장하면 내 파일이 됩니다.",
     origin_note_pack_edited: "수정한 팩 파일입니다. 팩이 더 이상 갱신하지 않습니다. 지우면 다음 동기화 때 팩의 파일이 다시 들어옵니다.",
-    name_first: "먼저 파일 이름을 정하세요 (*.json 또는 *.py)",
+    name_first: "먼저 파일 이름을 정하세요 (*.json)",
     confirm_edit_pack: "{name}은(는) 오버라이드 팩의 파일입니다. 수정하면 내 파일이 되어 팩이 더 이상 갱신하거나 지우지 않습니다.",
     saved: "{name} 저장함", confirm_delete: "{name}을(를) 삭제할까요?", deleted: "{name} 삭제함", not_deleted: "삭제하지 못했습니다: {error}",
     pack_is_off: "팩이 꺼져 있습니다", cannot_sync: "동기화할 수 없습니다: {error}", pack_changed: "팩이 컨버터 파일을 바꿨습니다",

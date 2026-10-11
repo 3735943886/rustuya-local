@@ -6,7 +6,8 @@ import subprocess
 import sys
 
 from devices import lamp, status_reply
-from tuya2ildevice.host import MqttTransport
+
+from rustuya_local.host import MqttTransport
 
 
 async def answer_status(transport, root, ids):

@@ -1,4 +1,4 @@
-"""The one assembly every shell runs: rustuya-bridge -> `tuya2ildevice.Hub` -> IL, with the device file and the user
+"""The one assembly every shell runs: rustuya-bridge -> `rustuya_local.host.Hub` -> IL, with the device file and the user
 overrides followed as they change. The CLI daemon, the Home Assistant integration and the rustuya-manager plugin differ
 only in how they connect the two transports and how long they keep the service; nothing here imports any of them.
 
@@ -20,7 +20,7 @@ With `pack` on, the override pack (tuya2ildevice's `pack/`) is copied into the o
 start and every `pack_interval` seconds; the directory watcher loads what it brings.
 
 A device's settings (a cover's direction toggles, tuya2ildevice's `device_settings`) are IL properties like any other;
-writing one saves it into the overrides directory (`tuya2ildevice.host.SETTINGS_FILE`), which the watcher applies at
+writing one saves it into the overrides directory (`rustuya_local.host.SETTINGS_FILE`), which the watcher applies at
 once. Without an overrides directory there is nowhere to keep them, so the Hub does not offer them.
 """
 
@@ -36,16 +36,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tuya2ildevice import BridgeCommand, Hub, IlTopics, Publish, preload
-from tuya2ildevice.assemble import HAZARDOUS_COVERS
-from tuya2ildevice.host import (
+from tuya2ildevice import preload
+
+from rustuya_local.host import (
+    BridgeCommand,
     DeviceWatcher,
+    Hub,
+    IlTopics,
     OverrideWatcher,
+    Publish,
     Runner,
     load_devices,
     producer_running,
 )
-from tuya2ildevice.host.transport import Transport
+from rustuya_local.host.rules import rules
+from rustuya_local.host.transport import Transport
 
 from .bridge_client import BridgeClient, payload_text
 from .validation import validate_topics
@@ -95,7 +100,8 @@ def hazardous(record: dict, descriptor: dict) -> bool:
     if record.get("category") in HAZARDOUS_CATEGORIES:
         return True
     kinds = [descriptor] + list((descriptor.get("groups") or {}).values())
-    return any(k.get("kind") == "alarm" or (k.get("kind") == "cover" and k.get("class") in HAZARDOUS_COVERS)
+    hazardous_covers = rules()["constants"]["hazardous_covers"]
+    return any(k.get("kind") == "alarm" or (k.get("kind") == "cover" and k.get("class") in hazardous_covers)
                for k in kinds)
 
 
@@ -112,9 +118,8 @@ class Settings:
     pack_interval: float = 86400.0
     pack_url: str | None = None                # the pack's base URL; tuya2ildevice's `master` when None
     hub_options: dict[str, Any] = field(default_factory=dict)
-    """`tuya2ildevice.Hub` keyword arguments: `allow_hazardous`, `expose_unused`, `use_quirks`, `device_settings` (on
-    by default, and only with an overrides directory), `overrides` (inline, merged over the directory's), `converters`,
-    `converter_types`."""
+    """`rustuya_local.host.Hub` keyword arguments: `allow_hazardous`, `expose_unused`, `use_quirks`, `device_settings` (on
+    by default, and only with an overrides directory), `overrides` (inline, merged over the directory's), `rules`."""
 
     @property
     def overrides_dir(self) -> Path | None:
@@ -152,20 +157,21 @@ class Service:
         validate_topics(s.root, s.prefix, s.source)
         self._retire = False
         self._offline = True
-        # tuya2ildevice reads its data files on first use; here, not in the event loop when the first device arrives
+        # Native library and host rule files are loaded off the event loop before the first device arrives
         await asyncio.to_thread(preload)
+        default_pack = await asyncio.to_thread(rules)
         async with contextlib.AsyncExitStack() as stack:
             self.bridge = await self._connect_bridge()
             _close_later(stack, self.bridge)
             self.bridge_client = BridgeClient(self.bridge, s.root)
 
-            options = dict(s.hub_options)
+            options = {"rules": default_pack, **s.hub_options}
             inline = options.pop("overrides", None) or {}
             if s.overrides_path is not None:
                 self.override_watcher = OverrideWatcher(s.overrides_path, None, s.watch_interval, base=inline)
-                loaded = await self.override_watcher.load_initial()      # file I/O and imports run off the loop
+                loaded = await self.override_watcher.load_initial()      # file I/O runs off the loop
                 options["overrides"] = loaded.overrides
-                options["converter_types"] = {**loaded.converter_types, **(options.get("converter_types") or {})}
+                options["rules"] = loaded.rules
             else:
                 options["overrides"] = inline
             # a setting written through IL is kept in the overrides directory: none, no settings to offer
@@ -234,7 +240,7 @@ class Service:
     async def _pack_loop(self, directory: Path) -> None:
         import time
 
-        from tuya2ildevice.host import pack
+        from rustuya_local.host import pack
 
         url = self.settings.pack_url or pack.BASE_URL
         self._pack_running = True

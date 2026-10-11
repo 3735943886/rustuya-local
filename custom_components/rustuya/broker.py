@@ -25,9 +25,8 @@ def credentials(data: dict[str, Any]) -> tuple[str | None, str | None]:
 
 
 def _import_runtime() -> None:
-    """Importing tuya2ildevice reads its data files; run in Home Assistant's import executor, not the event loop."""
-    import tuya2ildevice.host  # noqa: F401
-
+    """Load host modules in Home Assistant's import executor; Service loads native code and rules off the loop."""
+    import rustuya_local.host
     import rustuya_local.service  # noqa: F401
 
 
@@ -37,7 +36,7 @@ async def import_runtime(hass: HomeAssistant) -> None:
 
 def transport(data: dict[str, Any], client_id: str, will: Any = None) -> Any:
     """An `MqttTransport` to the broker, not connected yet (`import_runtime` first)."""
-    from tuya2ildevice.host import MqttTransport
+    from rustuya_local.host import MqttTransport
 
     username, password = credentials(data)
     return MqttTransport(data[CONF_BROKER_HOST], data[CONF_BROKER_PORT], client_id=client_id, username=username,

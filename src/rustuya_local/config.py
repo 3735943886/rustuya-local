@@ -11,8 +11,8 @@
     }
 
 `devices` is a path (relative to the config file), which is followed as rustuya-manager rewrites it every
-`watch_interval` seconds (0 = read once), or the list itself. `custom_converters` is a directory of user overrides and
-code converters (see `tuya2ildevice.host.load_overrides`), followed the same
+`watch_interval` seconds (0 = read once), or the list itself. `custom_converters` is a directory of user rule files
+(overrides and declarative converters, see `rustuya_local.host.load_overrides`), followed the same
 way; `options.overrides` is merged over it. A device's settings written through IL (a cover's direction switches) are
 kept in that directory too; `options.device_settings: false` stops offering them. `pack` (on by default) copies
 tuya2ildevice's override pack, fixes published between releases, into that directory daily. Every key but `devices`
@@ -26,13 +26,13 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
-from tuya2ildevice.host import MqttTransport, load_devices
+from rustuya_local.host import MqttTransport, load_devices
 
 from .service import Settings
 from .validation import boolean, interval, validate_topics
 
 KEYS = frozenset({"bridge", "il", "devices", "options", "watch_interval", "custom_converters", "pack"})
-OPTIONS = frozenset({"allow_hazardous", "expose_unused", "overrides", "converters", "use_quirks", "device_settings"})
+OPTIONS = frozenset({"allow_hazardous", "expose_unused", "overrides", "use_quirks", "device_settings"})
 _DEFAULT = Settings()
 
 
@@ -83,8 +83,8 @@ class Config:
     watch_interval: float = _DEFAULT.watch_interval
     pack: bool = True
     hub_options: dict[str, Any] = field(default_factory=dict)
-    """Keyword arguments for `tuya2ildevice.Hub`: `allow_hazardous`, `expose_unused`, `device_settings`, `overrides`,
-    `converters`."""
+    """Keyword arguments for `rustuya_local.host.Hub`: `allow_hazardous`, `expose_unused`, `device_settings`, `overrides`,
+    `use_quirks`."""
 
     @classmethod
     def from_dict(cls, data: dict, base: Path | None = None) -> Config:
@@ -99,10 +99,10 @@ class Config:
         if bad := set(options) - OPTIONS:
             raise ValueError(f"unknown options: {sorted(bad)}")
         bridge, il = data.get("bridge", {}), data.get("il", {})
-        for key in OPTIONS - {"overrides", "converters"}:
+        for key in OPTIONS - {"overrides"}:
             if key in options:
                 boolean(options[key], key)
-        for key in ("overrides", "converters"):
+        for key in ("overrides",):
             if key in options and not isinstance(options[key], dict):
                 raise ValueError(f"{key} must be an object")
         for name, block, extra in (("bridge", bridge, {"root"}), ("il", il, {"prefix", "source"})):

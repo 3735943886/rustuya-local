@@ -7,10 +7,9 @@ import pytest
 from devices import lamp
 from ildevice.core import IlModel
 from test_chain_in_process import Recorder, Timers
-from tuya2ildevice import Hub, IlTopics
-from tuya2ildevice.host import MqttTransport, Runner
 
 from rustuya_local.bridge_client import BridgeClient
+from rustuya_local.host import Hub, IlTopics, MqttTransport, Runner
 
 
 async def until(cond, timeout=5.0):

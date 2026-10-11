@@ -1,29 +1,17 @@
 """`Service`, the assembly every shell runs, on in-memory brokers: devices the bridge holds reach IL, a user overrides
-directory (JSON files and a code converter) is applied at start and followed, a failed start releases what it
+directory (JSON rule layers and declarative converters) is applied at start and followed, a failed start releases what it
 connected, and stop is idempotent."""
 import json
 
 import pytest
 from devices import curtain, lamp, status_reply
-from tuya2ildevice.host import SETTINGS_FILE, InProcessTransport
 
+from rustuya_local.host import SETTINGS_FILE, InProcessTransport
 from rustuya_local.service import AnotherProducer, Service, Settings
 
-CONVERTER_PY = """
-from tuya2ildevice import Converter
-
-class Glow(Converter):
-    def __init__(self, cfg):
-        self.on = cfg.get("on", "yes")
-
-    def props(self):
-        return {"glow": {"type": "text"}}
-
-    def update(self, now, codes, changed, active):
-        return {"glow": self.on if codes.get("switch_led") else "no"}
-
-CONVERTERS = {"glow": Glow}
-"""
+GLOW = {"props": {"glow": {"type": "text"}}, "on": "bright",
+        "update": [{"emit": "glow", "value": {"op": "if", "condition": {"op": "get", "path": "codes.switch_led"},
+                                               "then": {"op": "get", "path": "config.on"}, "else": "no"}}]}
 
 
 class Transports:
@@ -87,9 +75,8 @@ async def test_devices_the_bridge_holds_reach_il_and_stop_goes_offline(tmp_path,
 async def test_an_overrides_directory_is_applied_and_followed(tmp_path, monkeypatch):
     conv = tmp_path / "converters"
     conv.mkdir()
-    (conv / "glow.py").write_text(CONVERTER_PY)
-    (conv / "10.json").write_text(json.dumps({"p": {"converters": {"glow": {"on": "bright"}}}}))
-    (conv / "20_model.json").write_text(json.dumps({"lamp1": {"device": {"model": "Desk lamp"}}}))
+    (conv / "10.json").write_text(json.dumps({"overrides": {"p": {"converters": {"declarative": GLOW}}}}))
+    (conv / "20_model.json").write_text(json.dumps({"overrides": {"lamp1": {"device": {"model": "Desk lamp"}}}}))
     t = Transports()
     await _answer_status(t.bridge, ["lamp1"])
     import rustuya_local.bridge_client as bc
@@ -148,7 +135,7 @@ async def test_a_cover_setting_written_through_il_is_saved_and_applied(tmp_path,
         if saved.is_file():
             break
         await asyncio.sleep(0.02)
-    assert json.loads(saved.read_text())["cur1"]["cover"]["invert_position"] is True
+    assert json.loads(saved.read_text())["overrides"]["cur1"]["cover"]["invert_position"] is True
     assert not [c for c in sent if c.get("action") == "set"]    # a setting, not a command to the device
     await t.bridge.publish("rustuya/event/state/cur1", '{"3":20}', 0, True)
     await settle(service, t)

@@ -26,7 +26,7 @@ const toast = (ctx, text, kind) => ctx.toast && ctx.toast(text, kind);
 const confirmed = async (ctx, question) => !ctx.confirm || ctx.confirm(question);
 const converterUrl = (name) => `${API}/converters/${encodeURIComponent(name)}`;
 const PACK_CHANGES = ["added", "updated", "removed", "kept"];
-const CONVERTER_FILE = /\.(json|py)$/;
+const CONVERTER_FILE = /\.json$/;
 
 const section = (title, ...body) =>
   el("section", { class: "mb-6" }, el("h2", { class: "text-lg font-semibold mb-2" }, title), ...body);
@@ -175,7 +175,7 @@ async function convertersBox(ctx) {
     for (const file of files) {
       const fname = file.name;
       if (!CONVERTER_FILE.test(fname)) {
-        toast(ctx, `${fname}: only *.json and *.py files are converters`, "error");
+        toast(ctx, `${fname}: only *.json files are converters`, "error");
         continue;
       }
       if (fname in origins && !(await confirmed(ctx, origins[fname] === "pack"
@@ -227,7 +227,7 @@ async function convertersBox(ctx) {
   });
   box.append(
     el("p", { class: "text-sm text-gray-500 mb-2" },
-      "Override blocks (*.json) and code converters (*.py, run in the manager's process) for non-standard devices. ",
+      "Rule files (*.json: override blocks and declarative converters) for non-standard devices. ",
       "See tuya2ildevice's README, \"User overrides\". Drop files here to copy them in."),
     list, warnings,
     el("div", { class: "flex gap-2 mb-2 items-center" }, el("label", {}, "File ", name),

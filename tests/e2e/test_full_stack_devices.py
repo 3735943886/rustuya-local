@@ -26,7 +26,9 @@ import fixtures
 from devices import fixture_record as record
 from test_full_stack import Observer, wait
 from tuya2ildevice import Connected, Message, TuyaDriver, Value
-from tuya2ildevice.mqtt import encode_value
+
+from rustuya_local.host.il import encode_value
+from rustuya_local.host.rules import rules
 
 KEY = "thisisarealkey00"
 def pick(per_platform=4, cap=60):
@@ -47,7 +49,7 @@ def pick(per_platform=4, cap=60):
 
 def expected(rec, dps):
     """What the daemon should publish, computed with the driver directly."""
-    drv = TuyaDriver(rec)
+    drv = TuyaDriver(rec, rules=rules())
     drv.handle(0, Connected())
     outs = drv.handle(1, Message("state", dps))
     return {o.prop: encode_value(o.value) for o in outs if isinstance(o, Value)}

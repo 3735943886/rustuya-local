@@ -229,8 +229,8 @@ async def test_the_bridge_list_when_it_cannot_be_had(hass, loaded, hass_client, 
 async def test_live_links_while_subscribed(hass, loaded, hass_ws_client, monkeypatch):
     import json
 
-    import tuya2ildevice.host
-    from tuya2ildevice.host.memory import InProcessTransport
+    import rustuya_local.host
+    from rustuya_local.host.memory import InProcessTransport
 
     broker = InProcessTransport()
     made = []
@@ -249,7 +249,7 @@ async def test_live_links_while_subscribed(hass, loaded, hass_ws_client, monkeyp
         def __getattr__(self, name):                   # subscribe / publish on the shared in-process broker
             return getattr(broker, name)
 
-    monkeypatch.setattr(tuya2ildevice.host, "MqttTransport", FakeMqtt)
+    monkeypatch.setattr(rustuya_local.host, "MqttTransport", FakeMqtt)
     await broker.publish("rustuya/error/lamp", json.dumps({"errorCode": 0}), retain=True)
     await loaded({CONF_PANEL: True})
     ws = await hass_ws_client(hass)
@@ -272,7 +272,7 @@ async def test_live_links_while_subscribed(hass, loaded, hass_ws_client, monkeyp
 
 
 async def test_live_links_refuse_when_off_or_unreachable(hass, loaded, hass_ws_client, monkeypatch):
-    import tuya2ildevice.host
+    import rustuya_local.host
 
     class Down:
         def __init__(self, *a, **kw):
@@ -284,7 +284,7 @@ async def test_live_links_refuse_when_off_or_unreachable(hass, loaded, hass_ws_c
         async def close(self):
             pass
 
-    monkeypatch.setattr(tuya2ildevice.host, "MqttTransport", Down)
+    monkeypatch.setattr(rustuya_local.host, "MqttTransport", Down)
     await loaded({CONF_PANEL: True})
     ws = await hass_ws_client(hass)
     await ws.send_json({"id": 1, "type": "rustuya/subscribe_links"})

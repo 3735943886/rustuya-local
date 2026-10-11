@@ -1,3 +1,18 @@
+# Moving to tuya2ildevice 0.4
+
+The device file, MQTT configuration and IL topics stay the same. Custom files in the converters directory now use
+the rule-layer format. Wrap an existing product/device override mapping in `{"overrides": ...}`. For example:
+
+```json
+{"overrides": {"product_id": {"cover": {"invert_position": true}}}}
+```
+
+Apply the same conversion to `zz_settings.json` to preserve cover settings saved by an older version. Leave
+`options.overrides` in the daemon configuration as a product/device mapping; the host still accepts that format.
+Rewrite Python converters as JSON programs under `converters.declarative`. Invalid JSON rule layers are reported
+and skipped, so check the logs after upgrading. The managed override pack updates automatically when enabled;
+files you edited remain yours to convert.
+
 # Moving from rustuya-homeassistant
 
 rustuya-homeassistant (`rustuya-ha`) published Home Assistant MQTT discovery for your Tuya devices, as a CLI or a
@@ -45,12 +60,12 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
    | rustuya-manager plugin | `rustuya-local/custom_converters/` in the manager's plugin data directory |
    | daemon | `custom_converters` in its `config.json` |
 
-   - `*.json` files are written in tuya2ildevice's override format
+   - `*.json` files are rule layers, with product/device fixes under `overrides`
      ([User overrides](https://github.com/3735943886/tuya2ildevice#user-overrides)); the old ones are not read, so rewrite them.
      A property the tables do not build is defined from its dp in `props`.
    - A curtain's `invert_position` / `invert_set_position`, reversed command words and derived state are not files any
      more: each cover has configuration switches for them (README, *Cover settings*).
-   - `*.py` files define `Converter`s ([Code converters](https://github.com/3735943886/tuya2ildevice#code-converters)).
+   - Rewrite Python converters as JSON programs under `converters.declarative`; Python plugins are not loaded in 0.4.
    - Leave the old pack (`00_default.json`, `00_curtain.py`, `.rustuya_pack.json`) out. Fixes arrive as `00_pack_*`
      files by themselves.
 

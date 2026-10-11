@@ -4,7 +4,7 @@
 this uses `pyrustuyabridge`'s bindings (`match_topic`, `render_template`, `tpl_to_wildcard`, `parse_seed_dps`),
 which mirror the real Rust bridge's own template/payload logic byte-for-byte.
 
-`tuya2ildevice.Hub` never sees any of this: it only takes already-decoded `Connected`/`Disconnected`/`Message`
+`rustuya_local.host.Hub` never sees any of this: it only takes already-decoded `Connected`/`Disconnected`/`Message`
 input (via `Runner.on_bridge_message`) and emits abstract `BridgeCommand`s (via `Runner`'s `on_bridge_command`
 callback, wired to `BridgeClient.send_command` here) — rendering a real bridge topic/payload is entirely this
 module's job.
@@ -30,10 +30,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import pyrustuyabridge as pb
-from tuya2ildevice import BridgeCommand, Connected, Disconnected, Message
-from tuya2ildevice.host import Runner
-from tuya2ildevice.host.transport import Message as TransportMessage
-from tuya2ildevice.host.transport import Transport, Unsubscribe
+from tuya2ildevice import Connected, Disconnected, Message
+
+from rustuya_local.host import BridgeCommand, Runner
+from rustuya_local.host.transport import Message as TransportMessage
+from rustuya_local.host.transport import Transport, Unsubscribe
 
 _LOGGER = logging.getLogger(__name__)
 

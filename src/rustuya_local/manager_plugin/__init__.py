@@ -84,7 +84,7 @@ class Plugin:
         bc = self.ctx.bridge_client
 
         async def connect(will=None):
-            from tuya2ildevice.host import MqttTransport
+            from rustuya_local.host import MqttTransport
             t = MqttTransport(bc.host, bc.port, client_id=client_id(kind), username=bc.username,
                               password=bc.password, will=will, tls=bool(getattr(bc, "tls", False)))
             await t.connect()

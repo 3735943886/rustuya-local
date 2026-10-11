@@ -5,10 +5,9 @@ import json
 
 import pytest
 from devices import lamp, status_reply
-from tuya2ildevice import Hub, IlTopics
-from tuya2ildevice.host import InProcessTransport, Runner
 
 from rustuya_local.bridge_client import BridgeClient
+from rustuya_local.host import Hub, IlTopics, InProcessTransport, Runner
 
 
 @pytest.fixture
@@ -173,7 +172,7 @@ async def test_one_status_request_at_a_time_and_once_more_if_asked_meanwhile(cha
 async def test_commands_take_the_command_templates_form():
     """r5c's templates: a one-DP write is the bare value on `.../set/<id>/<dp>` (pyrustuyabridge.render_command, checked
     against the bridge's own parser), a multi-DP write stays one command, and nothing is left as a literal `{dp}`."""
-    from tuya2ildevice import BridgeCommand
+    from rustuya_local.host import BridgeCommand
 
     bridge = InProcessTransport()
     await bridge.publish("rustuya/bridge/config", json.dumps({

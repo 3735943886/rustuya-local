@@ -4,8 +4,8 @@ list, turned on by the `panel` option.
 The panel is registered while the entry is loaded with the option on, and removed on unload (an options change reloads
 the entry, so it follows the option). The API views and the static path cannot be unregistered in Home Assistant, so
 they are registered once and answer 404 whenever no loaded entry has the panel on. The files are the same ones the
-manager plugin tab edits (`rustuya_local.manager_plugin.api`); `.py` converters run in Home Assistant's process, so
-every view is for administrators only.
+manager plugin tab edits (`rustuya_local.manager_plugin.api`); they change how every device is driven, so every view
+is for administrators only.
 """
 
 from __future__ import annotations

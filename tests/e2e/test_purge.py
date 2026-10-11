@@ -7,8 +7,8 @@ import threading
 import time
 
 import pytest
-from tuya2ildevice.host import InProcessTransport
 
+from rustuya_local.host import InProcessTransport
 from rustuya_local.service import AnotherProducer, purge_il, purge_retained
 
 
@@ -45,8 +45,7 @@ async def test_purge_il_clears_one_source_and_leaves_the_others():
 
 
 async def test_purge_il_refuses_while_the_producer_answers():
-    from tuya2ildevice import Hub, IlTopics
-    from tuya2ildevice.host import Runner
+    from rustuya_local.host import Hub, IlTopics, Runner
 
     t = InProcessTransport()
     runner = Runner(Hub([], il=IlTopics("il", "tuya")), t)

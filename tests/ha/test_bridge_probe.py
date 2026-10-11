@@ -21,7 +21,7 @@ def _data(port: int, root: str = "rustuya") -> dict:
 
 
 async def _retain(port: int, topic: str, payload: str) -> None:
-    from tuya2ildevice.host import MqttTransport
+    from rustuya_local.host import MqttTransport
 
     t = MqttTransport("127.0.0.1", port, client_id="fake-bridge")
     await t.connect()

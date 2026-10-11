@@ -1,3 +1,7 @@
+> 0.4 현재 구조: tuya2ildevice는 Sans-I/O Rust 단일 디바이스 해석기와 언어별 wrapper만 제공한다.
+> 디바이스 registry·IL MQTT 매핑·규칙 파일 로딩·타이머 실행은 rustuya_local.host가 담당한다.
+> 아래 진행 기록의 tuya2ildevice.host와 Python 컨버터는 이전 구조에 관한 기록이다.
+
 # rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
 
 작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.40). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
@@ -23,7 +27,7 @@
                  ┌─────────────── rustuya-local (앱, HA 독립 코어) ───────────────┐
  rustuya-bridge  │  config · 기기/브리지 관리 · 클라우드 스키마 · Runner(asyncio) │
  (LAN dps, MQTT) │        │                                                        │
-   ◄── Transport ┼── tuya2ildevice.Hub (sans-IO 변환) ── Transport ──► IL 메시지 ──┼─► (A) MQTT 브로커 → il-ha(별도 통합)
+   ◄── Transport ┼── rustuya_local.host.Hub → TuyaDriver (Rust 해석) ── Transport ──► IL 메시지 ──┼─► (A) MQTT 브로커 → il-ha(별도 통합)
                  │                                                                 └─► (B) 프로세스 내 직결 → il-ha 엔진(내장)
                  └────────────────────────────────────────────────────────────────┘
                        ▲ 위를 HA 에 올리는 얇은 래퍼: custom_components/rustuya_local (Phase 4)
@@ -187,7 +191,7 @@ manager 의 DP 버스가 아니라 데몬과 같은 자체 `BridgeClient` 연결
 |---|---|
 | `tuya2ha` v1·미커밋 v2, `dp_mapping`, `render_mqtt`, `scheme`, `core/bridge.py`, `core/converter.py`, `plugin_engine/` | 삭제(tuya2ildevice·pyrustuyabridge 가 대체) |
 | `custom_converters/00_default.json`, `00_curtain.py` | tuya2ildevice `overrides.json`(내장) + `cover_motion` |
-| 컨버터 디렉터리 로딩·핫리로드 | tuya2ildevice.host `load_overrides`/`OverrideWatcher` |
+| 컨버터 디렉터리 로딩·핫리로드 | rustuya_local.host `load_overrides`/`OverrideWatcher` |
 | `core/plan.py`·`restore.py`·`backup.py`·`verifier.py`·`detail.py`, CLI status/publish/clear/restore | rustuya-local discovery 모듈(입력만 IL) |
 | `manager_plugin/`(탭 UI) | rustuya-local manager 셸 |
 

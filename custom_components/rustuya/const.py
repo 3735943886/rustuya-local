@@ -47,4 +47,4 @@ DEFAULT_BRIDGE_STATE_FILE = f"{STORAGE_DIR}/bridge_state.json"
 CREDS_FILE = "tuyacreds.json"               # rustuya-manager keeps the Tuya login beside the device file
 LEGACY_DEVICES_FILE = ".storage/rustuya_tuyadevices.json"          # the defaults before entry version 1.2
 LEGACY_BRIDGE_STATE_FILE = ".storage/rustuya_bridge_state.json"
-CONVERTERS_DIR = "rustuya_converters"       # <config>/rustuya_converters: user overrides and code converters, followed live
+CONVERTERS_DIR = "rustuya_converters"       # <config>/rustuya_converters: user rule files (overrides, declarative converters), followed live

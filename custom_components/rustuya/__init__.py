@@ -172,7 +172,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 def _load_devices_or_none(path: str) -> list[dict]:
     """The device file's records; none yet when there is no file (set up without the cloud login: the login in
     Configure writes it, and `async_refresh_devices` hands it over)."""
-    from tuya2ildevice.host import load_devices
+    from rustuya_local.host import load_devices
 
     if not os.path.exists(path):
         _LOGGER.info("no device file at %s yet; fetch the devices from Tuya Cloud in the integration's Configure", path)

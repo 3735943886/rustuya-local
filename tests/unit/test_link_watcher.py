@@ -1,9 +1,8 @@
 """LinkWatcher: each device's connection from the bridge's messages, on topics resolved from its config."""
 import json
 
-from tuya2ildevice.host.memory import InProcessTransport
-
 from rustuya_local.bridge_client import LinkWatcher, error_text
+from rustuya_local.host.memory import InProcessTransport
 
 
 async def test_links_from_the_default_layout():

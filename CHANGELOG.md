@@ -8,6 +8,12 @@ stable release.
 
 ## [Unreleased]
 
+### Changed
+- Require tuya2ildevice 0.4 and pass decoded rule data explicitly to its Sans-I/O Rust driver.
+- Move device registry, IL MQTT mapping, transports, timers and file watchers into `rustuya_local.host` for all three hosts.
+- Load custom JSON files as rule layers, with product/device fixes under `overrides`. Replace Python converters with JSON programs under `converters.declarative`.
+- Bundle the native library and rule pack in the rustuya-manager drop-in archive.
+
 ## [0.0.53] — 2026-10-11
 
 ### Fixed

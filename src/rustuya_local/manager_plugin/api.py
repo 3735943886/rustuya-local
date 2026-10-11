@@ -2,8 +2,8 @@
 
 Everything here is plain file work on the plugin's data dir (`settings.json`, `custom_converters/`) so it can be tested
 without a web server; `router()` wraps it for FastAPI. A saved setting restarts the service (`on_settings`); a saved
-converter file needs nothing, the running service follows the directory. The converters directory runs `.py` files
-in-process, like the manager's own plugin directory: this is an admin surface.
+converter file needs nothing, the running service follows the directory. The files are rule layers (JSON): this is
+still an admin surface, since they change how every device is driven.
 """
 # no `from __future__ import annotations`: FastAPI resolves the handlers' annotations, and `Body` is imported locally
 
@@ -23,7 +23,7 @@ DEFAULTS: dict[str, Any] = {"il": {"prefix": "il", "source": "tuya"},
                                         "pack": True}}
 SETTINGS_FILE = "settings.json"
 CONVERTERS_DIR = "custom_converters"
-_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.(json|py)$")
+_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.json$")
 
 
 class Invalid(ValueError):
@@ -88,13 +88,13 @@ def save_settings(data_dir: Path, body: Any) -> dict[str, Any]:
 
 def _file(directory: Path, name: str) -> Path:
     if not _FILE.match(name):
-        raise Invalid("a converter file is `<name>.json` or `<name>.py` (letters, digits, `_`, `.`, `-`)")
+        raise Invalid("a converter file is `<name>.json` (letters, digits, `_`, `.`, `-`)")
     return directory / name
 
 
 def check(directory: Path) -> list[str]:
     """What the service would report loading the directory now."""
-    from tuya2ildevice.host import load_overrides
+    from rustuya_local.host import load_overrides
 
     return list(load_overrides(directory).warnings) if directory.is_dir() else []
 
@@ -109,7 +109,7 @@ def _origin(path: Path, ledger: dict[str, str]) -> str:
 
 
 def list_converters(directory: Path) -> dict[str, Any]:
-    from tuya2ildevice.host.pack import read_ledger
+    from rustuya_local.host.pack import read_ledger
 
     files = sorted(p for p in directory.iterdir() if p.is_file() and _FILE.match(p.name)) if directory.is_dir() else []
     ledger = read_ledger(directory) if files else {}
@@ -128,11 +128,10 @@ def save_converter(directory: Path, name: str, content: Any) -> dict[str, Any]:
     path = _file(directory, name)
     if not isinstance(content, str):
         raise Invalid("`content` is the file's text")
-    if name.endswith(".json"):
-        try:
-            json.loads(content)
-        except ValueError as e:
-            raise Invalid(f"not JSON: {e}") from e
+    try:
+        json.loads(content)
+    except ValueError as e:
+        raise Invalid(f"not JSON: {e}") from e
     directory.mkdir(parents=True, exist_ok=True)
     _write_atomic(path, content)
     return {"name": name, "warnings": check(directory)}

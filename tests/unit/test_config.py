@@ -39,3 +39,10 @@ def test_a_custom_converters_directory_relative_to_the_config(tmp_path):
 def test_invalid_types_and_topics_are_rejected(data):
     with pytest.raises(ValueError):
         Config.from_dict(data)
+
+
+def test_legacy_code_converter_options_are_rejected():
+    import pytest
+
+    with pytest.raises(ValueError, match="unknown options"):
+        Config.from_dict({"options": {"converters": {}}})

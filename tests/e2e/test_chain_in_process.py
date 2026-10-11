@@ -5,10 +5,9 @@ import json
 import pytest
 from devices import lamp
 from ildevice.core import IlModel
-from tuya2ildevice import Hub, IlTopics
-from tuya2ildevice.host import InProcessTransport, Runner
 
 from rustuya_local.bridge_client import BridgeClient
+from rustuya_local.host import Hub, IlTopics, InProcessTransport, Runner
 
 
 class Recorder:

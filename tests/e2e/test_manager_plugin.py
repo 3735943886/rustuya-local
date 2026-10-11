@@ -7,7 +7,8 @@ import json
 import pytest
 from devices import lamp
 from test_daemon import answer_status
-from tuya2ildevice.host import MqttTransport
+
+from rustuya_local.host import MqttTransport
 
 plugins = pytest.importorskip("rustuya_manager.plugins")
 from rustuya_manager.models import Device
@@ -119,9 +120,17 @@ for r in registers:
     r(ctx)
 import rustuya_local, tuya2ildevice
 from rustuya_local.service import Service
-from tuya2ildevice.host import MqttTransport
+from rustuya_local.host import MqttTransport
 assert Path(rustuya_local.__file__).is_relative_to(plugin_dir), rustuya_local.__file__
 assert Path(tuya2ildevice.__file__).is_relative_to(vendor), tuya2ildevice.__file__
+from tuya2ildevice import TuyaDriver, Connected, Command, SendMessage
+from rustuya_local.host.rules import rules
+check = TuyaDriver({"id": "vendored", "category": "kg",
+                    "function": {"switch_1": {"type": "Boolean", "values": {}}}},
+                   rules=rules(), dpmap={"1": "switch_1"})
+check.handle(0, Connected())
+assert check.handle(1, Command("switch_1", True)) == [SendMessage("set", {"dps": {"1": True}})]
+
 print(len(registers), [p["id"] for p in ctx._registry.pages], len(ctx._registry.services))
 """
 
@@ -200,9 +209,7 @@ async def test_a_settings_change_restarts_the_service_and_bad_settings_wait_for_
 
 
 async def test_another_producer_is_shown_and_the_plugin_starts_once_it_is_gone(broker, tmp_path):
-    from tuya2ildevice import Hub, IlTopics
-    from tuya2ildevice.host import Runner
-
+    from rustuya_local.host import Hub, IlTopics, Runner
     from rustuya_local.manager_plugin import api, register
 
     other = Hub([lamp("mp1")], il=IlTopics("ilo", "tuya"))                # say, the Home Assistant integration

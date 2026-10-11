@@ -1,5 +1,5 @@
 """`async_setup_entry`/`async_unload_entry` for real: a real MQTT broker (mosquitto, skipped if missing), a real
-`tuya2ildevice.host.Runner`. No il-ha, no bridge, no `rustuya_manager` — this integration produces IL and does not
+`rustuya_local.host.Runner`. No il-ha, no bridge, no `rustuya_manager` — this integration produces IL and does not
 depend on any of them at runtime (only its config flow does, and only for onboarding)."""
 
 from __future__ import annotations
@@ -104,8 +104,8 @@ async def test_setup_publishes_and_unload_goes_offline(hass, broker, tmp_path, s
 
 async def test_setup_is_retried_while_another_producer_runs(hass, broker, tmp_path, socket_enabled):
     from homeassistant.config_entries import ConfigEntryState
-    from tuya2ildevice import Hub, IlTopics
-    from tuya2ildevice.host import MqttTransport, Runner
+
+    from rustuya_local.host import Hub, IlTopics, MqttTransport, Runner
 
     other = Hub([lamp("lamp1")], il=IlTopics("il", "tuya"))            # a daemon, say, already serving il / tuya
     will = other.presence(False)
@@ -150,11 +150,13 @@ async def test_setup_fails_cleanly_when_the_broker_is_unreachable(hass, tmp_path
 
 async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(hass, broker, tmp_path, socket_enabled,
                                                                                monkeypatch):
-    """tuya2ildevice reads its data files on first use (quirks, platform tables): the service preloads them in a
-    worker thread, so Home Assistant sees no blocking call when the first device's driver is made."""
-    from tuya2ildevice.tuya import quirks, runtime, standard
+    """The host reads rule files and the binding loads its engine: the service preloads them in a worker
+    thread, so Home Assistant sees no blocking call when the first device's driver is made."""
+    from tuya2ildevice import native
 
-    for loader in (quirks.load_quirks, runtime.load_table, standard.categories, standard._rules):
+    from rustuya_local.host.rules import rules
+
+    for loader in (native.library, rules):
         loader.cache_clear()                                    # as in a fresh Home Assistant process
     import pathlib
     import threading

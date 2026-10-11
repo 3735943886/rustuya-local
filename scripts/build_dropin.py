@@ -3,7 +3,7 @@
 
 The manager downloads the zip, checks its SHA-256 against its catalog, unpacks it into its plugin directory and calls
 the top-level package's `register(ctx)`. A dropped-in plugin cannot pip-install, so the zip has one top-level entry,
-`rustuya_local/`, with tuya2ildevice (pure Python) vendored under `rustuya_local/_vendor/`. paho-mqtt and
+`rustuya_local/`, with tuya2ildevice (Python binding, native library and rule pack) vendored under `rustuya_local/_vendor/`. paho-mqtt and
 pyrustuyabridge are not vendored: the manager depends on both.
 
 The bytes depend only on the file contents (sorted entries, fixed timestamps and modes, no compression), so the same
@@ -46,6 +46,20 @@ def _members() -> list[tuple[str, Path]]:
             sys.exit(f"error: {name} is not installed; install rustuya-local first")
         root = Path(next(iter(spec.submodule_search_locations)))
         out += [(f"rustuya_local/_vendor/{name}/{p.relative_to(root).as_posix()}", p) for p in _files(root)]
+        if name == "tuya2ildevice":
+            # Editable checkouts keep build outputs and rule artifacts outside the Python package.
+            # Installed wheels already contain them; include equivalent assets when building locally.
+            from tuya2ildevice.native import library
+
+            from rustuya_local.host.rules import rule_paths
+
+            native = Path(library()._name).resolve()
+            prefix = f"rustuya_local/_vendor/{name}"
+            members = dict(out)
+            members.setdefault(f"{prefix}/{native.name}", native)
+            for asset in _files(rule_paths()[0]):
+                members.setdefault(f"{prefix}/rules/{asset.relative_to(rule_paths()[0]).as_posix()}", asset)
+            out = list(members.items())
     return sorted(out)
 
 

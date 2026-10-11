@@ -22,21 +22,21 @@ def test_settings_default_validate_and_save(tmp_path):
 def test_converter_files(tmp_path):
     d = tmp_path / "custom_converters"
     assert api.list_converters(d) == {"files": [], "warnings": []}
-    r = api.save_converter(d, "10_mine.json", json.dumps({"pid1": {"device": {"label": "Mine"}}}))
+    r = api.save_converter(d, "10_mine.json", json.dumps({"overrides": {"pid1": {"device": {"label": "Mine"}}}}))
     assert r["warnings"] == []
     assert api.read_converter(d, "10_mine.json")["content"].startswith("{")
     assert [f["name"] for f in api.list_converters(d)["files"]] == ["10_mine.json"]
-    r = api.save_converter(d, "empty.py", "X = 1\n")                     # no CONVERTERS: saved, and reported
-    assert any("defines no CONVERTERS" in w for w in r["warnings"])
-    for name in ("../x.json", ".hidden.json", "a.txt", "sub/a.json"):
+    r = api.save_converter(d, "20_bare.json", json.dumps({"pid1": {}}))       # not a rule object: saved, and reported
+    assert any(w.startswith("20_bare.json") for w in r["warnings"])
+    for name in ("../x.json", ".hidden.json", "a.txt", "sub/a.json", "code.py"):
         with pytest.raises(api.Invalid):
             api.save_converter(d, name, "{}")
     with pytest.raises(api.Invalid):
         api.save_converter(d, "bad.json", "{not json")
     assert not (d / "bad.json").exists()
-    api.delete_converter(d, "empty.py")
+    api.delete_converter(d, "20_bare.json")
     with pytest.raises(FileNotFoundError):
-        api.delete_converter(d, "empty.py")
+        api.delete_converter(d, "20_bare.json")
 
 
 def test_where_a_converter_file_comes_from(tmp_path):
