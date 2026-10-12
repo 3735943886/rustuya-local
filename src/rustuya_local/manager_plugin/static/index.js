@@ -228,7 +228,7 @@ async function convertersBox(ctx) {
   box.append(
     el("p", { class: "text-sm text-gray-500 mb-2" },
       "Rule files (*.json: override blocks and declarative converters) for non-standard devices. ",
-      "See tuya2ildevice's README, \"User overrides\". Drop files here to copy them in."),
+      "See tuya-interpreter docs/device-customization.md, \"User overrides\". Drop files here to copy them in."),
     list, warnings,
     el("div", { class: "flex gap-2 mb-2 items-center" }, el("label", {}, "File ", name),
       el("button", { class: BTN, onclick: save }, "Save"), el("button", { class: BTN, onclick: remove }, "Delete"),

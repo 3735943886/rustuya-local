@@ -13,8 +13,8 @@ import secrets
 import time
 from collections.abc import Awaitable, Callable, Sequence
 
-from tuya2ildevice import Connected, Disconnected
-from tuya2ildevice import Message as DriverInput
+from tuya_interpreter import Connected, Disconnected
+from tuya_interpreter import Message as DriverInput
 
 from rustuya_local.host.il import (
     IL,

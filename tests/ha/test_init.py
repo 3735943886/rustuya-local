@@ -162,7 +162,7 @@ async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(ha
                                                                                monkeypatch):
     """The host reads rule files and the binding loads its engine: the service preloads them in a worker
     thread, so Home Assistant sees no blocking call when the first device's driver is made."""
-    from tuya2ildevice import native
+    from tuya_interpreter import native
 
     from rustuya_local.host.rules import rules
 
@@ -175,7 +175,7 @@ async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(ha
     real_read = pathlib.Path.read_text
 
     def read_text(self, *args, **kwargs):      # what Home Assistant's blocking-call detector flags, recorded instead
-        if threading.current_thread() is loop_thread and "tuya2ildevice" in str(self):
+        if threading.current_thread() is loop_thread and "tuya_interpreter" in str(self):
             in_loop.append(self.name)
         return real_read(self, *args, **kwargs)
     monkeypatch.setattr(pathlib.Path, "read_text", read_text)

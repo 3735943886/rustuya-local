@@ -1,11 +1,11 @@
-"""IL MQTT wire mapping and host actions. Tuya interpretation stays in tuya2ildevice."""
+"""IL MQTT wire mapping and host actions. Tuya interpretation stays in tuya-interpreter."""
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from typing import Any
 
-from tuya2ildevice import (
+from tuya_interpreter import (
     Absent,
     CancelTimer,
     Descriptor,

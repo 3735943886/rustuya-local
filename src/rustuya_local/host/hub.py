@@ -7,8 +7,15 @@ from collections import Counter
 from collections.abc import Sequence
 from typing import Any
 
-from tuya2ildevice import Command, Connected, Disconnected, Message, Timer, TuyaDriver
-from tuya2ildevice.native import register_rules, unregister_rules
+from tuya_interpreter import (
+    Command,
+    Connected,
+    Disconnected,
+    Message,
+    Timer,
+    TuyaDriver,
+)
+from tuya_interpreter.native import register_rules, unregister_rules
 
 from .il import (
     IL,

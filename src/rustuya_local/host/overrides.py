@@ -1,7 +1,7 @@
 """User rule files: a directory (or one `.json` file) of partial rule objects, loaded and followed as it changes.
 
 Each `*.json` is a rule layer (product/device fixes under `overrides`), merged in filename order over the rules
-tuya2ildevice ships and validated by its engine. `SETTINGS_FILE` (``zz_settings.json``) holds the settings written
+tuya-interpreter ships and validated by its engine. `SETTINGS_FILE` (``zz_settings.json``) holds the settings written
 through IL, a block per device (`OverrideWatcher.save_settings`); it can be edited like any other file.
 
 Files starting with `.` or `_` are skipped. Nothing here raises for a bad file: a file that does
@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tuya2ildevice import OverrideError, merge_all
+from tuya_interpreter import OverrideError, merge_all
 
 from rustuya_local.host.rules import load_rules_tolerant, rule_files, upgrade_overrides
 

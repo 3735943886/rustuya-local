@@ -1,4 +1,4 @@
-# Moving to tuya2ildevice 0.4
+# Moving to tuya-interpreter
 
 The device file, MQTT configuration and IL topics stay the same. Custom files in the converters directory now use
 the rule-layer format. Wrap an existing product/device override mapping in `{"overrides": ...}`. For example:
@@ -30,7 +30,7 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
   `ildevice`, and Home Assistant keeps the two apart. Automations, scripts and dashboards that name the old entities
   need the new ids. If you clear the old discovery first (step 1), the old ids are free and you can rename the new
   entities to them in Home Assistant.
-- **Entities follow Home Assistant core's `tuya` integration** (tuya2ildevice reproduces it), so a device can come out
+- **Entities follow Home Assistant core's `tuya` integration** (tuya-interpreter reproduces it), so a device can come out
   with more, fewer or differently split entities than v1 made.
 - **Availability** comes from rustuya-local's presence: when it stops, its devices show unavailable.
 
@@ -61,7 +61,7 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
    | daemon | `custom_converters` in its `config.json` |
 
    - `*.json` files are rule layers, with product/device fixes under `overrides`
-     ([User overrides](https://github.com/3735943886/tuya2ildevice#user-overrides)); the old ones are not read, so rewrite them.
+     ([User overrides](https://github.com/3735943886/tuya-interpreter/blob/master/docs/device-customization.md#user-overrides)); the old ones are not read, so rewrite them.
      A property the tables do not build is defined from its dp in `props`.
    - A curtain's `invert_position` / `invert_set_position`, reversed command words and derived state are not files any
      more: each cover has configuration switches for them (README, *Cover settings*).
@@ -69,7 +69,7 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
    - `converters.cover_motion` and a cover's `infer_motion` are read as the cover's `state_source` (`inferred`, or
      `none` for `infer_motion: false`), and a `cover_motion` `settle` as the cover's `settle`; its other keys are
      dropped with a warning. `zz_settings.json` is rewritten in the new form the next time a setting is saved.
-   - Leave the old pack (`00_default.json`, `00_curtain.py`, `.rustuya_pack.json`) out. Official rules ship with tuya2ildevice; online updates arrive under
+   - Leave the old pack (`00_default.json`, `00_curtain.py`, `.rustuya_pack.json`) out. Official rules ship with tuya-interpreter; online updates arrive under
      `rules/builtin/` automatically. User files are applied after all official rules.
 
    Changes to the directory are picked up while running, no restart needed.

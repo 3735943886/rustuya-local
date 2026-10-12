@@ -1,4 +1,4 @@
-"""The override pack: fixes for non-standard devices published on tuya2ildevice's `feat/rust-rule-engine` branch (`rules/builtin/`) and copied into
+"""The override pack: fixes for non-standard devices published on tuya-interpreter's `master` branch (`rules/builtin/`) and copied into
 the host's rule directory, so a fix reaches users without a release. `OverrideWatcher` then loads the copied files
 like the user's own. The files are rule layers (JSON); fetching them is the host's, the engine only merges them.
 
@@ -37,10 +37,10 @@ from .overrides import SETTINGS_FILE
 
 _LOGGER = logging.getLogger(__name__)
 
-LEVEL = 4                                         # 2: `cover` settings; 3: `delta`; 4: rule-layer files (tuya2ildevice 0.4)
-BASE_URL = "https://raw.githubusercontent.com/3735943886/tuya2ildevice/feat/rust-rule-engine/rules/builtin/"
+LEVEL = 4                                         # 2: `cover` settings; 3: `delta`; 4: rule-layer files (tuya2ildevice 0.4, tuya-interpreter)
+BASE_URL = "https://raw.githubusercontent.com/3735943886/tuya-interpreter/master/rules/builtin/"
 MANIFEST = "manifest.json"
-LEDGER = ".tuya2ildevice_pack.json"
+LEDGER = ".tuya2ildevice_pack.json"                # kept across the rename: existing installs own their files by it
 MAX_BYTES = 1024 * 1024
 TIMEOUT = 15
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.json$")

@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from tuya2ildevice import Connected, Disconnected, Message
+from tuya_interpreter import Connected, Disconnected, Message
 
 from rustuya_local.host import BridgeCommand, Hub, Publish
 from tests.unit.tuya_samples import curtain, light
@@ -75,7 +75,7 @@ def test_a_multi_segment_il_prefix_still_parses_writes():
 
 
 def test_reload_overrides_republishes_and_clears_removed_props():
-    from tuya2ildevice import OverrideError
+    from tuya_interpreter import OverrideError
 
     hub = Hub([curtain()])
     hub.start()

@@ -28,7 +28,7 @@ CONF_DEVICES_PATH = "devices_path"              # tuyadevices.json; the cloud wi
 # --- entry options (changed any time through the options flow) -------------------------
 CONF_ALLOW_HAZARDOUS = "allow_hazardous"
 CONF_EXPOSE_UNUSED = "expose_unused"
-CONF_PACK = "pack"                          # sync tuya2ildevice's override pack into CONVERTERS_DIR
+CONF_PACK = "pack"                          # sync tuya-interpreter's override pack into CONVERTERS_DIR
 CONF_PANEL = "panel"                        # the sidebar page (panel.py); Configure adds / removes it
 
 DEFAULT_OPTIONS = {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True}

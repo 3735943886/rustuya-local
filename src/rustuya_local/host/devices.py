@@ -1,5 +1,5 @@
 """The device list: `tuyadevices.json`, which rustuya-manager keeps (its QR-login wizard writes it, atomically). Each
-entry is a Tuya cloud record with the schema tuya2ildevice needs (`category`, `product_id`, `function`,
+entry is a Tuya cloud record with the schema tuya-interpreter needs (`category`, `product_id`, `function`,
 `status_range`, `local_strategy`). rustuya-local reads it and follows it as it changes; it never writes it."""
 
 from __future__ import annotations

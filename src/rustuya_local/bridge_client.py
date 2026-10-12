@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pyrustuyabridge as pb
-from tuya2ildevice import Connected, Disconnected, Message
+from tuya_interpreter import Connected, Disconnected, Message
 
 from rustuya_local.host import BridgeCommand, Runner
 from rustuya_local.host.transport import Message as TransportMessage

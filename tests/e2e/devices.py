@@ -48,7 +48,7 @@ def status_reply(ids, offset=0, has_more=False, total=None):
                        "returned": len(ids), "has_more": has_more, **({"device_count": total} if total is not None else {})})
 
 
-GOLDEN = pathlib.Path(__file__).resolve().parents[3] / "tuya2ildevice/tests/golden"      # the sibling checkout
+GOLDEN = pathlib.Path(__file__).resolve().parents[3] / "tuya-interpreter/tests/golden"      # the sibling checkout
 WIRE = {"Boolean": "Boolean", "Integer": "Integer", "Enum": "Enum", "String": "String", "Raw": "Raw", "Json": "Json",
         "Bitmap": "Bitmap"}
 

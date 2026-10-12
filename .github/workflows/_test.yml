@@ -38,14 +38,14 @@ jobs:
           repository: 3735943886/ildevice-homeassistant
           path: ildevice-homeassistant
 
-      # tuya2ildevice is on PyPI (installed below via uv), so this isn't for dependency
+      # tuya-interpreter is on PyPI (installed below via uv), so this isn't for dependency
       # resolution -- it's so tests/e2e/test_full_stack_devices.py can reach its sibling
       # checkout's tests/golden fixture data, which isn't shipped in the published package.
-      - name: Check out tuya2ildevice
+      - name: Check out tuya-interpreter
         uses: actions/checkout@v7
         with:
-          repository: 3735943886/tuya2ildevice
-          path: tuya2ildevice
+          repository: 3735943886/tuya-interpreter
+          path: tuya-interpreter
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v7
@@ -114,7 +114,7 @@ jobs:
           "$RUNNER_TEMP/smoke/bin/python" -c "
           import rustuya_local.cli, rustuya_local.manager_plugin, rustuya_local.service
           from rustuya_local import register
-          import tuya2ildevice
-          tuya2ildevice.preload()
+          import tuya_interpreter
+          tuya_interpreter.preload()
           print('ok')"
           "$RUNNER_TEMP/smoke/bin/rustuya-local" --help

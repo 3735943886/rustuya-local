@@ -1,6 +1,6 @@
 """An embedded rustuya-bridge: `pyrustuyabridge.PyBridgeServer` run in a background thread, tied to this config
 entry's lifecycle instead of a separate rustuya-bridge process. Same class our own end-to-end tests drive
-(tuya2ildevice/rustuya-local tests/e2e/test_full_stack.py) — proven against a real broker and real Tuya-protocol
+(tuya-interpreter/rustuya-local tests/e2e/test_full_stack.py) — proven against a real broker and real Tuya-protocol
 devices, just supervised here instead of by a test fixture.
 
 The embedded bridge still needs a real MQTT broker to talk through (it manages its own native MQTT client); it does

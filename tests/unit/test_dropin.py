@@ -1,4 +1,4 @@
-"""The rustuya-manager drop-in zip: one top-level package with tuya2ildevice vendored, byte-identical rebuilds."""
+"""The rustuya-manager drop-in zip: one top-level package with tuya-interpreter vendored, byte-identical rebuilds."""
 import hashlib
 import importlib.util
 import os
@@ -14,15 +14,15 @@ sys.modules["build_dropin"] = build_dropin
 spec.loader.exec_module(build_dropin)
 
 
-def test_one_package_with_tuya2ildevice_inside(tmp_path):
+def test_one_package_with_tuya_interpreter_inside(tmp_path):
     zf = zipfile.ZipFile(build_dropin.build(tmp_path))
     names = zf.namelist()
     assert {n.split("/", 1)[0] for n in names} == {"rustuya_local"}          # the manager imports each top-level entry
     for needed in ("rustuya_local/__init__.py", "rustuya_local/manager_plugin/static/index.js",
-                   "rustuya_local/_vendor/tuya2ildevice/__init__.py", "rustuya_local/_vendor/tuya2ildevice/native.py"):
+                   "rustuya_local/_vendor/tuya_interpreter/__init__.py", "rustuya_local/_vendor/tuya_interpreter/native.py"):
         assert needed in names
-    assert "rustuya_local/_vendor/tuya2ildevice/rules/builtin/00-default.json" in names
-    assert any(n.startswith("rustuya_local/_vendor/tuya2ildevice/") and n.endswith((".so", ".dll", ".dylib"))
+    assert "rustuya_local/_vendor/tuya_interpreter/rules/builtin/00-default.json" in names
+    assert any(n.startswith("rustuya_local/_vendor/tuya_interpreter/") and n.endswith((".so", ".dll", ".dylib"))
                for n in names)
     assert not any("__pycache__" in n or n.startswith("rustuya_local/_vendor/paho") for n in names)
 
@@ -33,7 +33,7 @@ def test_rebuilds_are_byte_identical(tmp_path):
     assert hashlib.sha256(a).digest() == hashlib.sha256(b).digest()
 
 
-def test_archive_runs_driver_without_installed_tuya2ildevice(tmp_path):
+def test_archive_runs_driver_without_installed_tuya_interpreter(tmp_path):
     with zipfile.ZipFile(build_dropin.build(tmp_path)) as archive:
         archive.extractall(tmp_path)
     # -I -S excludes editable installs and site-packages: both native code and rules
@@ -43,9 +43,9 @@ import sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 from rustuya_local.host import Hub, BridgeCommand
-from tuya2ildevice import Connected, Message
-import tuya2ildevice
-assert Path(tuya2ildevice.__file__).is_relative_to(Path(sys.argv[1]))
+from tuya_interpreter import Connected, Message
+import tuya_interpreter
+assert Path(tuya_interpreter.__file__).is_relative_to(Path(sys.argv[1]))
 device = {'id': 'd', 'category': 'kg',
           'function': {'switch_1': {'type': 'Boolean', 'values': {}}},
           'local_strategy': {'1': {'value_convert': 'default', 'status_code': 'switch_1',

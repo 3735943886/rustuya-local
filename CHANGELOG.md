@@ -8,6 +8,10 @@ stable release.
 
 ## [Unreleased]
 
+### Changed
+- Require tuya-interpreter 0.1.0a1 (tuya2ildevice renamed) in place of tuya2ildevice, in the package, the Home Assistant integration and the manager drop-in archive.
+- Fetch builtin rule updates from tuya-interpreter's `master` branch.
+
 ## [0.1.0.dev5] — 2026-10-11
 
 ### Fixed

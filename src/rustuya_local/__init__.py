@@ -3,8 +3,8 @@
 import sys
 from pathlib import Path
 
-# The rustuya-manager drop-in zip (scripts/build_dropin.py) carries tuya2ildevice here, since a dropped-in plugin cannot
-# pip-install. Appended, not prepended: an installed tuya2ildevice wins.
+# The rustuya-manager drop-in zip (scripts/build_dropin.py) carries tuya-interpreter here, since a dropped-in plugin cannot
+# pip-install. Appended, not prepended: an installed tuya-interpreter wins.
 _VENDOR = Path(__file__).parent / "_vendor"
 if _VENDOR.is_dir() and str(_VENDOR) not in sys.path:
     sys.path.append(str(_VENDOR))

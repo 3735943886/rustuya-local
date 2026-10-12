@@ -15,7 +15,7 @@
 (overrides and declarative converters, see `rustuya_local.host.load_overrides`), followed the same
 way; `options.overrides` is merged over it. A device's settings written through IL (a cover's direction switches) are
 kept in that directory too; `options.device_settings: false` stops offering them. `pack` (on by default) copies
-tuya2ildevice's override pack, fixes published between releases, into that directory daily. Every key but `devices`
+tuya-interpreter's override pack, fixes published between releases, into that directory daily. Every key but `devices`
 has a default. The bridge's own topic templates are read from its retained `{root}/bridge/config` at start.
 """
 

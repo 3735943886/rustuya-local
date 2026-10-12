@@ -99,9 +99,9 @@ plugin_dir = Path(sys.argv[1])
 vendor = plugin_dir / "rustuya_local" / "_vendor"
 
 class OnlyVendored:
-    # tuya2ildevice may be installed here; a manager's environment has none, so resolve it from the zip only
+    # tuya-interpreter may be installed here; a manager's environment has none, so resolve it from the zip only
     def find_spec(self, name, path=None, target=None):
-        if name.split(".")[0] != "tuya2ildevice" or path is not None:
+        if name.split(".")[0] != "tuya_interpreter" or path is not None:
             return None
         spec = importlib.machinery.PathFinder.find_spec(name, [str(vendor)])
         if spec is None:
@@ -118,12 +118,12 @@ ctx = plugins.PluginContext(plugins.PluginRegistry(), state=state, data_root=Pat
                             bridge_client=BridgeClient("mqtt://127.0.0.1:1", "r", state))
 for r in registers:
     r(ctx)
-import rustuya_local, tuya2ildevice
+import rustuya_local, tuya_interpreter
 from rustuya_local.service import Service
 from rustuya_local.host import MqttTransport
 assert Path(rustuya_local.__file__).is_relative_to(plugin_dir), rustuya_local.__file__
-assert Path(tuya2ildevice.__file__).is_relative_to(vendor), tuya2ildevice.__file__
-from tuya2ildevice import TuyaDriver, Connected, Command, SendMessage
+assert Path(tuya_interpreter.__file__).is_relative_to(vendor), tuya_interpreter.__file__
+from tuya_interpreter import TuyaDriver, Connected, Command, SendMessage
 from rustuya_local.host.rules import rules
 check = TuyaDriver({"id": "vendored", "category": "kg",
                     "function": {"switch_1": {"type": "Boolean", "values": {}}}},
@@ -135,7 +135,7 @@ print(len(registers), [p["id"] for p in ctx._registry.pages], len(ctx._registry.
 """
 
 
-def test_the_drop_in_zip_loads_in_the_manager_with_its_vendored_tuya2ildevice(tmp_path):
+def test_the_drop_in_zip_loads_in_the_manager_with_its_vendored_tuya_interpreter(tmp_path):
     import importlib.util
     import subprocess
     import sys

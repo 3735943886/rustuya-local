@@ -16,10 +16,10 @@ integration, the rustuya-manager plugin or a daemon) serves them, since every de
 `online` that nobody answers for (a Last Will lost with the broker, or a producer on tuya2ildevice < 0.3.5) does not
 stop the start.
 
-With `pack` on, the override pack (tuya2ildevice's `rules/builtin/`) is copied into the overrides directory in the background at
+With `pack` on, the override pack (tuya-interpreter's `rules/builtin/`) is copied into the overrides directory in the background at
 start and every `pack_interval` seconds; the directory watcher loads what it brings. Manual requests work with `pack` off.
 
-A device's settings (a cover's direction toggles, tuya2ildevice's `device_settings`) are IL properties like any other;
+A device's settings (a cover's direction toggles, tuya-interpreter's `device_settings`) are IL properties like any other;
 writing one saves it into the overrides directory (`rustuya_local.host.SETTINGS_FILE`), which the watcher applies at
 once. Without an overrides directory there is nowhere to keep them, so the Hub does not offer them.
 """
@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tuya2ildevice import preload
+from tuya_interpreter import preload
 
 from rustuya_local.host import (
     BridgeCommand,
@@ -117,7 +117,7 @@ class Settings:
     watch_interval: float = 5.0
     pack: bool = False                         # automatically sync rules; manual sync remains available
     pack_interval: float = 86400.0
-    pack_url: str | None = None                # the pack's base URL; tuya2ildevice's `master` when None
+    pack_url: str | None = None                # the pack's base URL; tuya-interpreter's `master` when None
     hub_options: dict[str, Any] = field(default_factory=dict)
     """`rustuya_local.host.Hub` keyword arguments: `allow_hazardous`, `expose_unused`, `use_quirks`, `device_settings` (on
     by default, and only with an overrides directory), `overrides` (inline, merged over the directory's), `rules`."""

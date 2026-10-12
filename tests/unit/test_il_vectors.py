@@ -1,11 +1,11 @@
 """The host wire mapping follows ildevice conformance vectors (../ildevice/vectors, or $ILDEVICE): payloads on the
-wire and topics. (Command checks and descriptor schemas are exercised by tuya2ildevice.)"""
+wire and topics. (Command checks and descriptor schemas are exercised by tuya-interpreter.)"""
 import json
 import os
 from pathlib import Path
 
 import pytest
-from tuya2ildevice import Rejected, check_command
+from tuya_interpreter import Rejected, check_command
 
 from rustuya_local.host import Hub, IlTopics
 from rustuya_local.host.il import decode_write, encode_value

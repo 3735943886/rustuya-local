@@ -5,7 +5,7 @@ import json
 import weakref
 
 import pytest
-from tuya2ildevice import Connected, TuyaDriver, merge_rules
+from tuya_interpreter import Connected, TuyaDriver, merge_rules
 
 from rustuya_local.host import Hub, OverrideWatcher, load_overrides
 from rustuya_local.host.hub import _pack_users
@@ -84,7 +84,7 @@ def test_inline_overrides_with_older_keys_are_upgraded():
 
 
 def test_a_rule_pack_the_hub_moves_off_is_released_once_no_hub_uses_it():
-    from tuya2ildevice.native import unregister_rules
+    from tuya_interpreter.native import unregister_rules
 
     own, other = labelled('only this test'), labelled('Other')
     first, second = Hub([dict(DEVICE)], rules=own), Hub([dict(DEVICE, id='e')], rules=own)
@@ -101,7 +101,7 @@ def labelled(label):
 
 
 def test_close_releases_only_the_last_owner_and_is_idempotent():
-    from tuya2ildevice.native import unregister_rules
+    from tuya_interpreter.native import unregister_rules
 
     pack = labelled('shared close regression')
     first, second = Hub([DEVICE], rules=pack), Hub([DEVICE], rules=pack)
@@ -121,7 +121,7 @@ def test_close_releases_only_the_last_owner_and_is_idempotent():
 
 
 def test_a_discarded_hub_releases_its_pack():
-    from tuya2ildevice.native import unregister_rules
+    from tuya_interpreter.native import unregister_rules
 
     hub = Hub([DEVICE], rules=labelled('garbage collection regression'))
     key, reference = hub._rules_id, weakref.ref(hub)
@@ -132,8 +132,8 @@ def test_a_discarded_hub_releases_its_pack():
 
 
 def test_failed_construction_releases_its_pack():
-    from tuya2ildevice import OverrideError
-    from tuya2ildevice.native import register_rules, unregister_rules
+    from tuya_interpreter import OverrideError
+    from tuya_interpreter.native import register_rules, unregister_rules
 
     pack = labelled('failed construction regression')
     key = register_rules(pack)
@@ -145,7 +145,7 @@ def test_failed_construction_releases_its_pack():
 
 
 def test_failed_adoption_releases_the_candidate_and_keeps_the_existing_drivers(monkeypatch):
-    from tuya2ildevice.native import register_rules, unregister_rules
+    from tuya_interpreter.native import register_rules, unregister_rules
 
     hub = Hub([DEVICE, dict(DEVICE, id='e')], rules=labelled('before failed adoption'))
     pack = labelled('failed adoption regression')

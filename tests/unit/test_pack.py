@@ -1,4 +1,4 @@
-"""The override pack: `host.pack.sync` against a pack served from a directory (file://), and the one tuya2ildevice
+"""The override pack: `host.pack.sync` against a pack served from a directory (file://), and the one tuya-interpreter
 publishes (its sibling checkout, when there is one)."""
 
 import hashlib
@@ -10,7 +10,7 @@ import pytest
 from rustuya_local.host import load_overrides, pack
 from rustuya_local.host.pack import LEDGER, PackError, read_ledger, sync
 
-PUBLISHED = Path(__file__).resolve().parents[3] / "tuya2ildevice" / "rules" / "builtin"       # the sibling checkout
+PUBLISHED = Path(__file__).resolve().parents[3] / "tuya-interpreter" / "rules" / "builtin"       # the sibling checkout
 
 
 def sha(text: str) -> str:
@@ -104,7 +104,7 @@ def test_a_bad_file_is_skipped_and_the_copy_there_stays(served):
 
 def test_files_are_bounded_by_level(served):
     src, dest = served
-    src.put("00_pack_new.json", FIX, requires=pack.LEVEL + 1)          # needs a newer tuya2ildevice
+    src.put("00_pack_new.json", FIX, requires=pack.LEVEL + 1)          # needs a newer tuya-interpreter
     src.put("00_pack_old.json", FIX, until=pack.LEVEL)                  # built into this one
     src.put("00_pack_now.json", FIX, requires=pack.LEVEL, until=pack.LEVEL + 1)
     assert sync(dest, base_url=src.url).added == ["00_pack_now.json"]
@@ -130,7 +130,7 @@ def test_unsafe_names_in_the_manifest_are_ignored(served):
     assert not r.changed and not (dest.parent / "escape.json").exists()
 
 
-@pytest.mark.skipif(not PUBLISHED.is_dir(), reason="no tuya2ildevice checkout next to this one")
+@pytest.mark.skipif(not PUBLISHED.is_dir(), reason="no tuya-interpreter checkout next to this one")
 def test_the_published_pack_loads(tmp_path):
     r = sync(tmp_path / "d", base_url=PUBLISHED.as_uri() + "/")
     assert not r.failed

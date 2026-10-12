@@ -15,7 +15,7 @@ its documented contract (api_version >= 4). What it takes from the manager:
     {"il": {"prefix": "il", "source": "tuya"},
      "options": {"allow_hazardous": false, "expose_unused": false, "use_quirks": true, "pack": true}}
 
-`pack` copies tuya2ildevice's override pack (fixes published between releases) into `custom_converters/` daily.
+`pack` copies tuya-interpreter's override pack (fixes published between releases) into `custom_converters/` daily.
 
 The tab shows what the service is doing (the plugin's state namespace) and edits the settings and the
 `custom_converters/` files through `/api/rustuya-local/...` (`api.py`). A settings change restarts the service in place;

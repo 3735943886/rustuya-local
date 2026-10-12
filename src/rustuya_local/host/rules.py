@@ -8,8 +8,8 @@ import logging
 import os
 from pathlib import Path
 
-import tuya2ildevice
-from tuya2ildevice import merge_rules
+import tuya_interpreter
+from tuya_interpreter import merge_rules
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def _upgrade_layer(data, where):
 
 
 def rule_paths(paths=(), *, bundled_path=None):
-    package = Path(tuya2ildevice.__file__).resolve().parent
+    package = Path(tuya_interpreter.__file__).resolve().parent
     bundled = package / 'rules' / 'builtin'
     checkout = package.parents[1] / 'rules' / 'builtin'
     location = bundled_path or (bundled if bundled.is_dir() else checkout)

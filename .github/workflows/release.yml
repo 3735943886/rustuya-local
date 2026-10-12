@@ -96,7 +96,7 @@ jobs:
         run: twine check --strict dist/*      # --strict: a missing README (long description) fails the release
 
       - name: Build the rustuya-manager drop-in zip
-        # The manager's plugin catalog installs this asset (it cannot pip-install): rustuya_local with the tuya2ildevice
+        # The manager's plugin catalog installs this asset (it cannot pip-install): rustuya_local with the tuya-interpreter
         # the wheel resolves to vendored inside. Kept out of dist/ so it is not uploaded to PyPI.
         run: |
           python -m pip install dist/*.whl

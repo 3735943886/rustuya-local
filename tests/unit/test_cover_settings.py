@@ -5,7 +5,7 @@ import json
 import threading
 
 import pytest
-from tuya2ildevice import Command, Connected, Message
+from tuya_interpreter import Command, Connected, Message
 
 from rustuya_local.host import (
     SETTINGS_FILE,

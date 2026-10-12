@@ -1,4 +1,4 @@
-"""The host-owned Hub around tuya2ildevice drivers (`rustuya_local.host`): Runner on the IL transport, the device file, the rule
+"""The host-owned Hub around tuya-interpreter drivers (`rustuya_local.host`): Runner on the IL transport, the device file, the rule
 directory, and paho against a real broker (mosquitto, skipped when it is not installed). The bridge side is simulated
 with `runner.on_bridge_message`; `BridgeCommand` outputs are captured via the injected `on_bridge_command` callback."""
 import asyncio
@@ -9,7 +9,7 @@ import subprocess
 import time
 
 import pytest
-from tuya2ildevice import Connected, Message, OverrideError
+from tuya_interpreter import Connected, Message, OverrideError
 
 from rustuya_local.host import (
     BridgeCommand,

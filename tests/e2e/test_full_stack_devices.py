@@ -1,6 +1,6 @@
 """Differential test over the real bridge: many real device shapes (Home Assistant core's tuya fixtures) each get a
 tuyamock device with the fixture's dps, go through the real rustuya-bridge and the rustuya-local daemon, and the IL values
-that come out must equal what tuya2ildevice produces when it is fed the same dps directly.
+that come out must equal what tuya-interpreter produces when it is fed the same dps directly.
 
 What this catches that the in-process tests cannot: how the bridge serialises each Tuya type on the wire (booleans,
 scaled integers, enums, strings, raw/base64, json), and anything the daemon does to a message on the way through.
@@ -20,12 +20,12 @@ import pytest
 pyrustuyabridge = pytest.importorskip("pyrustuyabridge")
 tuyamock = pytest.importorskip("tuyamock")
 
-GOLDEN = pathlib.Path(__file__).resolve().parents[3] / "tuya2ildevice/tests/golden"      # the sibling checkout
+GOLDEN = pathlib.Path(__file__).resolve().parents[3] / "tuya-interpreter/tests/golden"      # the sibling checkout
 sys.path.insert(0, str(GOLDEN))
 import fixtures
 from devices import fixture_record as record
 from test_full_stack import Observer, wait
-from tuya2ildevice import Connected, Message, TuyaDriver, Value
+from tuya_interpreter import Connected, Message, TuyaDriver, Value
 
 from rustuya_local.host.il import encode_value
 from rustuya_local.host.rules import rules

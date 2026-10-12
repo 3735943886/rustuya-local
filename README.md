@@ -11,7 +11,7 @@ rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il
                          BridgeClient + rustuya_local.host.Hub
 ```
 
-- **[tuya2ildevice](https://github.com/3735943886/tuya2ildevice)** is the only place that interprets Tuya: Home Assistant core's `tuya` behaviour and
+- **[tuya-interpreter](https://github.com/3735943886/tuya-interpreter)** is the only place that interprets Tuya: Home Assistant core's `tuya` behaviour and
   user overrides for non-standard devices, through its Sans-I/O Rust engine and Python wrapper.
 - **rustuya-local** is one `Service` (`src/rustuya_local/service.py`) and three thin shells that run it:
   the `rustuya-local run` daemon, the `custom_components/rustuya` Home Assistant integration, and a rustuya-manager
@@ -36,7 +36,7 @@ Stopping the daemon only marks it `offline`; its devices stay in IL (retained) f
 and run `rustuya-local purge --config config.json`: the retained descriptors, values and presence of its IL prefix and
 source are cleared (other sources on the prefix are left alone), so IL consumers drop the devices.
 
-## tuya2ildevice 0.4 host boundary
+## tuya-interpreter host boundary
 
 The shared Rust core interprets one device and has no MQTT or rule-file loading API.
 `rustuya_local.host.Hub` owns the device registry and maps `TuyaDriver` outputs to IL MQTT wire data;
@@ -70,16 +70,16 @@ everything on an external bridge, are left as they are.
 Tuya's cloud schemas are fragmented; fixes go in a `custom_converters/` directory (daemon: `custom_converters` in the
 config; integration: `<config>/rustuya_converters`; manager plugin: its data dir), followed live:
 
-- `*.json`: tuya2ildevice override blocks by product or device id: rename a dp, define one the schema lacks, map the
+- `*.json`: tuya-interpreter override blocks by product or device id: rename a dp, define one the schema lacks, map the
   device's words to the standard ones (`remap.alias`), fix labels and classes, define a declarative converter. A cover's
   direction is not set here but with its settings (below). Each file is a rule object with fixes under `overrides`, for example
   `{"overrides": {"product_id": {"cover": {"invert_position": true}}}}`.
 - Converters are JSON programs under `converters.declarative`; Python code plugins are not loaded.
 
-See tuya2ildevice's README ("User overrides") for the format. Official builtin rules, including `00-default.json`,
-ship with tuya2ildevice and update when that package is upgraded. They are applied before your own rule files.
+See tuya-interpreter's [device customization guide](https://github.com/3735943886/tuya-interpreter/blob/master/docs/device-customization.md#user-overrides) for the format. Official builtin rules, including `00-default.json`,
+ship with tuya-interpreter and update when that package is upgraded. They are applied before your own rule files.
 
-Online updates fetch the latest [builtin rules](https://github.com/3735943886/tuya2ildevice/tree/feat/rust-rule-engine/rules/builtin)
+Online updates fetch the latest [builtin rules](https://github.com/3735943886/tuya-interpreter/tree/master/rules/builtin)
 into `rules/builtin/` inside the overrides directory at start and daily. In the Rustuya panel, use *Update builtin rules*
 to fetch them now or *Automatically update builtin rules* to control automatic updates. Opening the panel checks for
 updates: with automatic updates on, available changes are installed immediately without a yellow dot. With automatic
@@ -132,7 +132,7 @@ language: Korean, or English.
 ## rustuya-manager plugin
 
 Installed next to rustuya-manager, as a pip package (`pip install rustuya-local` in the manager's environment) or as
-the drop-in zip each release carries (`rustuya_local-<version>-dropin.zip`, tuya2ildevice binding, native library and builtin rules vendored inside, built by
+the drop-in zip each release carries (`rustuya_local-<version>-dropin.zip`, tuya-interpreter binding, native library and builtin rules vendored inside, built by
 `scripts/build_dropin.py`; unpack it into the manager's plugin directory, or install it from the manager's plugin
 catalog once listed there), it appears as a **Tuya (IL)** tab and runs the service under the manager: the manager's broker and bridge root, the manager's device
 list (followed). Its data dir (`rustuya-local/` next to the manager's plugins) holds `settings.json` (`il`,
@@ -140,7 +140,7 @@ list (followed). Its data dir (`rustuya-local/` next to the manager's plugins) h
 converter files are picked up while it runs. A settings file it cannot use is shown on the tab until it is fixed.
 
 The drop-in zip includes native code for the platform on which it was built; use a matching OS and architecture,
-or install with pip to select the appropriate wheel. It freezes the tuya2ildevice it was built with: a tuya2ildevice fix reaches manager users with the next
+or install with pip to select the appropriate wheel. It freezes the tuya-interpreter it was built with: a tuya-interpreter fix reaches manager users with the next
 rustuya-local release (bump the patch version and tag; the manager's catalog follows the release). Installed both ways
 (pip and the plugin directory), the plugin runs once.
 
@@ -152,7 +152,7 @@ rustuya-local release (bump the patch version and tag; the manager's catalog fol
 
 Everything here needs the sibling repos and, for the last two groups, `mosquitto`, `pyrustuya-bridge` and `tuyamock`
 (`pip install -e ".[test,fullstack]"`); those are skipped when missing. Parity with Home Assistant core's fixtures lives in
-`tuya2ildevice/tests/chain`, the wire and topic vectors in `ildevice/vectors`.
+`tuya-interpreter/tests/chain`, the wire and topic vectors in `ildevice/vectors`.
 
 - `tests/unit/`: the configuration.
 - `tests/e2e/test_service.py`: the service on in-memory brokers (overrides directory, a failed start).
@@ -162,7 +162,7 @@ Everything here needs the sibling repos and, for the last two groups, `mosquitto
 - `tests/ha/`: the integration (config flow, setup).
 - `tests/e2e/test_full_stack*.py`: the real rustuya-bridge (`pyrustuyabridge`, in process) and Tuya device emulators
   (`tuyamock`) around the daemon: state, commands, rejections, a device dropping off and returning, a daemon restart, and a
-  differential check that 38 real device shapes come out of the whole chain exactly as `tuya2ildevice` computes them.
+  differential check that 38 real device shapes come out of the whole chain exactly as `tuya-interpreter` computes them.
 
 ## Status
 

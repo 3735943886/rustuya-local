@@ -3,7 +3,7 @@
 
 The manager downloads the zip, checks its SHA-256 against its catalog, unpacks it into its plugin directory and calls
 the top-level package's `register(ctx)`. A dropped-in plugin cannot pip-install, so the zip has one top-level entry,
-`rustuya_local/`, with tuya2ildevice (Python binding, native library and rule pack) vendored under `rustuya_local/_vendor/`. paho-mqtt and
+`rustuya_local/`, with tuya-interpreter (Python binding, native library and rule pack) vendored under `rustuya_local/_vendor/`. paho-mqtt and
 pyrustuyabridge are not vendored: the manager depends on both.
 
 The bytes depend only on the file contents (sorted entries, fixed timestamps and modes, no compression), so the same
@@ -11,7 +11,7 @@ sources give the same SHA-256.
 
     python scripts/build_dropin.py [--outdir dist]
 
-tuya2ildevice is taken from the environment the script runs in (install rustuya-local first).
+tuya-interpreter is taken from the environment the script runs in (install rustuya-local first).
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PKG_DIR = REPO_ROOT / "src" / "rustuya_local"
 FIXED_DATE_TIME = (1980, 1, 1, 0, 0, 0)
-VENDORED = ("tuya2ildevice",)
+VENDORED = ("tuya_interpreter",)
 
 
 def _files(root: Path) -> list[Path]:
@@ -46,10 +46,10 @@ def _members() -> list[tuple[str, Path]]:
             sys.exit(f"error: {name} is not installed; install rustuya-local first")
         root = Path(next(iter(spec.submodule_search_locations)))
         out += [(f"rustuya_local/_vendor/{name}/{p.relative_to(root).as_posix()}", p) for p in _files(root)]
-        if name == "tuya2ildevice":
+        if name == "tuya_interpreter":
             # Editable checkouts keep build outputs and rule artifacts outside the Python package.
             # Installed wheels already contain them; include equivalent assets when building locally.
-            from tuya2ildevice.native import library
+            from tuya_interpreter.native import library
 
             from rustuya_local.host.rules import rule_files, rule_paths
 

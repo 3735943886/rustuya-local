@@ -1,4 +1,4 @@
-"""Run the host-owned `Hub` over tuya2ildevice 0.4 drivers: MQTT (or in-process) transports, timers, Last Will presence, reconnects,
+"""Run the host-owned `Hub` over tuya-interpreter drivers: MQTT (or in-process) transports, timers, Last Will presence, reconnects,
 runtime device changes, following rustuya-manager's `tuyadevices.json` and a directory of user rule files. TuyaDriver is Sans-I/O; this package owns file loading, clocks and transport operations.
 
     from rustuya_local.host import MqttTransport, Runner
