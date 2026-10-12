@@ -1,6 +1,6 @@
 # 남은 일 (2026-10-12 갱신)
 
-현재 작업 트리는 `rustuya-local 0.1.0.dev6`이며 `tuya-interpreter>=0.1.0a1`, `pyrustuyabridge>=0.4`를 요구한다.
+현재 작업 트리는 `rustuya-local 0.1.0.dev7`이며 `tuya-interpreter>=0.1.0a2`, `pyrustuyabridge>=0.4`를 요구한다.
 HA 통합과 매니저 플러그인 테스트는 `rustuya-manager>=0.2.2`를 사용한다. 변환은 Sans-I/O Rust 드라이버가 맡고,
 기기 레지스트리·IL MQTT 어댑터·전송·타이머·규칙 파일 로딩은 `rustuya_local.host`로 옮겼다.
 버전별 변경은 [CHANGELOG.md](../CHANGELOG.md)에 기록한다. 이 문서는 실제 배포 서버의 최신 상태를 확인하는 자료가 아니다.

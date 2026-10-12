@@ -8,8 +8,11 @@ stable release.
 
 ## [Unreleased]
 
+## [0.1.0.dev7] — 2026-10-12
+
 ### Changed
 - Use ildevice-homeassistant consistently in documentation, UI text and code comments.
+- Require tuya-interpreter 0.1.0a2 in the package and the Home Assistant integration.
 
 ## [0.1.0.dev6] — 2026-10-12
 
