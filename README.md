@@ -6,7 +6,7 @@ Local control of Tuya devices through [rustuya-bridge](https://github.com/373594
 ([ildevice](https://github.com/3735943886/ildevice)) devices, and in Home Assistant. It replaces rustuya-homeassistant.
 
 ```
-rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il-ha (Home Assistant integration), or any IL consumer
+rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► ildevice-homeassistant (Home Assistant integration), or any IL consumer
  raw LAN dps             Service:
                          BridgeClient + rustuya_local.host.Hub
 ```
@@ -16,7 +16,7 @@ rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il
 - **rustuya-local** is one `Service` (`src/rustuya_local/service.py`) and three thin shells that run it:
   the `rustuya-local run` daemon, the `custom_components/rustuya` Home Assistant integration, and a rustuya-manager
   plugin. Its `host` package owns the runner, transports and file watchers. It only produces IL and knows nothing of Home Assistant entities.
-- **[il-ha](https://github.com/3735943886/ildevice-homeassistant)** turns IL descriptors into Home Assistant entities.
+- **[ildevice-homeassistant](https://github.com/3735943886/ildevice-homeassistant)** turns IL descriptors into Home Assistant entities.
 
 ## Daemon
 
@@ -49,7 +49,7 @@ MQTT and in-process transport tests exercise the same adapter and the bidirectio
 
 Coming from rustuya-homeassistant: [docs/MIGRATING.md](docs/MIGRATING.md).
 
-Install il-ha, and run one IL producer per bridge: the daemon, the integration below, or the manager plugin. A second
+Install ildevice-homeassistant, and run one IL producer per bridge: the daemon, the integration below, or the manager plugin. A second
 one with the same IL prefix and source refuses to start while the first runs (every device would show twice): the
 daemon exits, the integration is retried by Home Assistant, the plugin's tab shows it and retries. To move from one to
 another, stop the old one first.
@@ -61,7 +61,7 @@ bridge mode, the broker and the IL prefix (it checks an external bridge answers 
 is not on the default one), then offers to fetch the devices from Tuya Cloud (a saved login is reused; a QR login
 only when there is none), which closing its window skips (it is in *Configure* later, and in the panel); the rest
 starts at its defaults and is changed in the panel's *Settings*. Deleting the integration takes its devices out of IL
-(so il-ha removes them); with the embedded bridge it also clears that bridge's retained topics and its state file.
+(so ildevice-homeassistant removes them); with the embedded bridge it also clears that bridge's retained topics and its state file.
 The device list and Tuya login it kept under `.storage/rustuya/` are deleted; a device file you pointed elsewhere, and
 everything on an external bridge, are left as they are.
 
@@ -156,7 +156,7 @@ Everything here needs the sibling repos and, for the last two groups, `mosquitto
 
 - `tests/unit/`: the configuration.
 - `tests/e2e/test_service.py`: the service on in-memory brokers (overrides directory, a failed start).
-- `tests/e2e/test_chain_*.py`, `test_daemon.py`: the runner with il-ha's consumer model on the other side, in one process
+- `tests/e2e/test_chain_*.py`, `test_daemon.py`: the runner with ildevice-homeassistant's consumer model on the other side, in one process
   and over a real broker; the daemon as a subprocess.
 - `tests/e2e/test_manager_plugin.py`: the plugin under rustuya-manager's real plugin host (skipped without it).
 - `tests/ha/`: the integration (config flow, setup).

@@ -21,7 +21,7 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
 - **rustuya-local** turns the devices on rustuya-bridge into IL devices (MQTT topics under a prefix such as `il/tuya`).
   Run it one way: the `rustuya` Home Assistant integration (HACS), the rustuya-manager plugin (catalog: *Tuya (IL)*),
   or the `rustuya-local run` daemon.
-- **il-ha** ([ildevice-homeassistant](https://github.com/3735943886/ildevice-homeassistant), HACS) turns IL devices
+- **[ildevice-homeassistant](https://github.com/3735943886/ildevice-homeassistant)** (HACS) turns IL devices
   into Home Assistant entities. MQTT discovery is no longer used.
 
 ## What changes for you
@@ -48,7 +48,7 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
 2. **Install rustuya-local** one way (see the [README](../README.md#home-assistant)). Keep the same rustuya-bridge and
    device file (`tuyadevices.json`).
 
-3. **Install il-ha** from HACS and add the **IL device** integration with the prefix rustuya-local publishes under
+3. **Install ildevice-homeassistant** from HACS and add the **IL device** integration with the prefix rustuya-local publishes under
    (`il` unless you set another one in rustuya-local; both sides must match). Add the devices it offers, or turn on
    *Add discovered devices automatically*.
 

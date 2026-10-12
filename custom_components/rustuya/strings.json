@@ -19,7 +19,7 @@
           "il_prefix": "IL topic prefix"
         },
         "data_description": {
-          "il_prefix": "Where the devices are published for il-ha (or any IL consumer); il-ha reads il by default."
+          "il_prefix": "Where the devices are published for ildevice-homeassistant (or any IL consumer); ildevice-homeassistant reads il by default."
         }
       },
       "embedded": {
@@ -33,7 +33,7 @@
           "il_prefix": "IL topic prefix"
         },
         "data_description": {
-          "il_prefix": "Where the devices are published for il-ha (or any IL consumer); il-ha reads il by default."
+          "il_prefix": "Where the devices are published for ildevice-homeassistant (or any IL consumer); ildevice-homeassistant reads il by default."
         }
       },
       "onboard": {
@@ -152,7 +152,7 @@
       "fields": {
         "device_id": {
           "name": "Device ID",
-          "description": "The Tuya device ID (as in the device list), or the Home Assistant device an IL consumer such as il-ha made of it."
+          "description": "The Tuya device ID (as in the device list), or the Home Assistant device an IL consumer such as ildevice-homeassistant made of it."
         },
         "dp": {
           "name": "DP",

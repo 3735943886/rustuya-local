@@ -1,5 +1,5 @@
 """rustuya-local as a rustuya-manager plugin: the same `Service` the daemon and the Home Assistant integration run,
-supervised by the manager. It publishes IL; il-ha (or any IL consumer) turns the devices into entities.
+supervised by the manager. It publishes IL; ildevice-homeassistant (or any IL consumer) turns the devices into entities.
 
 Found through the `rustuya_manager.plugins` entry point. It imports nothing from rustuya_manager: `ctx` is used by
 its documented contract (api_version >= 4). What it takes from the manager:

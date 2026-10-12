@@ -38,7 +38,7 @@ async def chain():
     bridge_client.runner = runner
     sink = Recorder()
     model = IlModel(il, sink, Timers())
-    await model.start()                       # the consumer first, as il-ha would be running already
+    await model.start()                       # the consumer first, as ildevice-homeassistant would be running already
     await runner.start()
     await bridge_client.start(timeout=0.05)    # no real bridge here: falls straight back to the default topic layout
     await runner.drain()

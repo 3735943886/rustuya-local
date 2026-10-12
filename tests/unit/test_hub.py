@@ -35,7 +35,7 @@ def test_bridge_to_il_and_back():
     assert BridgeCommand("lamp1", "get") not in hub.on_bridge_message(3, "lamp1", Connected(), retained=True)
     assert BridgeCommand("lamp1", "get") in hub.on_bridge_message(3, "lamp1", Connected())
 
-    # il-ha writes a value -> a `set` for the bridge; a bad one -> a reject for il-ha
+    # ildevice-homeassistant writes a value -> a `set` for the bridge; a bad one -> a reject for ildevice-homeassistant
     (cmd,) = hub.on_il(4, "il/lamp1/brightness/set", "50")
     assert cmd == BridgeCommand("lamp1", "set", {"20": True, "22": 507})
     (rej,) = hub.on_il(5, "il/lamp1/brightness/set", "500")

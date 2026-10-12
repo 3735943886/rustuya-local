@@ -1,4 +1,4 @@
-"""Run the host-owned `Hub` on the IL transport (il-ha or any IL consumer). The Hub maps Rust driver data to host actions;
+"""Run the host-owned `Hub` on the IL transport (ildevice-homeassistant or any IL consumer). The Hub maps Rust driver data to host actions;
 this runner executes its `Publish`, `Schedule` and `Unschedule` outputs. It knows nothing about rustuya-bridge's own MQTT wire, either
 — Hub's bridge-facing `BridgeCommand` outputs (asking the bridge to read/write a device) are handed to
 `on_bridge_command`, supplied by whatever owns the real bridge connection (e.g. rustuya-local's bridge client). A

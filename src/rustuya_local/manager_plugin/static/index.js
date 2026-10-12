@@ -45,7 +45,7 @@ function paintStatus(box, data) {
     return;
   }
   box.append(el("p", { class: "mb-2" },
-    `Bridge root "${data.bridge_root}", IL prefix "${data.il_prefix}". Home Assistant shows these devices through il-ha.`));
+    `Bridge root "${data.bridge_root}", IL prefix "${data.il_prefix}". Home Assistant shows these devices through ildevice-homeassistant.`));
   const rows = (data.devices || []).map((d) =>
     el("tr", {}, el("td", {}, d.name), el("td", {}, d.id), el("td", {}, d.kind || "-"),
       el("td", {}, d.online ? "online" : "offline"), el("td", {}, d.props)));
@@ -99,7 +99,7 @@ async function settingsBox(ctx) {
     el("div", { class: "flex gap-4 mb-2 items-center" },
       el("label", {}, "IL prefix ", prefix), el("label", {}, "Source ", source)),
     el("p", { class: "text-sm text-gray-500 mb-2" },
-      "il-ha's integration entry must use the same prefix. Changing it publishes the devices under the new one."),
+      "ildevice-homeassistant's integration entry must use the same prefix. Changing it publishes the devices under the new one."),
     ...OPTIONS.map(([k, label]) => el("label", { class: "block text-sm" }, checks[k], " ", label)),
     el("button", { class: `${BTN} mt-2`, onclick: save }, "Save settings"));
   return box;

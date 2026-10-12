@@ -8,6 +8,9 @@ stable release.
 
 ## [Unreleased]
 
+### Changed
+- Use ildevice-homeassistant consistently in documentation, UI text and code comments.
+
 ## [0.1.0.dev6] — 2026-10-12
 
 ### Changed

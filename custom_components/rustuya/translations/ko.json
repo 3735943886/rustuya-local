@@ -19,7 +19,7 @@
           "il_prefix": "IL 토픽 prefix"
         },
         "data_description": {
-          "il_prefix": "il-ha(또는 다른 IL 소비자)가 읽을 기기를 게시하는 곳입니다. il-ha는 기본으로 il을 읽습니다."
+          "il_prefix": "ildevice-homeassistant(또는 다른 IL 소비자)가 읽을 기기를 게시하는 곳입니다. ildevice-homeassistant는 기본으로 il을 읽습니다."
         }
       },
       "embedded": {
@@ -33,7 +33,7 @@
           "il_prefix": "IL 토픽 prefix"
         },
         "data_description": {
-          "il_prefix": "il-ha(또는 다른 IL 소비자)가 읽을 기기를 게시하는 곳입니다. il-ha는 기본으로 il을 읽습니다."
+          "il_prefix": "ildevice-homeassistant(또는 다른 IL 소비자)가 읽을 기기를 게시하는 곳입니다. ildevice-homeassistant는 기본으로 il을 읽습니다."
         }
       },
       "onboard": {
@@ -152,7 +152,7 @@
       "fields": {
         "device_id": {
           "name": "기기 ID",
-          "description": "Tuya 기기 ID (기기 목록의 것), 또는 il-ha 같은 IL consumer가 만든 Home Assistant 기기 ID."
+          "description": "Tuya 기기 ID (기기 목록의 것), 또는 ildevice-homeassistant 같은 IL consumer가 만든 Home Assistant 기기 ID."
         },
         "dp": {
           "name": "DP",

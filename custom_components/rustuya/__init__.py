@@ -1,7 +1,7 @@
 """Rustuya as a Home Assistant integration: runs the same `rustuya_local.service.Service` the standalone
 `rustuya-local` daemon does, tied to this config entry, with an optional embedded rustuya-bridge (`pyrustuyabridge`)
-and user overrides from `<config>/rustuya_converters`. It creates no entities and does not depend on il-ha: it is only an IL
-*producer* — install il-ha (or any IL consumer) separately to turn its devices into entities.
+and user overrides from `<config>/rustuya_converters`. It creates no entities and does not depend on ildevice-homeassistant: it is only an IL
+*producer* — install ildevice-homeassistant (or any IL consumer) separately to turn its devices into entities.
 """
 
 from __future__ import annotations
@@ -105,7 +105,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 def _tuya_id(hass: HomeAssistant, service: Any, device_id: str) -> str:
     """`device_id` as the Tuya device id: as given when the service drives it, else a Home Assistant device's. An IL
-    consumer registers a device with the IL id (the Tuya id) among its identifiers — il-ha as `("ildevice", id)`, under
+    consumer registers a device with the IL id (the Tuya id) among its identifiers — ildevice-homeassistant as `("ildevice", id)`, under
     whatever platform name it runs as — so any identifier value the service drives is taken, when there is exactly one.
     Unresolved, it is returned as given (and refused as an unknown device)."""
     from homeassistant.helpers import device_registry as dr
@@ -264,7 +264,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Deleted, not just unloaded (which only says `offline`, keeping everything for the next start). Clears what this
-    entry leaves behind: its IL devices (retained descriptors and values, so il-ha and other IL consumers drop them),
+    entry leaves behind: its IL devices (retained descriptors and values, so ildevice-homeassistant and other IL consumers drop them),
     with the embedded bridge also that bridge's retained topics and its state file, and the files it kept in its own
     storage directory (the device list and the Tuya login). A path the user pointed elsewhere is left alone, as is
     everything on an external bridge. A broker that cannot be reached only leaves the retained topics behind; the

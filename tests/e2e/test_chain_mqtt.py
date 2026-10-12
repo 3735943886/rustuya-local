@@ -1,4 +1,4 @@
-"""The same chain over a real MQTT broker (mosquitto): bridge simulator -> BridgeClient -> Runner -> il-ha's model,
+"""The same chain over a real MQTT broker (mosquitto): bridge simulator -> BridgeClient -> Runner -> ildevice-homeassistant's model,
 four clients."""
 import asyncio
 import json

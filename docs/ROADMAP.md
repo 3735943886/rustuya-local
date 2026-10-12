@@ -13,12 +13,12 @@ HA 통합과 매니저 플러그인 테스트는 `rustuya-manager>=0.2.2`를 사
 rustuya-local 0.0.45, rustuya-manager 0.2.1, pyrustuyabridge 0.4.0이었다.
 rustuya-homeassistant 는 폐기 안내만 푸시했다(아카이브 안 함). 2026-09-27 에 저장소 이름을 rustuya-homeassistant 로 바꿨다가 같은 날
 되돌렸다(HA 전용이 아니고 이름이 여러 개면 헷갈림): 저장소·PyPI·import·CLI·플러그인 id 모두 `rustuya-local`.
-아래는 그 뒤에 남은 것을 마일스톤 순서로 정리한 것이다. 저장소 표기: **T** tuya2ildevice, **L** rustuya-local, **H** il-ha,
+아래는 그 뒤에 남은 것을 마일스톤 순서로 정리한 것이다. 저장소 표기: **T** tuya2ildevice, **L** rustuya-local, **H** ildevice-homeassistant,
 **R** rustuya-homeassistant, **M** rustuya-manager.
 
 ## M1 — 배포
 
-rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아래 참고). HA 는 il-ha 로 본다.
+rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아래 참고). HA 는 ildevice-homeassistant 로 본다.
 
 - [x] **L** drop-in zip(0.0.7): 매니저(특히 Docker)는 카탈로그의 GitHub 릴리스 zip 을 풀어 최상위 패키지의 `register` 를 부르고
       pip 로 의존성을 설치하지 못한다. `rustuya_local.register` 노출, tuya2ildevice 를 `rustuya_local/_vendor/` 에 담은 재현 가능한 zip
@@ -31,7 +31,7 @@ rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아�
 - [x] **L** CI `package` job(0.0.13): wheel 을 새 venv 에 설치해(의존성은 PyPI 만) import·CLI 확인. 릴리스 전에도 돈다.
 - [x] **L** HACS 검증 통과(0.0.11): `custom_components/rustuya/brand/`(아이콘: Rust 톱니바퀴 + Tuya t, 로고: Alfa Slab One 워드마크).
 - [x] **L** PyPI 에 README 가 없던 문제(0.0.12): pyproject `readme`, 릴리스는 `twine check --strict`.
-- [x] **R** 폐기 안내를 "rustuya-local + il-ha" 로 고침(`89731f7`).
+- [x] **R** 폐기 안내를 "rustuya-local + ildevice-homeassistant" 로 고침(`89731f7`).
 - [ ] **R** 폐기 안내를 담은 마지막 PyPI 릴리스(PyPI 최신은 아직 0.0.1rc24)와 GitHub 아카이브. 사용자 결정.
 - [x] **M** catalog-sync 자동 병합이 PR 의 체크가 나타날 때까지(최대 10분) 기다린다(`0c85d68`).
 
@@ -39,7 +39,7 @@ rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아�
 
 지금까지의 검증은 테스트 HA(`pytest-homeassistant-custom-component`)와 in-memory·로컬 브로커에서 한 것이다.
 
-- [~] 실제 HA + 실기기 + il-ha: hk1(임베디드 브리지, 기기 1개)에서 상태·가용성 확인. 여기서 생산자 인계 시 presence 가 offline 으로
+- [~] 실제 HA + 실기기 + ildevice-homeassistant: hk1(임베디드 브리지, 기기 1개)에서 상태·가용성 확인. 여기서 생산자 인계 시 presence 가 offline 으로
       남는 버그를 찾아 고침(tuya2ildevice 0.3.2), 0.0.11 에서 blocking call·`MISSING_VALUE` 없음. 남은 것: 명령, 여러 기기·카테고리,
       HA·브로커 재시작 뒤.
 - [ ] 실제 rustuya-manager 에서 플러그인 확인: 카탈로그 UI 로 drop-in 설치, TLS 브로커, `watch_devices` 로 기기 추가·삭제, 탭 표시,
@@ -86,16 +86,16 @@ rustuya-local 은 IL 생산자만 한다(2026-09-24 MQTT discovery 제거, 아�
 
 ## 제거한 것
 
-- **HA MQTT discovery (2026-09-24 제거)**: IL → HA discovery 변환은 Tuya 와 무관하고 HA 엔티티 규칙(il-ha core)이 필요해
-  rustuya-local 이 il-ha 에 의존하게 만들었다. relay·mirror 때문에 서비스가 계속 떠 있어야 해서 il-ha 대비 이점도 없었다.
+- **HA MQTT discovery (2026-09-24 제거)**: IL → HA discovery 변환은 Tuya 와 무관하고 HA 엔티티 규칙(ildevice-homeassistant core)이 필요해
+  rustuya-local 이 ildevice-homeassistant 에 의존하게 만들었다. relay·mirror 때문에 서비스가 계속 떠 있어야 해서 ildevice-homeassistant 대비 이점도 없었다.
   코드(`discovery/` render·publisher·ops, CLI `discovery status|clear|restore`, 324 픽스처 패리티 테스트)는 커밋 `c646922` 에 있다.
-  다시 필요하면 IL 소비자로서 il-ha 쪽 별도 도구로 되살린다.
+  다시 필요하면 IL 소비자로서 ildevice-homeassistant 쪽 별도 도구로 되살린다.
 
 ## REDESIGN.md 7절의 열린 결정
 
 - MQTT 클라이언트: paho 로 정해짐(tuya2ildevice `MqttTransport`).
-- 의존 관리: tuya2ildevice·pyrustuyabridge 는 PyPI. il-ha 는 테스트 의존으로만 남아 형제 체크아웃을 쓴다.
-- [ ] **H** il-ha 의 이름·번역 이식 여부: 아직 판단 안 함(il-ha 쪽 일).
+- 의존 관리: tuya2ildevice·pyrustuyabridge 는 PyPI. ildevice-homeassistant 는 테스트 의존으로만 남아 형제 체크아웃을 쓴다.
+- [ ] **H** ildevice-homeassistant 의 이름·번역 이식 여부: 아직 판단 안 함(ildevice-homeassistant 쪽 일).
 
 ## 참고
 

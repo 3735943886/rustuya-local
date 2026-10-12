@@ -1,5 +1,5 @@
 """`async_setup_entry`/`async_unload_entry` for real: a real MQTT broker (mosquitto, skipped if missing), a real
-`rustuya_local.host.Runner`. No il-ha, no bridge, no `rustuya_manager` — this integration produces IL and does not
+`rustuya_local.host.Runner`. No ildevice-homeassistant, no bridge, no `rustuya_manager` — this integration produces IL and does not
 depend on any of them at runtime (only its config flow does, and only for onboarding)."""
 
 from __future__ import annotations
@@ -351,7 +351,7 @@ async def test_send_command_writes_a_raw_dp_and_refuses_a_lock(hass, broker, tmp
         await until(lambda: json.loads(watcher.last.get("rustuya/command", "{}")).get("action") == "set")
         assert json.loads(watcher.last["rustuya/command"]) == {"action": "set", "id": "lamp1", "dps": {"20": False}}
 
-        # a Home Assistant device, as il-ha registers one: the IL id (the Tuya id) among its identifiers
+        # a Home Assistant device, as ildevice-homeassistant registers one: the IL id (the Tuya id) among its identifiers
         from homeassistant.helpers import device_registry as dr
 
         il_ha = MockConfigEntry(domain="ildevice")
