@@ -44,6 +44,7 @@ LEDGER = ".tuya2ildevice_pack.json"                # kept across the rename: exi
 MAX_BYTES = 1024 * 1024
 TIMEOUT = 15
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.json$")
+_HASH = re.compile(r"[A-Fa-f0-9]{64}")
 _SCHEMES = ("https", "http", "file")              # file:// for tests and offline mirrors
 
 
@@ -105,7 +106,22 @@ def read_ledger(directory: Path) -> dict[str, str]:
     except (OSError, ValueError):
         return {}
     files = doc.get("files") if isinstance(doc, dict) else None
-    return {k: v for k, v in files.items() if isinstance(k, str) and isinstance(v, str)} if isinstance(files, dict) else {}
+    if not isinstance(files, dict):
+        return {}
+    return {name: digest.lower() for name, digest in files.items()
+            if _pack_name(name) and isinstance(digest, str) and _HASH.fullmatch(digest)
+            and _managed_path(directory, name)}
+
+
+def _pack_name(name: Any) -> bool:
+    return (isinstance(name, str) and _NAME.fullmatch(name) is not None
+            and name not in (SETTINGS_FILE, MANIFEST))
+
+
+def _managed_path(directory: Path, name: str) -> bool:
+    """Only direct files inside the managed directory; never follow a user-created symlink."""
+    path = directory / name
+    return not path.is_symlink() and path.resolve().parent == directory.resolve()
 
 
 def _check(name: str, data: bytes) -> None:
@@ -124,13 +140,11 @@ def _wanted(doc: dict[str, Any]) -> dict[str, str]:
         if not isinstance(entry, dict):
             continue
         name, sha = entry.get("name"), entry.get("sha256")
-        if not isinstance(name, str) or not _NAME.match(name) or not isinstance(sha, str):
+        if (not _pack_name(name) or not isinstance(sha, str) or not _HASH.fullmatch(sha)
+                or any(key in entry and type(entry[key]) is not int for key in ("requires", "until"))):
             _LOGGER.warning("pack: manifest entry %r ignored", entry)
             continue
         if entry.get("requires", 0) > LEVEL or entry.get("until", LEVEL + 1) <= LEVEL:
-            continue
-        if name in (SETTINGS_FILE, MANIFEST):                 # the host's own settings: never the pack's
-            _LOGGER.warning("pack: %s is the host's settings file, not taken from the pack", name)
             continue
         out[name] = sha.lower()
     return out
@@ -146,6 +160,8 @@ def check(directory: str | Path, *, base_url: str = BASE_URL,
     wanted = _wanted(fetch_manifest(base_url))
     before = read_ledger(directory)
     for name, sha in wanted.items():
+        if not _managed_path(directory, name):
+            continue
         path = directory / name
         current = _sha(path.read_bytes()) if path.is_file() else None
         if current == sha or (current is not None and before.get(name) != current):
@@ -171,6 +187,9 @@ def sync(directory: str | Path, *, base_url: str = BASE_URL, manifest: dict[str,
     out = SyncResult()
 
     for name, sha in wanted.items():
+        if not _managed_path(directory, name):
+            out.kept.append(name)
+            continue
         path = directory / name
         current = _sha(path.read_bytes()) if path.is_file() else None
         if current == sha:
@@ -195,6 +214,9 @@ def sync(directory: str | Path, *, base_url: str = BASE_URL, manifest: dict[str,
 
     for name, sha in before.items():
         if name in wanted:
+            continue
+        if not _managed_path(directory, name):
+            out.kept.append(name)
             continue
         path = directory / name
         if not path.is_file():

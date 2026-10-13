@@ -168,3 +168,53 @@ def test_check_compares_bundled_rules_and_preserves_user_copies(served, tmp_path
     assert not pack.check(dest, base_url=src.url, bundled=bundled)
     src.put("00_pack_future.json", FIX, requires=pack.LEVEL + 1)
     assert not pack.check(dest, base_url=src.url, bundled=bundled)
+
+
+def test_ledger_cannot_own_paths_outside_the_directory_or_host_settings(tmp_path):
+    dest = tmp_path / "rules"
+    dest.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text(FIX)
+    protected = [pack.SETTINGS_FILE, pack.MANIFEST]
+    for name in protected:
+        (dest / name).write_text(FIX)
+    (dest / "owned.json").write_text(FIX)
+    entries = {name: sha(FIX) for name in ["../outside.json", str(outside), *protected, "owned.json"]}
+    entries.update({"bad_hash.json": "garbage", "newline.json\n": sha(FIX)})
+    (dest / LEDGER).write_text(json.dumps({"files": entries}))
+    assert read_ledger(dest) == {"owned.json": sha(FIX)}
+    result = sync(dest, manifest={"files": []})
+    assert result.removed == ["owned.json"]
+    assert outside.read_text() == FIX
+    assert all((dest / name).read_text() == FIX for name in protected)
+
+
+def test_pack_preserves_symlink_targets_and_does_not_adopt_links(served, tmp_path):
+    src, dest = served
+    dest.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text(FIX)
+    link = dest / "00_pack_a.json"
+    link.symlink_to(outside)
+    (dest / LEDGER).write_text(json.dumps({"files": {link.name: sha(FIX)}}))
+    src.put(link.name, FIX + " ")
+    assert not pack.check(dest, base_url=src.url)
+    assert sync(dest, base_url=src.url).kept == [link.name]
+    assert read_ledger(dest) == {}
+    assert link.is_symlink() and outside.read_text() == FIX
+    src.drop(link.name)
+    assert not sync(dest, base_url=src.url).changed
+    assert link.is_symlink() and outside.read_text() == FIX
+
+
+@pytest.mark.parametrize("entry", [
+    {"name": "newline.json\n", "sha256": sha(FIX)},
+    {"name": "bad.json", "sha256": "bad"},
+    {"name": "bad.json", "sha256": sha(FIX), "requires": "4"},
+    {"name": "bad.json", "sha256": sha(FIX), "until": True},
+    {"name": pack.SETTINGS_FILE, "sha256": sha(FIX)},
+])
+def test_invalid_manifest_entries_are_ignored(served, entry):
+    _src, dest = served
+    result = sync(dest, manifest={"files": [entry]})
+    assert not result.changed and not list(dest.iterdir())

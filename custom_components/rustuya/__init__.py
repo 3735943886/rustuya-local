@@ -252,13 +252,19 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # setup that follows puts it back anyway; only disabling the entry (or deleting it, below) removes it
     if entry.disabled_by is not None:
         panel.async_remove(hass)
-    runtime: RuntimeData = hass.data[DOMAIN].pop(entry.entry_id)
+    runtime: RuntimeData = hass.data[DOMAIN][entry.entry_id]
     restarting = getattr(runtime, "restarting", False) and entry.disabled_by is None
-    await runtime.service.stop(offline=not restarting)
+    try:
+        await runtime.service.stop(offline=not restarting)
+    finally:
+        try:
+            if runtime.embedded_bridge:
+                await runtime.embedded_bridge.stop()
+        finally:
+            # A stopped service cannot be reused, even when draining its commands failed.
+            hass.data[DOMAIN].pop(entry.entry_id, None)
     if restarting:
         hass.data[RESUME] = True
-    if runtime.embedded_bridge:
-        await runtime.embedded_bridge.stop()
     return True
 
 

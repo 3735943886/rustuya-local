@@ -221,11 +221,12 @@ class OptionsView(_View):
                 or not all(isinstance(v, bool) for v in body.values())):
             return self.json_message(f"the options are {sorted(DEFAULT_OPTIONS)}, each true or false",
                                      HTTPStatus.BAD_REQUEST)
-        options = {**entry.options, **body}
-        if options == dict(entry.options):
-            return self.json({"restarting": False})
-        await _restart(request.app["hass"], entry, options=options)        # answered once it has restarted
-        return self.json({"restarting": True})
+        async with _settings_lock(request.app["hass"]):
+            options = {**entry.options, **body}
+            if options == dict(entry.options):
+                return self.json({"restarting": False})
+            await _restart(request.app["hass"], entry, options=options)        # answered once it has restarted
+            return self.json({"restarting": True})
 
 
 def settings_of(data: Any) -> dict[str, Any]:
@@ -275,24 +276,30 @@ class SettingsView(_View):
     @_entry_view
     async def put(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
         hass = request.app["hass"]
-        try:
-            new = validate_settings(hass, entry.data, await request.json())
-        except ValueError as e:
-            return self.json_message(str(e), HTTPStatus.BAD_REQUEST)
-        old = dict(entry.data)
-        if new == settings_of(old):
-            return self.json({"restarting": False})
-        external = old.get(CONF_BRIDGE_MODE) != BRIDGE_EMBEDDED
-        if external and new[CONF_BRIDGE_ROOT] != old[CONF_BRIDGE_ROOT]:
-            from .config_flow import _probe_bridge
+        body = await _json_body(request)
+        async with _settings_lock(hass):
+            try:
+                new = validate_settings(hass, entry.data, body)
+            except ValueError as e:
+                return self.json_message(str(e), HTTPStatus.BAD_REQUEST)
+            old = dict(entry.data)
+            if new == settings_of(old):
+                return self.json({"restarting": False})
+            external = old.get(CONF_BRIDGE_MODE) != BRIDGE_EMBEDDED
+            if external and new[CONF_BRIDGE_ROOT] != old[CONF_BRIDGE_ROOT]:
+                from .config_flow import _probe_bridge
 
-            error = await _probe_bridge(hass, {**old, **new})
-            if error is not None:
-                return self.json_message(
-                    f"no rustuya-bridge answers on {new[CONF_BRIDGE_ROOT]}" if error == "bridge_not_found"
-                    else "cannot connect to the broker", HTTPStatus.BAD_REQUEST)
-        await _apply(hass, entry, old, {**old, **new})                       # answered once it has restarted
-        return self.json({"restarting": True})
+                error = await _probe_bridge(hass, {**old, **new})
+                if error is not None:
+                    return self.json_message(
+                        f"no rustuya-bridge answers on {new[CONF_BRIDGE_ROOT]}" if error == "bridge_not_found"
+                        else "cannot connect to the broker", HTTPStatus.BAD_REQUEST)
+            await _apply(hass, entry, old, {**old, **new})                       # answered once it has restarted
+            return self.json({"restarting": True})
+
+
+def _settings_lock(hass: HomeAssistant) -> asyncio.Lock:
+    return hass.data.setdefault(f"{DOMAIN}_settings_lock", asyncio.Lock())
 
 
 async def _apply(hass: HomeAssistant, entry: Any, old: dict[str, Any], data: dict[str, Any]) -> None:
@@ -318,34 +325,33 @@ async def _restart(hass: HomeAssistant, entry: Any, *, data: dict[str, Any] | No
     """Stop the entry, run `between`, store the new data / options, start it again — all awaited, so the panel's save
     answers once the restart is over (the page then reloads onto the restarted entry, not onto one about to go).
     Stopped, the entry has no update listener, so storing does not start a second reload. An options-only restart
-    keeps the IL presence online across it (`mark_restart`); new data may move the broker or the IL topics."""
-    lock = hass.data.setdefault(f"{DOMAIN}_settings_lock", asyncio.Lock())
-    async with lock:
-        old_data, old_options = dict(entry.data), dict(entry.options)
-        if data is None:
-            from . import mark_restart
+    keeps the IL presence online across it (`mark_restart`); new data may move the broker or the IL topics.
+    The request handler holds `_settings_lock` from reading the current entry through this restart."""
+    old_data, old_options = dict(entry.data), dict(entry.options)
+    if data is None:
+        from . import mark_restart
 
-            mark_restart(hass, entry)
-        if not await hass.config_entries.async_unload(entry.entry_id):
-            raise RestartFailed("Could not stop the integration; settings were not changed")
+        mark_restart(hass, entry)
+    if not await hass.config_entries.async_unload(entry.entry_id):
+        raise RestartFailed("Could not stop the integration; settings were not changed")
+    try:
+        if between is not None:
+            await between()
+        changes = {k: v for k, v in (("data", data), ("options", options)) if v is not None}
+        hass.config_entries.async_update_entry(entry, **changes)
+        if not await hass.config_entries.async_setup(entry.entry_id):
+            raise RestartFailed("The integration could not start with these settings")
+    except Exception as e:
+        # Failed setup leaves SETUP_ERROR/SETUP_RETRY, which cannot be set up
+        # directly. Unload also cancels any scheduled retry with the bad data.
+        await hass.config_entries.async_unload(entry.entry_id)
+        hass.config_entries.async_update_entry(entry, data=old_data, options=old_options)
         try:
-            if between is not None:
-                await between()
-            changes = {k: v for k, v in (("data", data), ("options", options)) if v is not None}
-            hass.config_entries.async_update_entry(entry, **changes)
-            if not await hass.config_entries.async_setup(entry.entry_id):
-                raise RestartFailed("The integration could not start with these settings")
-        except Exception as e:
-            # Failed setup leaves SETUP_ERROR/SETUP_RETRY, which cannot be set up
-            # directly. Unload also cancels any scheduled retry with the bad data.
-            await hass.config_entries.async_unload(entry.entry_id)
-            hass.config_entries.async_update_entry(entry, data=old_data, options=old_options)
-            try:
-                restored = await hass.config_entries.async_setup(entry.entry_id)
-            except Exception:  # noqa: BLE001 -- keep the recovery API usable even if rollback startup fails
-                restored = False
-            suffix = "Previous settings restored" if restored else "Previous settings restored, but startup still fails"
-            raise RestartFailed(f"{e}. {suffix}; settings remain editable") from e
+            restored = await hass.config_entries.async_setup(entry.entry_id)
+        except Exception:  # noqa: BLE001 -- keep the recovery API usable even if rollback startup fails
+            restored = False
+        suffix = "Previous settings restored" if restored else "Previous settings restored, but startup still fails"
+        raise RestartFailed(f"{e}. {suffix}; settings remain editable") from e
 
 
 class PackView(_View):

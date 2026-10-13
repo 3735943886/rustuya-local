@@ -1,4 +1,9 @@
-# Moving to tuya-interpreter
+# Migration guide
+
+For the current component boundaries and file precedence, see [Architecture](ARCHITECTURE.md).
+Use [README](../README.md) for installation and [Changelog](../CHANGELOG.md) for version-specific changes.
+
+## Moving to rustuya-local 0.1 / tuya-interpreter
 
 The device file, MQTT configuration and IL topics stay the same. Custom files in the converters directory now use
 the rule-layer format. Wrap an existing product/device override mapping in `{"overrides": ...}`. For example:
@@ -7,13 +12,15 @@ the rule-layer format. Wrap an existing product/device override mapping in `{"ov
 {"overrides": {"product_id": {"cover": {"invert_position": true}}}}
 ```
 
-Apply the same conversion to `zz_settings.json` to preserve cover settings saved by an older version. Leave
+Back up the converters directory before editing. Apply the same conversion to `zz_settings.json` to preserve cover settings saved by an older version. Leave
 `options.overrides` in the daemon configuration as a product/device mapping; the host still accepts that format.
 Rewrite Python converters as JSON programs under `converters.declarative`. Invalid JSON rule layers are reported
 and skipped, so check the logs after upgrading. The managed override pack updates automatically when enabled;
-files you edited remain yours to convert.
+files you edited remain yours to convert. JSON files use filename order, including `zz_settings.json`; check for later
+files or inline overrides that replace saved settings. See the cover compatibility details below for `infer_motion`
+and `converters.cover_motion`.
 
-# Moving from rustuya-homeassistant
+## Moving from rustuya-homeassistant
 
 rustuya-homeassistant (`rustuya-ha`) published Home Assistant MQTT discovery for your Tuya devices, as a CLI or a
 rustuya-manager plugin. It is retired. Its replacement is two pieces:
@@ -24,7 +31,7 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
 - **[ildevice-homeassistant](https://github.com/3735943886/ildevice-homeassistant)** (HACS) turns IL devices
   into Home Assistant entities. MQTT discovery is no longer used.
 
-## What changes for you
+### What changes for you
 
 - **Entity ids change.** The old entities belonged to Home Assistant's `mqtt` integration; the new ones belong to
   `ildevice`, and Home Assistant keeps the two apart. Automations, scripts and dashboards that name the old entities
@@ -34,7 +41,7 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
   with more, fewer or differently split entities than v1 made.
 - **Availability** comes from rustuya-local's presence: when it stops, its devices show unavailable.
 
-## Steps
+### Steps
 
 1. **Remove the old discovery** while `rustuya-ha` still runs, so Home Assistant drops those entities:
 
@@ -65,7 +72,7 @@ rustuya-manager plugin. It is retired. Its replacement is two pieces:
      A property the tables do not build is defined from its dp in `props`.
    - A curtain's `invert_position` / `invert_set_position`, reversed command words and derived state are not files any
      more: each cover has configuration switches for them (README, *Cover settings*).
-   - Rewrite Python converters as JSON programs under `converters.declarative`; Python plugins are not loaded in 0.4.
+   - Rewrite Python converters as JSON programs under `converters.declarative`; Python plugins are not loaded by rustuya-local 0.1.
    - `converters.cover_motion` and a cover's `infer_motion` are read as the cover's `state_source` (`inferred`, or
      `none` for `infer_motion: false`), and a `cover_motion` `settle` as the cover's `settle`; its other keys are
      dropped with a warning. `zz_settings.json` is rewritten in the new form the next time a setting is saved.

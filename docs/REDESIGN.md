@@ -1,327 +1,385 @@
-> 0.4 현재 구조: tuya2ildevice는 Sans-I/O Rust 단일 디바이스 해석기와 언어별 wrapper만 제공한다.
-> 디바이스 registry·IL MQTT 매핑·규칙 파일 로딩·타이머 실행은 rustuya_local.host가 담당한다.
-> 아래 진행 기록의 tuya2ildevice.host와 Python 컨버터는 이전 구조에 관한 기록이다.
+> This is the **design and implementation history** beginning on 2026-09-21. Versions, APIs, test counts and open
+> items describe their recorded point in time, not current implementation or deployment state. The former
+> `tuya2ildevice` project is now `tuya-interpreter`. For current information see [ARCHITECTURE.md](ARCHITECTURE.md),
+> [STATUS.md](STATUS.md), [ROADMAP.md](ROADMAP.md) and release-specific [CHANGELOG.md](../CHANGELOG.md).
 
-# rustuya-local 전면 재설계 (v2 계획) — HA 독립 코어 + 모듈형
+# rustuya-local redesign history — HA-independent core and modular hosts
 
-작성: 2026-09-21. 상태: **구현·배포됨(현재 0.0.40). 9절의 rustuya-homeassistant 흡수 완료. 남은 일은 [ROADMAP.md](ROADMAP.md).** 이전 v1 계획(HA custom component 전제)을 대체한다.
-`docs/STATUS.md`, `rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` 의 "rustuya-local 이 엔진을 품고 엔티티까지 만든다"는 접근도 대체된다. 그 문서의 검증 자산은 계속 쓴다.
+Written: 2026-09-21. Scope: the initial redesign and implementation/deployment record around the 0.0.40 period.
+This replaced the v1 plan based on an HA custom component, including the earlier approach in `docs/STATUS.md` and
+`rustuya-homeassistant/docs/tuya2ha-v2/STATUS.md` where rustuya-local owned both the engine and entity creation.
+The verification assets from those plans remained useful.
 
-## 1. 결정 (사용자 확정)
+## 1. Decisions confirmed by the user
 
-| 항목 | 결정 |
+| Item | Decision |
 |---|---|
-| 체인 | `rustuya-bridge → tuya2ildevice → (ildevice IL) → ildevice-homeassistant` |
-| 형태 | **HA 독립**이 기본. custom component 는 나중에 얹는 얇은 래퍼(확장). 모듈형으로 설계 |
-| IL | 기존 `../ildevice` 규격. 필요하면 규격도 수정 |
-| 변환기 | `../tuya2ildevice` (지금은 로컬 경로 의존, 나중에 pip) |
-| ildevice-homeassistant | **별도 설치 / 통합(내장) 둘 다 가능**하게. ildevice-homeassistant 자체를 모듈화해서 맞춘다 |
-| 다른 저장소 | tuya2ildevice / ildevice-homeassistant / ildevice 수정 허용 |
-| 기본값(추천안 수락) | `expose_unused=False`(core와 동일), camera 는 IL 범위 밖(문서화), alarm/vacuum 은 tuya2ildevice 에 구현, 이름·아이콘은 ildevice-homeassistant 쪽 소관 |
-| 자산 | 골든 1205 / 쓰기 58 / 오라클 / 생성기 / 어댑터는 안전망. 구현은 새로 |
-| 커밋 | 요청 전에는 커밋하지 않는다 |
+| Chain | `rustuya-bridge → tuya2ildevice → (ildevice IL) → ildevice-homeassistant` |
+| Form | HA-independent core first; a thin custom-component wrapper later; modular design |
+| IL | Existing `../ildevice` specification, amend it where necessary |
+| Converter | `../tuya2ildevice`, initially a local path dependency, later pip |
+| ildevice-homeassistant | Support both separate installation and embedding by modularizing the consumer |
+| Other repositories | Changes to tuya2ildevice, ildevice-homeassistant and ildevice authorized |
+| Accepted defaults | `expose_unused=False`, matching core; camera outside IL; implement alarm/vacuum in tuya2ildevice; consumer owns names/icons |
+| Safety assets | 1,205 golden entities, 58 write replays, oracle, generator and adapter; rebuild the implementation |
+| Commits | Do not commit before the user requests it |
 
-## 2. 목표 구조 (계층)
+## 2. Target architecture
 
+```text
+rustuya-bridge (LAN DPs, MQTT)
+  ↕ abstract Transport
+rustuya-local (HA-independent app core)
+  configuration / device and bridge management / cloud schemas / asyncio Runner
+  rustuya_local.host.Hub → TuyaDriver (Rust interpretation)
+  ↕ abstract Transport carrying IL messages
+  A: MQTT broker → separately installed ildevice-homeassistant
+  B: direct in-process connection → embedded ildevice-homeassistant engine
+
+Thin HA wrapper: custom_components/rustuya_local (Phase 4)
 ```
-                 ┌─────────────── rustuya-local (앱, HA 독립 코어) ───────────────┐
- rustuya-bridge  │  config · 기기/브리지 관리 · 클라우드 스키마 · Runner(asyncio) │
- (LAN dps, MQTT) │        │                                                        │
-   ◄── Transport ┼── rustuya_local.host.Hub → TuyaDriver (Rust 해석) ── Transport ──► IL 메시지 ──┼─► (A) MQTT 브로커 → ildevice-homeassistant(별도 통합)
-                 │                                                                 └─► (B) 프로세스 내 직결 → ildevice-homeassistant 엔진(내장)
-                 └────────────────────────────────────────────────────────────────┘
-                       ▲ 위를 HA 에 올리는 얇은 래퍼: custom_components/rustuya_local (Phase 4)
-```
 
-핵심은 **전송(Transport)을 추상화**하는 것이다. 양쪽(Hub 쪽, ildevice-homeassistant 쪽) 모두 "토픽 구독/발행"만 알고, 그것이 MQTT 인지 프로세스 내 메모리인지 모른다.
-- 별도 설치(A): ildevice-homeassistant 가 HA `mqtt` 로 `il/…` 를 구독. rustuya-local 은 그냥 IL 프로듀서(HA 없이 Docker 로도 동작).
-- 통합(B): 같은 프로세스에서 브로커 없이 직결(in-process transport). rustuya-local 래퍼가 ildevice-homeassistant 엔진을 임베드.
-IL 메시지 자체는 두 경우 동일하므로 ildevice-homeassistant 입장에서 두 모드는 같은 코드다.
+The central decision was to abstract transport. Both producer and consumer know only topic subscriptions and
+publishes, without requiring MQTT rather than in-process memory. In mode A the consumer subscribes through HA MQTT
+and rustuya-local can run independently in Docker. In mode B the wrapper embeds the consumer engine without a broker
+between them. IL messages and the consumer code are the same in both modes.
 
-## 3. 저장소별 작업
+## 3. Work by repository
 
-### 3.1 ildevice (규격) — 최소 수정
-- 코드 없음, 규격만. 변경은 발견되는 만큼만: alarm/vacuum role 재확인, camera 는 범위 밖으로 명시(il-rationale.md 에 기록), 전송 추상화(il-mqtt.md 의 메시지는 어떤 전송에도 실린다)를 il-mqtt.md 에 한 절로 명시.
-- 적합성 벡터에 새로 생기는 케이스(alarm/vacuum, 쓰기 리플레이)를 추가.
+### 3.1 ildevice specification — minimal changes
 
-### 3.2 tuya2ildevice (변환기) — parity 와 런타임 API
-1. 골든 대조를 **개수 → 속성 전체**(class/unit/options/features/기본 활성 여부/상태값)로 확장, 쓰기는 58 리플레이를 IL 명령→dps 로 대조.
-2. 누락 해소: climate −3, cover −1, humidifier −3 (원인 조사), alarm 2, vacuum 2 구현. camera 는 명시적 미지원.
-3. `expose_unused` 기본값 False (+ 옵션). 초과 +112 를 core와 대조해 정리.
-4. Hub 에 **기기 런타임 추가/삭제/스키마 갱신** API (지금은 생성 시 고정 + reload 만 있음).
-5. 남은 엔진 과제: 미이식 SDK 전략 18개, 델타 누적기 중복(주기 재전송 시 이중 누적 위험), 열거형 wire 형식 검증.
-6. `examples/host.py` 는 rustuya-local Runner 가 대체하므로 예제로만 남긴다(중복 구현 금지).
+- No implementation code. Add specification changes only when needed: recheck alarm/vacuum roles, document camera
+  as outside scope in `il-rationale.md`, and explain that `il-mqtt.md` messages can travel over an abstract transport.
+- Add conformance vectors for new alarm/vacuum cases and write replays.
 
-### 3.3 ildevice-homeassistant — 모듈화 (별도/내장 겸용)
-현재: `core/`(HA 무관: descriptor, plan, topics, values) + `hub.py`(301줄, HA `mqtt` 에 직결) + `entity.py`(754줄) + 플랫폼 shim(각 13줄) + `__init__`/config_flow.
-목표:
-```
+### 3.2 tuya2ildevice — parity and runtime APIs
+
+1. Extend golden comparisons from counts to complete properties: class, unit, options, features, default enabled
+   state and values. Compare the 58 writes from IL commands to DPs.
+2. Investigate missing climate −3, cover −1 and humidifier −3; implement two alarms and two vacuums. Explicitly exclude camera.
+3. Default `expose_unused` to false, retain an option, and reconcile the 112 extra entities against core.
+4. Add runtime device addition, removal and schema replacement to Hub, previously fixed at construction except reload.
+5. Remaining engine issues: 18 unported SDK strategies, duplicate delta accumulation on periodic retransmission, enum wire validation.
+6. Keep `examples/host.py` only as an example; the rustuya-local Runner replaces it without another implementation.
+
+### 3.3 ildevice-homeassistant — separate and embedded operation
+
+The initial code had HA-independent `core/` (descriptor, plan, topics, values), `hub.py` (301 lines, directly using
+HA MQTT), `entity.py` (754 lines), platform shims (13 lines each), integration setup and config flow.
+
+```text
 il_ha/
-  core/        HA 무관 (기존) + Transport 프로토콜(subscribe/publish/call_later) + 기기 상태 모델(디스크립터 추적, 가용성/유예, reject, 발견 결정)
-  ha/          HA 의존: 엔티티 클래스(entity.py), 레지스트리/디바이스 연동, 플랫폼 셋업 함수
-  transports/  HaMqttTransport(HA mqtt), (테스트용) InProcessTransport
-custom_components/il_ha/   얇은 통합: config flow + attach(hass, entry, HaMqttTransport)
+  core/        existing pure core, Transport protocol, device state model
+  ha/          entity classes, registries and platform setup
+  transports/  HaMqttTransport and test InProcessTransport
+custom_components/il_ha/
+               config flow + attach(hass, entry, HaMqttTransport)
 ```
-- 공개 진입점 `attach(hass, config_entry, transport, options) -> IlHub` 로 **다른 통합(rustuya-local)이 자기 config entry 로 ildevice-homeassistant 엔진을 임베드**할 수 있게 한다. 플랫폼 shim 도 `il_ha.ha.platforms.setup(platform, hub, add_entities)` 형태로 재사용.
-- 이름/아이콘/번역: ildevice-homeassistant 가 소유. core 번역 재현은 필요 시 별도 과제(현재는 `humanize(prop)`).
-- 리스크: 임베드 모드에서는 엔티티 플랫폼(domain)이 `rustuya_local` 이 되어 unique_id 는 같아도 레지스트리 항목이 il_ha 모드와 **다르다** → 모드 전환 시 엔티티 중복/이력 단절. 모드는 설치 시 고르고 전환은 지원 밖으로 문서화.
 
-### 3.4 rustuya-local (앱) — 새로 작성
-패키지 `rustuya_local/` (HA 무관) + 나중에 `custom_components/rustuya_local/` (래퍼).
-- `config`: 브리지 연결(호스트/포트/루트), IL 접속/프리픽스, overrides/converters, 기기 목록(캐시). HA 없이 파일/환경변수/CLI.
-- `devices`: 기기 등록·삭제·스캔·클라우드 스키마 캐시는 **rustuya-manager 의 Manager 파사드** 사용(직접 프로토콜 구현 금지).
-- `bridge`: 외부 rustuya-bridge 가 기본, pyrustuyabridge 내장은 opt-in (기존 확정사항). 브리지 설정에서 `BridgeTopics` 템플릿 읽기.
-- `runner`: asyncio. `Hub` + Transport 2개(브리지 쪽/IL 쪽)를 구동: `Subscribe/Publish/Schedule/Unschedule` 실행, LWT(M-12), 재연결 시 재구독·`start()`.
-- `transports`: `MqttTransport`(paho), `InProcessTransport`(브로커 흉내: 와일드카드+retained, 테스트와 임베드용).
-- `cli`: `rustuya-local run --config …` 데몬. Docker 로도 가능.
-- HA 래퍼(Phase 4): config flow/옵션/서비스/진단은 위 코어를 호출만 한다. 모드 A(il_ha 별도, manifest `dependencies`) / 모드 B(ildevice-homeassistant 임베드).
-- 폐기: `entity_engine.py`, `bridge_device.py`, 17 플랫폼 파일, 엔티티 번역, `icons.json`. 재작성: config_flow(1012줄), bridge_supervisor, bridge_client, services, diagnostics.
-- 기존 코드는 커밋된 적이 없으므로 삭제 전에 `legacy/`(패키징 제외)로 옮겨 두고, 새 구조가 검증된 뒤 삭제한다.
+- Public `attach(hass, config_entry, transport, options) -> IlHub` lets another integration embed the engine under
+  its own entry. Reuse platform setup through `il_ha.ha.platforms.setup(platform, hub, add_entities)`.
+- The consumer owns names, icons and translations. Port core translations separately if needed; the initial default was `humanize(prop)`.
+- Embedding changes the entity platform/domain to `rustuya_local`. Even with identical unique IDs, registry entries
+  differ from standalone `il_ha`: switching can duplicate entities and split history. Choose a mode at installation
+  and document mode switching as unsupported.
 
-## 4. 측정된 현재 체인 (2026-09-21, 개수 기준)
+### 3.4 rustuya-local — rebuild the app
 
-골든 1205 중 재현 1185, 오류 0, 생산 1317. light 65/65, fan 13/13, valve 14/14, siren 5/5, event 14/14, button 12/12.
-부족: climate 17/20, cover 15/16, humidifier 4/7, alarm 0/2, vacuum 0/2, camera 0/9.
-초과(expose_unused): switch +9, select +22, number +26, sensor +73, binary_sensor +2 = +112.
-속성/상태/쓰기 비교는 아직 안 했다 → Phase 1 첫 작업.
+Use an HA-independent `rustuya_local/` package and later a `custom_components/rustuya_local/` wrapper.
 
-## 5. 단계 (각 단계는 HA 없이 검증 가능한 것부터)
+- Configuration: bridge host/port/root, IL broker/prefix, overrides/converters and cached device list; files/environment/CLI without HA.
+- Device registration, deletion, scanning and cloud schemas use the rustuya-manager `Manager` facade; do not duplicate its protocol.
+- External rustuya-bridge is the default; embedded pyrustuyabridge is opt-in. Read `BridgeTopics` templates from bridge configuration.
+- asyncio Runner drives Hub and bridge/IL transports, executing Subscribe/Publish/Schedule/Unschedule, LWT (M-12),
+  resubscription and `start()` after reconnect.
+- paho `MqttTransport` and `InProcessTransport` with wildcard/retained semantics for tests and embedding.
+- CLI daemon `rustuya-local run --config …`, also usable in Docker.
+- Phase 4 HA config flow/options/services/diagnostics only call the core. Mode A uses a separate consumer; mode B embeds it.
+- Retire `entity_engine.py`, `bridge_device.py`, 17 platforms, entity translations and `icons.json`; rewrite the
+  1,012-line config flow, bridge supervisor/client, services and diagnostics.
+- Since the original code was uncommitted, move it to unpackaged `legacy/` before deletion, then remove it after validation.
 
-| 단계 | 내용 | 완료 기준 |
+## 4. Initial measured chain (2026-09-21, entity counts)
+
+Reproduced 1,185 of 1,205 golden entities, zero errors, 1,317 produced. Matching counts: light 65/65, fan 13/13,
+valve 14/14, siren 5/5, event 14/14, button 12/12. Shortfalls: climate 17/20, cover 15/16, humidifier 4/7,
+alarm 0/2, vacuum 0/2, camera 0/9. Extras from `expose_unused`: switch +9, select +22, number +26, sensor +73,
+binary_sensor +2, total +112. Property, state and write comparisons were the first Phase 1 task.
+
+## 5. Phases
+
+| Phase | Work | Completion criteria |
 |---|---|---|
-| **0. 안전망** | rustuya-local 을 패키지 구조로 전환, `legacy/` 이동, 경로 의존 설정, 체인 골든 하네스 이식(`tests/chain/`) | 체인 대조가 pytest 로 돌고 현재 수치가 기준선으로 고정 |
-| **1. tuya2ildevice** | §3.2 1–4 | 골든 속성·상태 전량 일치(문서화된 예외 제외), 쓰기 58 일치, Hub 런타임 추가/삭제 테스트 |
-| **2. ildevice-homeassistant 모듈화** | §3.3 (`core` Transport/상태 모델, `ha`, `attach`) | 기존 ildevice-homeassistant 테스트 통과 + HaMqtt/InProcess 두 전송으로 동일 결과 |
-| **3. rustuya-local 코어** | §3.4 config/devices/runner/transports/cli | 모의 브리지(InProcess) → Hub → ildevice-homeassistant core plan 까지 HA 없이 E2E, 재연결/타이머/LWT 테스트 |
-| **4. HA 래퍼** | custom component (모드 A/B), config flow, 서비스, 진단 | pytest-homeassistant-custom-component 로 두 모드 E2E |
-| **5. 실기기** | 실 브리지·기기·HA | enum wire/dj hex/델타 중복/`support_local=false` 등 미검증 항목 확인 |
+| 0. Safety net | Package layout, `legacy/`, path dependencies, port `tests/chain/` golden harness | pytest chain comparison with a fixed baseline |
+| 1. tuya2ildevice | Section 3.2 items 1–4 | Full property/state parity with documented exceptions, 58 writes, runtime Hub addition/removal |
+| 2. Consumer modularization | Core Transport/model, HA layer, attach | Existing tests plus identical HaMqtt/InProcess results |
+| 3. rustuya-local core | Configuration/devices/Runner/transports/CLI | HA-free in-process bridge → Hub → consumer-plan E2E; reconnect/timers/LWT |
+| 4. HA wrapper | Modes A/B, config flow, services, diagnostics | Both modes through pytest-homeassistant-custom-component |
+| 5. Real devices | Real bridge, devices and HA | Enum wire, dj hex, duplicate deltas, `support_local=false` and other unverified cases |
 
-Phase 1 과 2 는 서로 독립이라 병행 가능. 3 은 1·2 의 인터페이스(Hub add/remove, Transport 프로토콜)가 굳은 뒤 시작한다.
+Phases 1 and 2 were independent. Phase 3 depended on settled Hub addition/removal and Transport interfaces.
 
-## 6. 비용/이득과 리스크
+## 6. Benefits, costs and risks
 
-- 이득: HA 없이 돌고 테스트된다(반복 속도↑), ildevice-homeassistant 를 쓰는 다른 프로듀서(rusthinq 등)와 구조가 같다, 엔티티 로직이 한 곳(ildevice-homeassistant)에만 있다.
-- 비용: 세 저장소 동시 변경. 인터페이스(Hub API, Transport, attach)를 먼저 고정하지 않으면 서로 깨진다 → 각 단계 시작에 인터페이스 초안을 문서로 확정.
-- core 재현도 하락: ildevice-homeassistant 는 core 이름/번역/아이콘을 모른다. "core 와 동일한 이름"은 이 구조에서 보장되지 않는다(속성 골든만 보장).
-- 임베드/별도 모드 간 엔티티 레지스트리 비호환(§3.3).
-- 검증 한계: 실기기 없이는 wire 형식과 델타 중복을 확정할 수 없다.
+- HA-free execution and testing, quicker iteration, the same consumer structure as other producers such as rusthinq,
+  and entity logic in one place: ildevice-homeassistant.
+- Three repositories change together. Define Hub, Transport and attach interfaces before each phase to avoid incompatible changes.
+- The consumer does not know core names/translations/icons. Property golden parity does not guarantee identical names.
+- Entity registry compatibility differs between embedded and standalone modes (section 3.3).
+- Wire formats and duplicate delta behavior cannot be established without real devices.
 
-## 7. 열려 있는 결정 (기본안으로 진행, 나중에 변경 가능)
+## 7. Open decisions at the time
 
-1. Runner 의 MQTT 클라이언트: paho(tuya2ildevice 예제와 동일, 기본안) vs aiomqtt.
-2. 의존 관리: 각 pyproject 의 path 의존(기본안), 나중에 pip 로 교체.
-3. ildevice-homeassistant 이름·번역 이식 여부: Phase 2 이후 실사용 보고 판단.
+1. paho (default, matching tuya2ildevice examples) or aiomqtt for Runner MQTT.
+2. Local pyproject path dependencies initially, pip later.
+3. Whether to port names/translations after consumer modularization and real use.
 
-## 8. 진행 기록
+## 8. Implementation record
 
-- **2026-09-21 Phase 0 완료**: `custom_components/`, `hacs.json`, `test_render_golden.py` → `legacy/`(gitignore). `pyproject.toml`(패키지 `rustuya_local`, src 레이아웃, tuya2ildevice 를 `../tuya2ildevice` 경로 의존), `.venv`(uv). `tests/chain/`(measure.py, test_counts.py, baseline.json: 1185/1205, 오류 0, 생산 1317) — pytest 34 통과. 골든/픽스처는 `../tuya2ildevice/tests/golden` 를 사용하고 ildevice-homeassistant `core` 는 경로로 import(Phase 2 에서 패키지화하며 제거).
-- 주의: `../tuya2ildevice` 는 **git 저장소가 아니다**(변경 이력 없음). 수정 전 백업을 세션 스크래치패드에 만들어 뒀다(`tuya2ildevice.backup.tgz`, `ildevice-homeassistant.backup.tgz`). Phase 1 전에 git init 여부를 정하자.
-- **2026-09-21 tuya2ildevice git init(master) + 초기 커밋 `6ea06c9`(변경 전 기준선)**.
-- **2026-09-21 Phase 1 1차 완료(커밋 안 함)**
-  - 체인 비교를 개수에서 **속성 단위**로 확장(`tests/chain/props.py`, `test_props.py`): 골든 엔티티를 dp 코드(`src`/비트 라벨)로 IL 디스크립터에서 찾아 platform/class/category/unit 비교.
-  - 처음 측정: 누락 151(대부분 비교 방법 문제 — 비트맵 라벨 대소문자, 합성 엔티티 key `""`), 실제 차이 class 18 / category 12 / platform 3 / unit 1 / 누락 20.
-  - **수정**: (tuya2ildevice) alarm·vacuum 조립 추가(kind `alarm`, `disarm` 은 S-1 로 `allow_hazardous` 일 때만), 그룹 `class` 와 합성 엔티티 `category` 를 디스크립터에 싣기, `expose_unused` 기본 False; (ildevice-homeassistant) valve `device_class`, 합성 엔티티 `entity_category`(자기 속성의 category 에서).
-  - **결과**: 1190/1205 재현(플랫폼 일치). 남은 15 = camera 9(IL 범위 밖), climate 3(`target_temperature` 없는 core climate), humidifier 3(`target_humidity` 없는 core humidifier). 나머지 차이는 unit 1(windspeed, HA 호스트 변환)뿐. class/category 차이 0. 이 예외는 `test_props.py` 에 명시돼 새 차이는 실패한다.
-  - Hub: `set_device(device)`(추가/교체, 사라진 속성은 먼저 비움 M-11), `remove_device(id)`(값 비움 → 디스크립터 비움) 추가 + 테스트.
-  - 테스트: tuya2ildevice 47 통과(alarm/vacuum 명령·상태 신규), ildevice-homeassistant 105 통과, rustuya-local 41 통과.
-- **Phase 1 남은 것 / 발견**
-  - **IL 규격 공백(fan)**: core 의 fan 은 percentage/oscillate/direction 을 한 엔티티에 갖지만 IL 의 fan 역할에는 select `fan_speed`/`mode` 뿐이라 `speed`(number)·`direction`·`oscillate` 가 별도 number/select/switch 로 나온다(6개 초과). 규격에 역할 추가(`speed`, `oscillate`, `direction`) + ildevice-homeassistant fan 반영 필요 — 결정 대기.
-  - climate/humidifier 강등: 대응 dp 는 switch/select/sensor 로 남는다(기능 손실 아님, 표현 차이). 그대로 둘지 IL 요구 조건을 완화할지 결정 대기.
-  - 쓰기(58 리플레이)와 상태값의 IL 단계 대조는 ildevice-homeassistant 엔티티(서비스→IL 명령)를 거쳐야 정확하므로 Phase 4(HA 통합 테스트)에서 한다. 지금은 엔진 단계 골든이 tuya2ildevice 에서 이미 통과.
-  - 미이식 SDK 전략 18개, 델타 누적기 중복, enum wire 형식은 그대로(실기기 Phase 5).
-- **2026-09-21 fan 역할 추가(결정 1 승인)**: ildevice il.md/schema/il-consumers/il-rationale 에 `speed`(number %), `oscillate`(binary), `direction`(select) 추가, tuya2ildevice 가 역할을 붙이고 ildevice-homeassistant fan 이 percentage/oscillate/direction 을 지원. 체인 초과 39 → 28. climate/humidifier 강등은 그대로 유지(결정 2).
-- **2026-09-21 Phase 2 완료(ildevice-homeassistant 모듈화, 커밋 안 함)**
-  - `il_ha/core/transport.py`(Transport 프로토콜, Message), `core/memory.py`(InProcessTransport: MQTT 필터·retained·빈 retained 삭제 의미 유지), `core/model.py`(**IlModel + Sink**: 디스크립터/값/가용성 유예/presence/reject/발견 결정, HA 무관).
-  - HA 층은 `hub.py`(IlHub = Sink: 엔티티·레지스트리·디스커버리·디스패처), `mqtt_transport.py`(HaMqttTransport), `attach.py`(`build_hub(hass, options, transport, platform)` — 다른 통합이 임베드할 때의 진입점). `__init__` 은 HA 를 import 하지 않는다(`import il_ha.core` 가 HA 없이 됨, 테스트로 고정).
-  - 패키징: ildevice-homeassistant pyproject 가 `custom_components/il_ha` 를 wheel 의 `il_ha` 로 설치(hatch). rustuya-local 이 `il_ha.core` 를 일반 의존성으로 쓰므로 경로 해킹 제거.
-  - ildevice-homeassistant 테스트 116(기존 106 + 모델 10) 통과, 기존 HA 통합 테스트 무수정 통과.
-- **2026-09-21 Phase 3 1차(rustuya-local 코어)**
-  - `runner.py`(Hub 를 두 Transport 에 연결: 순서 보장 발행 큐, Schedule/Unschedule 타이머, 재연결 시 `hub.start()`, 런타임 set/remove/reload), `transports.py`(paho MqttTransport: 재연결 시 재구독·on_connect 훅, LWT), `config.py`, `cli.py`(`rustuya-local run --config`).
-  - 테스트 51 통과: 체인(41) + 인프로세스 E2E(5: 값 흐름/명령→dps/reject/런타임 추가·삭제/정지 시 offline) + **실제 mosquitto** E2E(2: 값·명령, 소켓을 끊어 Last Will 발동→재연결 후 presence 복구) + 데몬 서브프로세스(SIGTERM 시 offline) + 설정(2).
-  - 발견/수정: InProcessTransport.settle 이 done-callback 을 못 돌려 무한 루프 → `sleep(0)` 로 수정; Runner.stop 이중 호출 시 drain 교착 → 멱등화.
-- **2026-09-21 ildevice-homeassistant 아이콘**: `core/icons.py`(이름 규칙 → 단위 → 종류 순), `EntitySpec.icon`, 엔티티 `_attr_icon`. device_class 가 있는 엔티티는 HA 기본 아이콘을 그대로 둔다. 실제 324기기의 445개 classless 엔티티 전부에 부여. ildevice-homeassistant 테스트 133.
-- **2026-09-21 Phase 3 2차(기기 목록·브리지 설정)**
-  - **설계 판단**: rustuya-manager 는 이미 독립 앱(CLI/웹/QR 마법사/브리지 동기화)이고 `tuyadevices.json`(스키마 포함 클라우드 레코드)을 원자적으로 쓴다. rustuya-local 이 기기 관리를 재구현하지 않고 **그 파일을 읽어 따라간다**(쓰지 않음). manager 라이브러리(pyrustuyabridge/aiomqtt/tuyawizard 의존)는 코어에 넣지 않는다 — Phase 4 HA 래퍼가 마법사에 필요할 때만 사용.
-  - `devices.py`(`parse_devices`: category 없는 레코드는 건너뛰고 보고, `DeviceWatcher`: mtime/size 폴링 → `Runner.sync_devices` 로 추가/교체/삭제, 읽기 실패 시 현 상태 유지), `Runner.sync_devices`(실패한 레코드는 격리), `Hub.records`(tuya2ildevice), `bridge.py`(`{root}/bridge/config` retained 를 읽어 `mqtt_event_topic`/`mqtt_message_topic`/`mqtt_command_topic`/`mqtt_root_topic` 반영, 없으면 기본 레이아웃+경고).
-  - 테스트 55 통과(신규: 파싱/템플릿/동기화/워처 4 + 데몬 E2E 1: 브리지 자체 템플릿으로 값 추적, 파일에 기기 추가·삭제를 실제 mosquitto 위에서 반영).
-  - **미검증/미지원**: 브리지의 `mqtt_payload_template`(기본 `{value}` 아님) 미반영, single-dp 모드는 Hub 가 처리하나 실브리지로 확인 안 함, 내장 브리지(pyrustuyabridge) 수명주기 미구현(외부 브리지가 기본이라는 기존 확정에 따라 opt-in 과제로 남김).
-- **2026-09-21 Phase 3 3차: 독립 구동 검증(실제 브리지 + 기기 에뮬레이터)** — custom component 는 미루고 데몬만으로 검증
-  - 구성: `tuyamock`(Tuya LAN 프로토콜 에뮬레이터, 3.4) ↔ **실제 rustuya-bridge**(`pyrustuyabridge.PyBridgeServer`, 프로세스 내) ↔ mosquitto ↔ `rustuya-local run`(서브프로세스) ↔ mosquitto(il/…) ↔ 일반 MQTT 관찰자. 실제 브리지 없이 가짜로 흉내 낸 것은 Tuya 기기뿐.
-  - `tests/e2e/test_full_stack.py`(7): IL 디스크립터+실제 상태 도착, 기기 쪽 변경(push)→IL, IL `set`→기기 dps(`brightness=50` → 507 + 스위치 on), 스위치 off, 범위 밖 명령은 reject 되고 기기에 안 감, 기기가 네트워크에서 사라지면 available=false → 복귀, **데몬 재시작 시 IL retained 를 다 지운 상태에서 브리지의 retained 스냅샷만으로 복원**, 데몬 stderr 에 예외/ERROR 없음.
-  - `tests/e2e/test_full_stack_devices.py`(2): HA core 픽스처 38종(플랫폼당 최대 4개)을 각자 tuyamock 기기(픽스처의 dps 를 번호 매겨 local_strategy 생성)로 띄워 실제 브리지 → 데몬을 통과시키고, 나온 IL 값 273개가 **같은 dps 를 TuyaDriver 에 직접 넣은 결과와 전부 일치**(변이 테스트로 이 비교가 실제로 실패할 수 있음을 확인). 브리지가 Boolean/Integer/Enum/String/Raw/Json/Bitmap 을 wire 로 내보내는 방식이 엔진 가정과 맞음을 확인.
-  - 발견: 버그 없음. 테스트 쪽 가정 오류만 있었다(밝기 500/1000 → 49, 정지한 MockDevice 는 재시작 불가 → 새로 생성).
-  - **여전히 미검증**: 실제 Tuya 기기(3.3/3.5 프로토콜, 실제 펌웨어의 dp 형태), 브리지 `mqtt_payload_template` 비기본값, 쓰기 58 리플레이의 IL 단계 대조(Phase 4), 장시간(soak)/대규모(수백 기기) 동작.
-- **2026-09-21 리팩터링(코드 위치 정리)**: `Runner`/`MqttTransport`/`InProcessTransport`/Transport Protocol/`DeviceWatcher`/`parse_devices`/`read_bridge_config` 를 **tuya2ildevice.host** 로 이동(extras `host`=paho), `BridgeTopics.from_config` 추가. rustuya-local 은 config+cli 144줄만 남고 **ildevice-homeassistant 의존 제거**(테스트 의존성만). ildevice-homeassistant 는 변경 없음 — 두 저장소가 공유하는 것은 규격 문서뿐이고 Protocol 은 구조적 타입이라 서로 import 하지 않는다. `tests/chain` 은 tuya2ildevice 로 이동(ildevice-homeassistant 없으면 수집 안 함). tuya2ildevice 137 / ildevice-homeassistant 174 / rustuya-local 20 통과.
-- **2026-09-21 규격 벡터(ildevice/vectors)**: `wire-values.json`(값↔페이로드 4방향), `topics.json`(레이아웃·x-mqtt·presence·id 유효성), `composites.json`(kind/role→합성 성립 18케이스, 스키마 검증 통과). 손 복사본(`tuya2ildevice/tests/spec`) 삭제 — 두 구현체가 `../ildevice`(또는 `$ILDEVICE`)를 직접 읽는다(없으면 skip).
-  - **벡터가 잡은 것**: (1) tuya2ildevice `encode_value(50.0)` 가 `"50.0"` 을 냄 → 규격(정수값은 소수부 없음) 위반, 수정. (2) ildevice-homeassistant 의 cover 는 `open` 하나만 있어도 성립하는데 규격은 `open` 과 `close` 둘 다를 요구 → 규격 K-2 를 "position, 또는 open, 또는 close 중 하나"로 완화(차고 열림 전용 리모컨 같은 실제 사례).
-  - 규격 모호점 → **해결(K-6)**: `lock`/`valve` 합성은 **쓰기 가능한** `locked`/`opened` 를 요구, 읽기 전용이면 일반 binary 속성(네이티브 읽기 전용 표현으로 보여주는 것은 소비자 자유). ildevice-homeassistant 는 이미 그렇게 동작했고 벡터 4케이스로 고정(ildevice-homeassistant 45 통과). il-rationale.md 에 이유 기록.
-  - **S-1 과 valve → 해결**: 규격 S-1 의 목록에서 `opened` 를 뺐다(물 밸브는 일반 제어, 가스처럼 위험한 공급의 밸브는 S-1 의 일반 문장이 그대로 적용). tuya2ildevice 는 이미 valve 를 rw 로 내므로 코드 변경 없음. 이유는 il-rationale.md 에 기록. (S-3 이 이미 `locked` 에 대해 같은 말을 했음을 뒤늦게 확인 — K-6 이 이를 인용.)
-- **남은 것**: (Phase 3) 내장 브리지(opt-in) 수명주기, 진단/상태 노출(devices 목록·연결 상태); (Phase 4) HA 래퍼(모드 A/B, config flow, ildevice-homeassistant `attach` 임베드) + 쓰기 58/상태 IL 단계 대조; (Phase 5) 실기기.
-- **2026-09-22 rustuya-bridge 와이어 해석을 tuya2ildevice 에서 rustuya-local 로 이동(커밋 안 함)**: `BridgeTopics`(토픽 템플릿을 손으로 정규식화)가 rustuya-bridge 의 실제 설정 가능한 토픽/페이로드 템플릿을 정확히 해석하지 못함을 발견 — 특히 `mqtt_payload_template` 비기본값은 애초에 손도 대지 않았음(REDESIGN.md 3.4 절 진행기록에 이미 "미검증/미지원"으로 남아있던 구멍). rustuya-manager 의 `BridgeClient`(`pyrustuyabridge` 의 `match_topic`/`render_template`/`tpl_to_wildcard`/`parse_seed_dps` 사용 — 실제 Rust 브릿지 파서와 동일)가 이미 올바른 참조 구현이었음을 확인하고 같은 패턴을 채택.
-  - **tuya2ildevice**: `BridgeTopics` 와 `host/bridge.py`(`read_bridge_config`) 삭제. `Hub` 는 이제 브릿지 쪽에서 이미 해석된 입력만 받는다 — `on_bridge_message(now, device_id, Connected()/Disconnected()/Message(channel, dps), retained=False)`, 출력도 추상화된 `BridgeCommand(device_id, action, dps)`(토픽을 스스로 만들지 않음). `driver.py` 의 `_dps_of` 는 `{"dps":...}`/`{"data":{"dps":...}}}` 래핑 해제 로직을 삭제 — 이미 평평한 `{dp: value}` 맵을 받는다고 가정(실제 와이어에서 그 래핑이 전혀 관측되지 않음을 `pyrustuyabridge.parse_seed_dps` 로 확인). `host/runner.py` 의 `Runner` 는 IL 전송 하나만 몰고, `BridgeCommand` 출력은 주입된 `on_bridge_command` 콜백으로 넘긴다(모든 진입점 — `on_bridge_message`/`set_device`/`reload` — 공통 적용).
-  - **rustuya-local**: 새 `bridge_client.py`(`BridgeClient`) — bridge/config 부트스트랩, 템플릿 해석, 이벤트/에러 토픽 매칭, `BridgeCommand` 렌더링을 전담. `cli.py`/`custom_components/rustuya_local/__init__.py` 둘 다 이 모듈을 통해 배선(코드 중복 없음). `custom_components` 쪽은 `rustuya_local.bridge_client` 를 절대 임포트로 참조 — `rustuya-local` 자체가 아직 PyPI 에 없어 실제 HA 배포 시엔 `manifest.json` 요구사항에 추가가 필요(지금은 로컬 개발 venv 에서만 동작).
-  - tuya2ildevice 는 공개 API 가 바뀌므로(이미 배포된 0.1.0) 0.2.0 으로 올려야 함 — 아직 미배포, `pyproject.toml` 의 `[tool.uv.sources]` 로컬 경로 임시 복원.
-  - 부수 발견/수정: `cli.py` 에서 시그널 핸들러 등록이 `bridge_client.start()`(부트스트랩 대기, 최대 수초)보다 뒤에 있어 그 대기 중 SIGTERM 을 받으면 정상 종료 경로를 타지 못하고 그냥 죽는 문제 — 핸들러 등록을 `run()` 맨 앞으로 이동해 수정. `tests/e2e/test_full_stack_devices.py`/`tests/test_driver.py` 의 일부 테스트가 `_dps_of` 의 래핑-해제를 직접 테스트하고 있어 새 평평한 계약에 맞게 수정.
-  - 테스트: tuya2ildevice 137 통과(+4 skip, 기존과 동일 사유), rustuya-local 34 통과.
+- **2026-09-21 Phase 0 completed**: move `custom_components/`, `hacs.json` and `test_render_golden.py` to ignored
+  `legacy/`; create src-layout `rustuya_local`, a `../tuya2ildevice` path dependency and uv `.venv`. Add
+  `tests/chain/measure.py`, `test_counts.py`, `baseline.json`: 1,185/1,205, zero errors, 1,317 produced. 34 tests passed.
+  Golden data came from `../tuya2ildevice/tests/golden`; consumer core was imported by path pending Phase 2 packaging.
+- At that point `../tuya2ildevice` had no Git history. Save `tuya2ildevice.backup.tgz` and
+  `ildevice-homeassistant.backup.tgz` in session scratch storage before modifications; decide Git initialization before Phase 1.
+- **2026-09-21**: initialize tuya2ildevice Git on master; baseline commit `6ea06c9`.
+- **2026-09-21 Phase 1 first pass completed, uncommitted**:
+  - `tests/chain/props.py`/`test_props.py` match golden entities to descriptors by DP code (`src`/bitmap labels),
+    comparing platform/class/category/unit. Initial 151 missing matches were mostly comparator issues: bitmap label
+    case and empty composite keys. Actual differences: 18 classes, 12 categories, 3 platforms, 1 unit and 20 missing entities.
+  - Implement alarm/vacuum assembly, alarm disarm only with `allow_hazardous` under S-1, descriptor group classes and
+    composite categories, and false `expose_unused`. Consumer fixes: valve device class and composite entity category.
+  - Result: 1,190/1,205 with matching platforms; remaining 15 were nine cameras outside IL, three climates without
+    target temperature and three humidifiers without target humidity. Zero class/category differences; one windspeed
+    unit difference from HA host conversion. Exceptions in `test_props.py` make new differences fail.
+  - Add Hub `set_device(device)` and `remove_device(id)`, clearing removed props before replacement (M-11) and values
+    before descriptors on removal. Tests: tuya2ildevice 47, consumer 105, rustuya-local 41 passed.
+- **Phase 1 remaining findings**:
+  - IL fan only had select `fan_speed`/`mode`, so core percentage/oscillate/direction became separate number/select/switch
+    entities (six extras). Adding roles and consumer fan support awaited a decision.
+  - Climate/humidifier fallback to switch/select/sensor preserved functions but changed presentation; decide whether to relax IL requirements.
+  - The 58 writes and IL state comparison should pass through consumer entities (service → IL command) in Phase 4;
+    engine-level golden tests already passed. SDK strategies, duplicate deltas and enum wire validation remained for Phase 5.
+- **2026-09-21 fan-role decision approved**: add `speed` (number %), `oscillate` (binary) and `direction` (select) to
+  ildevice specification/schema/consumer rationale; producer and consumer support them. Extras decreased 39→28.
+  Keep climate/humidifier fallback as decided.
+- **2026-09-21 Phase 2 completed, uncommitted**:
+  - Add `il_ha/core/transport.py`, `core/memory.py` and `core/model.py` (`IlModel` + `Sink`) for descriptors, values,
+    availability grace, presence, rejects and discovery decisions without HA. Preserve MQTT filters/retained/tombstones.
+  - HA `hub.py` implements `IlHub` as Sink for entities/registries/discovery/dispatchers; add `mqtt_transport.py` and
+    `attach.py` with `build_hub(hass, options, transport, platform)`. Importing `il_ha.core` does not import HA, tested explicitly.
+  - hatch installs `custom_components/il_ha` as wheel package `il_ha`, allowing ordinary core imports without path hacks.
+    116 consumer tests passed (106 existing + 10 model); existing HA integration tests passed unchanged.
+- **2026-09-21 Phase 3 first pass**:
+  - Runner connects Hub to two transports with ordered publishing, timers, reconnect `hub.start()` and runtime
+    set/remove/reload. Add paho transport with resubscriptions/hooks/LWT, configuration and CLI.
+  - 51 tests passed: 41 chain, five in-process flow/commands/rejects/runtime/shutdown cases, two real-mosquitto
+    flow/LWT/reconnect cases, daemon SIGTERM offline and two configuration cases.
+  - Fix an infinite `InProcessTransport.settle` loop by yielding to done callbacks with `sleep(0)`; make Runner stop idempotent to avoid drain deadlock.
+- **2026-09-21 consumer icons**: `core/icons.py` chooses by name, then unit, then kind; add `EntitySpec.icon` and
+  `_attr_icon`, leaving HA icons for device-class entities. Cover all 445 classless entities across 324 real-device
+  schemas. 133 consumer tests passed.
+- **2026-09-21 Phase 3 second pass: device list and bridge configuration**:
+  - rustuya-manager already provides CLI/web/QR login/bridge sync and atomically writes cloud schemas to
+    `tuyadevices.json`. rustuya-local follows that file without writing it or duplicating management. Keep manager
+    dependencies out of the core; the Phase 4 HA wizard can use them.
+  - `parse_devices` skips/reports missing categories, DeviceWatcher polls mtime/size and syncs additions/replacements/
+    removals while preserving state on read failure. Runner isolates failed records. Hub exposes records.
+    Read retained bridge config and topic templates; fall back to defaults with warnings.
+  - 55 tests passed: four new parsing/templates/sync/watcher cases and a daemon E2E over actual mosquitto using
+    bridge templates and device-file additions/removals.
+  - Unverified/unsupported at that point: nondefault `mqtt_payload_template`, real bridge single-DP mode and opt-in embedded-bridge lifecycle.
+- **2026-09-21 Phase 3 third pass: standalone full stack**:
+  - Validate the daemon before the custom component. Chain: tuyamock Tuya LAN 3.4 emulator ↔ real in-process
+    `pyrustuyabridge.PyBridgeServer` ↔ mosquitto ↔ daemon subprocess ↔ IL mosquitto ↔ MQTT observer. Only devices were mocked.
+  - Seven `test_full_stack.py` cases: descriptors/state, device push, IL brightness 50 → raw 507 plus switch on,
+    switch off, out-of-range rejection without device writes, device disappearance/recovery, daemon restart with
+    all IL retained data removed and recovery from bridge snapshots, no daemon stderr exceptions/errors.
+  - Two `test_full_stack_devices.py` cases emulate 38 core fixture shapes (up to four per platform), assigning DPs
+    and local strategies, and compare all 273 resulting IL values with direct TuyaDriver output. A mutation test
+    confirms the comparison detects differences. Boolean/Integer/Enum/String/Raw/Json/Bitmap bridge wire formats match engine assumptions.
+  - No implementation bugs found; correct test assumptions that raw brightness 500/1,000 yields 49 and stopped MockDevices must be recreated.
+  - Still unverified: real firmware/3.3/3.5 devices, custom payload templates, 58 IL write replays, soak tests and hundreds of devices.
+- **2026-09-21 code relocation**: move Runner, transports, Transport protocol, watcher/parser and bridge config reader
+  to `tuya2ildevice.host` (paho `host` extra), add `BridgeTopics.from_config`. rustuya-local shrinks to 144 config/CLI
+  lines and drops consumer runtime dependency. Consumer remains unchanged; structural protocols and specifications
+  connect them without mutual imports. Move chain tests into tuya2ildevice, conditional on consumer availability.
+  Passed: tuya2ildevice 137, consumer 174, rustuya-local 20.
+- **2026-09-21 specification vectors**: `ildevice/vectors/wire-values.json` (four value/payload directions),
+  `topics.json` (layout, x-mqtt, presence, IDs), `composites.json` (18 kind/role cases, schema validated).
+  Remove copied `tuya2ildevice/tests/spec`; both read `../ildevice` or `$ILDEVICE`, skipping if unavailable.
+  - Fix `encode_value(50.0)` producing `50.0` instead of the required integral payload `50`.
+  - Relax K-2 cover requirements to position or open or close; consumers already support open-only garage remotes.
+  - Resolve K-6: lock/valve composites require writable `locked`/`opened`; readonly values remain generic binary props,
+    with optional native consumer presentation. Add four vectors, 45 consumer tests passed, document rationale.
+  - Remove `opened` from S-1's hazardous list: ordinary water valves are normal controls; the general rule still
+    covers hazardous supplies such as gas. Producer already emits writable valves. S-3's existing locked rule is referenced by K-6.
+- **Remaining at that point**: Phase 3 embedded lifecycle and diagnostics; Phase 4 HA modes/config flow/attach and
+  58 write/state IL comparisons; Phase 5 real devices.
+- **2026-09-22 bridge wire interpretation moved to rustuya-local, uncommitted**:
+  - Handwritten regex `BridgeTopics` did not interpret actual bridge templates, especially custom payloads.
+    rustuya-manager's binding-based client supplied the reference pattern: pyrustuyabridge `match_topic`,
+    `render_template`, `tpl_to_wildcard` and `parse_seed_dps`, matching the Rust bridge parser.
+  - Remove tuya2ildevice `BridgeTopics` and `host/bridge.py` config reader. Hub receives decoded Connected/
+    Disconnected/Message inputs through `on_bridge_message(now, device_id, input, retained=False)` and emits
+    abstract `BridgeCommand(device_id, action, dps)`. Remove `_dps_of` wrapper unwrapping because the parser produces
+    flat DP maps. Runner handles one IL transport and injects bridge-command callbacks for every input/reload path.
+  - New rustuya-local `bridge_client.py` owns config bootstrap, templates, event/error matching and command rendering.
+    CLI and HA wrapper use the same wiring. The wrapper imports the package absolutely; HA distribution would need
+    a manifest requirement once rustuya-local reached PyPI, as it then worked only in the development venv.
+  - Public API changes required tuya2ildevice 0.2.0 after released 0.1.0; temporarily restore local uv sources.
+  - Register CLI signal handlers before bridge bootstrap so SIGTERM during the wait still uses graceful shutdown.
+    Adjust full-stack/driver tests from wrapped payloads to the flat contract. Passed: tuya2ildevice 137 + four skips,
+    rustuya-local 34.
 
-## 9. rustuya-homeassistant 흡수 (2026-09-24, 사용자 승인: 권장안대로)
+## 9. Absorbing rustuya-homeassistant (2026-09-24, recommended approach approved)
 
-rustuya-homeassistant(`rustuya_ha`)는 두 가지를 했다: (1) Tuya dp → HA MQTT discovery 게시(CLI + 백업/복원), (2) rustuya-manager
-플러그인("HA Discovery" 탭). Tuya 해석은 이제 tuya2ildevice 가 전담하므로, rustuya-local 이 그 자리를 넘겨받고
-rustuya-homeassistant 는 폐기한다.
+rustuya-homeassistant (`rustuya-ha`) provided a CLI and manager “HA Discovery” plugin that interpreted Tuya and
+published discovery. With interpretation owned by tuya2ildevice, rustuya-local would replace it and reuse its
+operational tools. The proposed responsibilities at that point were:
 
-**최종 구조**
-
+```text
+tuya2ildevice          Tuya interpretation and host parts: Runner, transports, watchers
+ildevice-homeassistant IL → entity planning through plan_entities, importable without HA
+rustuya-local         HA-free BridgeClient, shared Service and IL → HA discovery operations
+                      CLI / custom_components/rustuya / manager plugin shells
 ```
-tuya2ildevice   Tuya 지식 전부 + host 부품(Runner, 전송, DeviceWatcher, OverrideWatcher)
-ildevice-homeassistant core      IL → 엔티티 계획(plan_entities, HA 없이 import)
-rustuya-local   core(HA 없음): BridgeClient · Service(조립) · discovery(IL → HA discovery, 운영 도구)
-                shell: CLI 데몬 / custom_components/rustuya / rustuya-manager 플러그인
-```
 
-`Service` 는 브리지 입력·IL 출력·HA 출력(없음/discovery/내장 ildevice-homeassistant)을 받아 조립하고, 셸은 고르고 수명만 관리한다.
+Service would assemble bridge input, IL output and optional HA output (none, discovery or an embedded consumer);
+shells would select components and own their lifetime. Decisions: keep the rustuya-local name; retire and eventually
+archive rustuya-homeassistant; initially use a dedicated BridgeClient connection like the daemon rather than the
+manager DP bus, which lacks online/offline events; leave GitHub `pack.py` synchronization out of the first pass.
 
-**결정(권장안 수락)**: 이름은 rustuya-local 유지(rustuya-homeassistant 는 폐기 안내 릴리스 후 아카이브) · 플러그인 1차는
-manager 의 DP 버스가 아니라 데몬과 같은 자체 `BridgeClient` 연결(버스에 online/offline 이 없음) · `pack.py`(GitHub 팩 동기화)는
-1차에서 제외.
+### Destination of existing code
 
-**행선지**
-
-| rustuya_ha | 처리 |
+| rustuya_ha component | Destination |
 |---|---|
-| `tuya2ha` v1·미커밋 v2, `dp_mapping`, `render_mqtt`, `scheme`, `core/bridge.py`, `core/converter.py`, `plugin_engine/` | 삭제(tuya2ildevice·pyrustuyabridge 가 대체) |
-| `custom_converters/00_default.json`, `00_curtain.py` | tuya2ildevice `overrides.json`(내장) + `cover_motion` |
-| 컨버터 디렉터리 로딩·핫리로드 | rustuya_local.host `load_overrides`/`OverrideWatcher` |
-| `core/plan.py`·`restore.py`·`backup.py`·`verifier.py`·`detail.py`, CLI status/publish/clear/restore | rustuya-local discovery 모듈(입력만 IL) |
-| `manager_plugin/`(탭 UI) | rustuya-local manager 셸 |
+| v1/uncommitted v2 `tuya2ha`, `dp_mapping`, `render_mqtt`, `scheme`, bridge/converter core, plugin engine | Delete; replaced by tuya2ildevice and pyrustuyabridge |
+| `custom_converters/00_default.json`, `00_curtain.py` | Builtin tuya2ildevice `overrides.json` and `cover_motion` |
+| Converter directory loading/hot reload | Host `load_overrides` and `OverrideWatcher` |
+| Planning/restore/backup/verification/detail and CLI status/publish/clear/restore | rustuya-local discovery module with IL inputs |
+| Manager plugin tab | rustuya-local manager shell |
 
-**단계**
+### Planned steps
 
-1. tuya2ildevice 오버라이드 보강: `dp` 이름만 바꾸기, `remap`(alias/invert), 블록별 `expose_unused`, 이름 붙은 컨버터 타입,
-   내장 `overrides.json`, `from_v1` 의 `discovery_overrides.cover` 변환, 디렉터리 로더.
-2. rustuya-local core: 조립을 `Service` 로 추출, CLI·HA 가 공유, 오버라이드 디렉터리 설정.
-3. discovery 모듈: ildevice-homeassistant `plan_entities` 로 계획 → discovery JSON(IL 토픽 직접, 가용성은 `_producer` + `available`), 운영 도구 이식.
-4. manager 플러그인 셸: `register(ctx)` → `ctx.add_service`, 상태 탭.
-5. HA 컴포넌트: HA 출력 선택(별도 ildevice-homeassistant / discovery).
-6. rustuya-homeassistant 폐기 안내 릴리스·아카이브.
+1. Extend overrides: DP renaming, alias/invert remapping, block-level `expose_unused`, named converter types,
+   builtin overrides, v1 discovery-cover conversion and directory loader.
+2. Extract shared Service for CLI/HA and override directory configuration.
+3. Plan discovery with consumer `plan_entities`, use IL topics directly and producer + device availability, and port operations.
+4. Manager `register(ctx)` shell with `ctx.add_service` and status tab.
+5. HA output selection between a separate consumer and discovery.
+6. Retirement release and archival of rustuya-homeassistant.
 
-**알려진 대가**: v1 discovery 는 브리지 토픽을 직접 가리켜 게시 후엔 프로세스가 없어도 됐지만, 새 경로는 IL 토픽을 보므로
-rustuya-local(또는 manager 플러그인)이 항상 돌아야 한다. discovery 는 ildevice-homeassistant 보다 표현력이 낮다(reject 피드백, 번역 이름).
-같은 브리지 root 에 producer 둘(HA 컴포넌트 + 플러그인), 또는 discovery + ildevice-homeassistant 동시 사용은 막거나 경고한다.
+The old v1 discovery pointed at bridge topics and did not require its process after publication. New discovery
+would point at IL and require the producer continuously. Discovery also represents less than the native consumer,
+including rejection feedback and translated names. Warn or prevent simultaneous producers on a bridge root or
+using both discovery and the native consumer for the same devices.
 
-### 9.1 진행 기록
+### 9.1 Implementation record
 
-- **2026-09-24 단계 1 완료(커밋 안 함, tuya2ildevice)**
-  - `overrides.py`: `dp` 에 `type` 없이 `code` 만 → 기존 dp 이름 변경(타입·범위·값 전략 유지); `remap.<code>.alias`(기기 값 → 표준 값,
-    읽기·쓰기 양방향, Enum range 도 번역)·`invert`(Boolean 부정, Integer 범위 내 반전) — 어댑터(`tuya/adapter.py` `Remap`)에서
-    읽기 전략 뒤·쓰기 전략 앞에 적용, 컨버터는 번역된 값을 본다; 블록별 `expose_unused`; `converters` 에 호스트가 준
-    `converter_types` 이름 허용; 내장 `overrides.json`(`BUILTIN`, `use_quirks` 를 따름, 사용자 블록이 키 단위로 이김).
-  - 내장 세트 = v1 `00_default.json` 4제품. 실제 기기 스키마로 확인: 커튼 3종은 core 기본 동작 + `cover_motion`
-    (f6jujmx0 은 `remove: [percent_state]` 로 v1 의 `position_dp: 2` 재현), 창문 개폐기(5rta89nj, 카테고리 `mc`, 스키마에 없는 dp 104)는
-    core 에 `mc` 표가 없고 cover 는 `control` dp 가 필요해 cover 로는 못 만듦 → `expose_unused` + dp 정의로 위치 number(쓰기)와
-    배터리를 노출(v1 은 dp 모양으로 cover 를 만들었다: **표현 차이, 기능은 유지**).
-  - `from_v1`: `discovery_overrides.cover` 의 `command_dp`/`set_position_dp`/`position_dp`(표준 배치 1/2/3 가정) → 이름 변경/remove,
-    `payload_*` → `remap.control.alias`, `invert_position`/`invert_set_position` → `remap.*.invert`, `state_stream: derived` 또는
-    `state_*` 단어 → `cover_motion`; 나머지 HA 필드는 경고. `dp_meta` 가 있으면 `expose_unused: true`(v1 은 모든 dp 를 노출했음).
-    v1 `00_default.json` 변환 결과가 내장 세트와 같음을 테스트로 고정(라벨 제외).
-  - `host/overrides.py`: `load_overrides(dir)`(*.json 파일명 순 병합, v1 자동 변환, *.py 의 `CONVERTERS`, v1 `setup(api)` 파일은
-    보고만, 깨진 파일은 경고 후 제외) + `OverrideWatcher`(변경 시 `Runner.reload`, Hub 가 거부하면 기존 유지).
-  - 테스트: tuya2ildevice 154 통과(체인 포함, ildevice-homeassistant 설치 venv). 제품 스키마 픽스처 `tests/v1_default_products.json`(id·키 없음).
-- **2026-09-24 단계 2 완료(rustuya-local core)**: `service.py` `Service`(브리지 연결·IL 연결 콜백을 받아 BridgeClient·Hub·Runner·
-  DeviceWatcher·OverrideWatcher·discovery 를 조립, 시작 실패 시 연결한 것을 되돌림, `stop()` 멱등). CLI·HA 통합이 같은 `Service` 를 쓴다.
-  설정 `custom_converters`(디렉터리, 실시간 반영). 오버라이드 파일 작업(읽기·`.py` import)은 이벤트 루프 밖(`to_thread`) — HA 차단 경고 방지.
-  같은 프레젠스 토픽이 이미 `online` 이면 경고(생산자 둘 = 기기 중복).
-- **2026-09-24 단계 3 완료(discovery = il2discovery)**: `discovery/render.py`(순수: ildevice-homeassistant `plan_entities` → 설정, relay route, mirror),
-  `publisher.py`(IL 소비자: 디스크립터 따라 retained 설정 게시·정리, relay → IL 쓰기, mirror 게시, sweep), `ops.py` + CLI
-  `rustuya-local discovery status|clear|restore`(백업). HA MQTT 플랫폼이 한 토픽에 모으는 것(cover/lock/alarm/vacuum 명령, climate 모드+전원,
-  fan 퍼센트, light)은 relay, JSON 만 읽는 것(vacuum, JSON 스키마 light, climate 모드 상태)은 mirror. 그래서 **discovery 는 서비스가 떠 있어야 동작**.
-  - 검증: `tests/ha/test_discovery_parity.py` — core 픽스처 324개 전부를 한 테스트 HA 에서 ildevice-homeassistant 와 discovery 로 동시에 띄워 **엔티티 1:1,
-    상태·속성 일치, 서비스 호출 1422건의 IL 쓰기 일치**. 허용 차이는 HA MQTT 플랫폼 자체 동작만(climate 항상 on/off 기능, select 의 `none` 옵션,
-    number 음수 `-30.0` 표기, fan `preset_modes: []`).
-  - 이 테스트가 잡은 것: 색은 basic 스키마로는 `color_mode` 역할을 못 따라가 JSON 스키마(mirror+relay, HA 의 색 변환 그대로)로 전환;
-    필드별 absent 처리(일부만 `None` 허용); `payload_*: null` 을 빼면 HA 기본값이 기능을 켬; siren JSON 래핑; 숫자 `17.0`; 버튼 페이로드;
-    climate 전원은 이미 켜져 있으면 안 씀(ildevice-homeassistant 동일).
-  - **발견(ildevice-homeassistant 버그, 수정함)**: `IlValve` 가 device class 를 적용하지 않음 → 수정 + ildevice-homeassistant 테스트 보강(186 통과).
-  - **발견(tuya2ildevice, 미수정)**: `bzyd_45idzfufidgee7ir` 의 범위 밖 colour_data 가 디스크립터 범위를 벗어난 IL 값(brightness 393/max 100,
-    color `#-2ec-2e6ff`)이 됨. 패리티 테스트에 명시 예외로 고정.
-- **2026-09-24 단계 4 완료(rustuya-manager 플러그인)**: `manager_plugin/`(entry point `rustuya_manager.plugins`): `ctx.add_service` 로 같은
-  `Service` 를 매니저 브로커(TLS 포함 — tuya2ildevice `MqttTransport(tls=)` 추가)·브리지 root·`ctx.devices()`(+`watch_devices`)로 실행,
-  discovery 기본 켬, 데이터 디렉터리의 `settings.json`·`custom_converters/`, 상태 탭. 매니저의 실제 플러그인 호스트로 테스트.
-- **단계 5 결정 변경**: HA 통합에는 discovery 옵션을 넣지 않는다. HACS 로 설치된 ildevice-homeassistant 는 `custom_components.ildevice` 라 `ildevice` 패키지로
-  import 되지 않고(ildevice-homeassistant 는 PyPI 미배포), HA 안이라면 ildevice-homeassistant 를 쓰면 된다. 통합은 IL 생산자 + 오버라이드 디렉터리(`<config>/rustuya_converters`).
-- **2026-09-24 단계 6(rustuya-homeassistant 정리, 커밋 안 함)**: 미커밋 v2 코드·문서·스크립트·골든 도구 삭제(모두 tuya2ildevice 에 최신본 존재,
-  세션 스크래치패드에 백업), v2 용 추적 파일 수정 되돌림, README/CHANGELOG 에 폐기 안내(이전 방법 포함). v1 테스트 255 통과(격리 venv).
-  PyPI 배포·저장소 아카이브는 사용자 결정으로 남김.
-- **2026-09-24 discovery 제거(사용자 결정)**: rustuya-local 은 IL 생산자만 한다. `discovery/` 모듈·CLI `discovery` 하위 명령·설정 키
-  `discovery`(데몬, 매니저 플러그인 `settings.json`)·`[discovery]` extra·관련 테스트 삭제. 이유: IL → HA 변환은 Tuya 와 무관하고
-  ildevice-homeassistant core 에 의존하게 만들어 PyPI·매니저 drop-in 배포를 막았다. HA 는 ildevice-homeassistant 로 본다. 코드는 `c646922` 에 남아 있다. 남은 일은
-  [ROADMAP.md](ROADMAP.md).
-- **2026-09-24~27 이후 릴리스**(자세한 것은 ROADMAP.md): 0.0.7 매니저 drop-in zip·카탈로그 등록, 0.0.8 이중 설치 방지,
-  0.0.9 tuya2ildevice 0.3.1(IL 값 범위·전원 prop 이름·`source`), 0.0.10 tuya2ildevice 0.3.2(생산자 인계 presence, HA blocking I/O 없음,
-  `{warning}` 번역 값), 0.0.11 tuya2ildevice 0.3.3·브랜드 에셋(HACS 통과), 0.0.12 PyPI README.
-- **2026-09-27 0.0.13~0.0.15**: 0.0.13 매니저 탭의 설정·컨버터 편집, 이전 안내. 0.0.15(tuya2ildevice 0.3.5, 사용자 결정): 생산자 둘 금지
-  (`producer_running` probe, `AnotherProducer`), 오버라이드 팩 재도입(`host.pack`, tuya2ildevice `pack/`). 0.0.14 는 태그만 있고 게시되지
-  않았다: 저장소 이름을 rustuya-homeassistant 로 바꿨다가 되돌리는 사이 PyPI 게시가 막혔다. 이름은 그대로 `rustuya-local`
-  (HA 전용이 아니다).
-- **2026-09-27 0.0.16**: HA 통합 설치 실패 수정. manifest 가 요구하던 rustuya-manager 0.2 가 PyPI 에 없었다(0.2.0.dev* 는 TestPyPI 만).
-  rustuya-manager 0.2.0 정식 릴리스, 의존성 상한(`<0.4`, `<0.3`, `<0.1`) 제거.
-- **2026-09-27 0.0.17**: HA 에서 Tuya 로그인 창을 닫자마자 기기 동기화를 열면 두 설정 창의 Manager 가 같은 client id(`rustuya-config`)로
-  동시에 붙어 브로커가 서로를 끊는 재연결 반복이 났다. `manager_session` 이 세션을 한 번에 하나로 잠그고(다음 세션은 앞 세션이 닫힐 때까지
-  최대 15초 대기, 그 뒤엔 `manager_busy` 로 중단), 닫기도 15초로 제한해 락이 영영 잡히지 않게 했다.
-- **2026-09-27 0.0.18**: r5c(브리지 61개)에서 IL 에 11개만 남던 버그. `status` 응답은 모든 클라이언트에 가는데 BridgeClient 가 남의 요청
-  페이지도 제 것으로 받아, 다음 페이지를 따로 요청하고 중복으로 온 마지막 페이지(11개)를 전체 목록으로 확정해 50개를 IL 에서 뺐다.
-  이제 자기 요청의 페이지만 받고, 요청은 한 번에 하나(도중 요청은 끝난 뒤 한 번 더), 10초간 응답이 없으면 포기.
-- **2026-09-27 0.0.19**: 명령을 pyrustuyabridge 0.4.0.dev2 의 `render_command`(브리지 자신의 조립, 브리지 해석기로 검증)로 만든다.
-  `{root}/command/{action}/{id}/{dp}` 템플릿에서 `{dp}` 가 글자 그대로 남고 dp 하나짜리 set 도 JSON 객체로 가던 것을 고침: 이제
-  `.../set/<id>/<dp>` 에 값만. rustuya-manager 0.2.1 도 같은 함수를 쓴다. 대가로 내장 브리지(HA embedded 모드, 매니저 embed)가 0.4 개발판.
-- **2026-09-27 0.0.20**: tuya2ildevice 0.3.7 을 요구한다. 컨버터 디렉터리는 tuya2ildevice 형식만 읽는다(옛 형식 변환 삭제).
-  `props` 에서 dp 로 속성을 정의(위치 dp 만 있는 창문 개폐기도 커버로), `auto: false`, 쓰기 가능한 코드 컨버터, 커튼 `cover_state`.
-  기기별 보정은 패키지에 넣지 않고 컨버터 파일(사용자 또는 팩)에만 둔다.
-- **2026-09-27 0.0.21**: tuya2ildevice 0.3.8 을 요구한다. 시작할 때 컨버터 파일 때문에 거부된 기기를, 파일을 고치면 재시작 없이 다시 띄운다.
-- **2026-09-27 0.0.22**: tuya2ildevice 0.3.9 을 요구한다. 커버 위치를 뒤집지 않는다(브리지 값 그대로, 뒤집을 기기는 `remap.invert`). 값이 바뀐 실시간 passive 는 기기 푸시로 본다(passive 로만 보고하는 커튼도 opening/closing).
-- **2026-09-27 0.0.23**: tuya2ildevice 0.3.10 을 요구한다. 브리지의 `state`(active/passive 를 합친 뷰) 사본이 커튼 움직임을 바로 stopped 로 끝내던 것을 고침.
-- **2026-09-27 0.0.24**: tuya2ildevice 0.3.11 을 요구한다. 이벤트(버튼 누름 등)는 rustuya-homeassistant 처럼 `active` 에서만 발생.
-- **2026-09-28 0.0.25**: HA 통합에 사이드바 패널(Tuning 옵션, 고급 모드에서 켬, 관리자 전용). 브리지 기기를 매니저처럼
-  missing/orphan/mismatch/synced 로 보여 주고(카테고리 필터, 게이트웨이 아래 서브 기기, 패널이 열린 동안 실시간 연결 상태) 추가·갱신·삭제,
-  컨버터 파일 편집(팩 파일 표시), 팩 즉시 동기화. 통합은 한 인스턴스만. 기본 파일은 `.storage/rustuya/` 로 옮김(entry 1.2 마이그레이션,
-  `tuyacreds.json` 포함). 매니저 플러그인 탭도 컨버터 파일의 팩 출처를 표시.
-- **2026-09-28 0.0.26**: HA 설정에서 external 브리지를 고르면 브로커 연결과 브리지(retained `{root}/bridge/config`)를 확인하고,
-  없으면 폼에 `cannot_connect`/`bridge_not_found` 오류. 통합을 삭제하면(`async_remove_entry`) 이 소스의 IL 기기를 브로커에서 찾아
-  retained 를 모두 비움(ildevice-homeassistant 에서 기기 제거, 이전 실행이 남긴 기기 포함, 다른 소스는 유지). embedded 브리지면 그 root 의 retained 와
-  상태 파일도 정리, `.storage/rustuya/` 의 기기 목록·Tuya 로그인 삭제. 데몬용 `rustuya-local purge`. 연결을 닫기 전에 왕복 flush 를
-  해서 마지막 publish(삭제 때의 비움, 정지 때의 `offline`)가 버려지지 않게 함.
-- **2026-09-28 0.0.27**: HA 설정 간소화: 브리지 모드, 브로커, IL prefix 만 묻고 Tuya Cloud 로그인은 선택(로그인 창을 닫으면 로그인 없이
-  설정 완료, `import` 흐름). 토픽 root(external 브리지가 기본 root 에 없을 때만 설정에서 물음)·IL source·기기 파일·embedded 브리지의
-  상태 파일과 로그 레벨은 기본값으로 두고 패널의 Settings 카드에서 수정(저장 시 재시작, IL prefix/source 나 embedded root 를 옮기면
-  예전 retained 를 먼저 비움). 패널이 `config_panel_domain` 으로 등록돼 Configure 가 패널을 열던 것을 고침, 패널에 Hide panel 버튼.
-  커스텀 컨버터에 파일을 끌어다 놓으면 복사(HA 패널, 매니저 플러그인 탭).
-- **2026-09-28 0.0.28**: Configure 의 Tuning(→ "Rustuya panel")에는 패널 켜기/끄기만 남기고, 잠금·경보·차고문 원격 제어 허용,
-  분류되지 않는 데이터 포인트 노출, 오버라이드 팩은 패널의 Options 카드로 옮김(저장 시 옵션 갱신으로 재시작).
-- **2026-09-28 0.0.29**: 설정·로그인 경로 수정. 기기 파일 없이 설정하면(로그인 생략) 시작에 실패하던 것 → 기기 없이 시작, Configure 의
-  로그인이 멈춘 entry 를 다시 시작. embedded 브리지는 설정 중에 없어 설정의 기기 추가가 사라지던 것 → 설정의 rustuya-manager 세션이 같은
-  상태 파일로 브리지를 직접 띄움. `progress_done` 이 넘기는 입력 때문에 QR 제출 후 기기 선택이 건너뛰어지고 즉시 실패한 로그인이
-  재시도 대신 오류가 되던 것 → 그 단계들은 자기 폼을 보인 뒤의 제출만 받음. `.storage/rustuya/` 가 없으면 Tuya 로그인이 저장되지 않던
-  것(0.0.25 회귀) → 세션 전에 디렉터리 생성. 게이트웨이 먼저 추가, Configure 로그인 후 기기 파일을 항상 entry 에 전달.
-- **2026-09-28 0.0.30**: "Tuya Cloud 로그인" 대신 "Tuya Cloud 에서 기기 가져오기"(저장된 로그인 재사용, 없거나 만료일 때만 QR).
-  패널의 Bridge devices 카드에서도 가져오기(`/api/rustuya/cloud`, 세션은 폴링이 끊기거나 10분이 지나면 닫힘, 완료는 세션을 닫고
-  기기 파일을 entry 에 넘긴 뒤 보고). Configure 의 Show the Rustuya panel 은 바로 켜고 링크(켜진 뒤엔 Open/Hide). 패널의
-  Save and restart 는 바뀐 게 있을 때만 활성, Hide panel 은 저장 안 한 변경을 경고.
-- **2026-09-28 0.0.31**: 패널의 Save and restart 는 재시작이 끝난 뒤 응답하고 페이지는 곧바로 새로 고침(재시작 전 상태가 보이거나
-  재시작이 패널을 닫던 race). 재시작해도 패널은 사이드바에 남음(옵션 끔·비활성화·삭제 때만 제거), 패널 옵션만 바뀌면 재시작 없이
-  추가/제거. Hide panel 은 저장 안 한 변경이 있을 때만 확인. Configure 문구 "Add/Remove the Rustuya panel to/from the sidebar".
-- **2026-09-28 0.0.32**: HA 통합 한국어 번역(`translations/ko.json`, 번역 파일의 키·자리표시자가 strings.json 과 같은지 테스트).
-  Configure 에서 패널 제거 항목을 없앰(패널의 Hide panel 로 제거).
-- **2026-09-28 0.0.33**: 사이드바 패널도 HA 언어를 따라 한국어/영어(rustuya-panel.js 의 I18N 표, 없는 키는 영어, 언어를 바꾸면
-  다시 그림). Tuya Cloud 가져오기 상태와 날짜도 그 언어. 두 표의 키·자리표시자와 쓰는 키를 검사하는 테스트.
-- **2026-09-28 0.0.34**: HA 서비스 `rustuya.send_command`(device_id·dp·value): IL 을 거치지 않고 브리지로 raw DP 하나를 쏘고 끝.
-  device_id 는 Tuya id 또는 HA 기기 id(IL consumer 가 등록한 identifiers 값 중 서비스가 모는 것). `allow_hazardous` 가 꺼져
-  있으면 잠금장치·경보·차고문(Tuya 카테고리, 또는 Hub 가 만든 alarm / 위험 class cover)은 거부(`Service.send_dps`, `hazardous()`).
-- **2026-09-28 0.0.35** (tuya2ildevice 0.3.12): 패널 save and restart·옵션 변경 때 모든 기기가 unavailable 로 깜빡이던 것 수정.
-  재시작이 presence offline → 기기마다 `available: false` → 값 재발행을 해서, HA 에서 상태를 따르는 자동화(이벤트 엔티티가
-  unavailable 에서 돌아오면 마지막 event_type 을 달고 있어 리모컨이 눌린 것처럼 보임)가 불·플러그·IR 을 움직였다. BridgeClient 가
-  dp 별 retained `state` 를 합치고(마지막 dp 만 남던 버그) 연결 상태와 함께 Hub 에 seed 로 넘김(`set_device(device, seed)`),
-  옵션만 바뀐 재시작은 `stop(offline=False)`/`start(resume=True)` 로 presence 를 online 으로 유지.
-- **2026-09-28 0.0.36** (tuya2ildevice 0.3.13): 재시작 때 기기마다 보내던 `get` 제거. seed 로 받는 브리지의 retained `state`
-  가 병합된 최신 사본이므로, `get` 은 live 재연결 또는 아직 state 가 없는 기기(새로 추가, retained snapshot 없음)에만 보냄.
-- **2026-09-28 0.0.37**: 리팩토링. 동작 변화 없음(옵션 카드가 변경 없음일 때 새로고침 대신 "Nothing changed"). 브리지 설정 추적은
-  `_BridgeFollower` 하나, HA 쪽 broker/세션/기본값은 `broker.py`·`manager_session.open_for_entry`·`const` 로 모음.
+- **2026-09-24 step 1 completed in tuya2ildevice, uncommitted**:
+  - `overrides.py` allows `dp.code` without `type` to rename an existing DP while retaining type/range/strategy.
+    `remap.<code>.alias` maps device words to standard words in reads/writes and Enum ranges; invert negates booleans
+    or reverses integers within range. Adapter Remap runs after read strategy and before write strategy; converters
+    see translated values. Add per-block `expose_unused`, host-provided named `converter_types`, builtin
+    `overrides.json` controlled by `use_quirks`, and user precedence per key.
+  - Builtins reproduce four products from v1 `00_default.json`. Three curtains use core + `cover_motion`;
+    `f6jujmx0` removes `percent_state` to reproduce v1 position DP 2. Window opener `5rta89nj`, category `mc`, needs
+    schema-missing DP 104. With no core category table/control DP, expose a writable position number and battery
+    through DP definitions/unused props. v1 assembled a cover by DP shape: presentation differs, functionality remains.
+  - `from_v1` converts discovery cover command/set/current position DPs assuming standard 1/2/3 to renaming/removal;
+    payload words to control aliases; position inversion to remap inversion; derived state or motion words to
+    `cover_motion`. Warn for remaining HA fields; `dp_meta` enables unused props to match v1. Tests compare converted
+    v1 defaults with builtins, except labels.
+  - Directory `load_overrides` merges JSON by filename, automatically converts v1, reads Python `CONVERTERS`, reports
+    v1 `setup(api)` files and skips broken files with warnings. OverrideWatcher reloads Runner and retains active
+    settings on Hub rejection. 154 tests passed, including chains. Product fixtures omit device IDs/keys.
+- **2026-09-24 step 2 completed: shared core**: `Service` assembles BridgeClient, Hub, Runner, watchers and discovery
+  from transport factories; unwinds failed startup and stops idempotently. CLI/HA share it. Live `custom_converters`
+  directory reads/imports run through `to_thread` to avoid HA loop warnings. Warn if presence already says online.
+- **2026-09-24 step 3 completed: il2discovery**:
+  - Pure `discovery/render.py` maps entity plans to configuration, relays and mirrors; publisher follows IL
+    descriptors, updates/clears retained config, relays writes, mirrors JSON and sweeps. Add operations and CLI
+    `discovery status|clear|restore` with backups. Relays combine cover/lock/alarm/vacuum commands, climate mode/power,
+    fan percentage and light writes; mirrors serve JSON-only vacuum/light/climate state. A running service is required.
+  - `tests/ha/test_discovery_parity.py` loads both consumers for all 324 core fixtures into one test HA. Entities
+    match 1:1, state/attributes match and 1,422 service calls yield identical IL writes. Allowed differences are HA
+    MQTT behavior: climate on/off features, select `none`, negative number `-30.0`, and empty fan preset modes.
+  - Tests caught color-role mismatch in basic light schema, requiring JSON mirror/relay with HA color conversion;
+    field-specific absent handling, null payload defaults enabling features, siren JSON wrapping, `17.0` numeric
+    formatting, button payloads and avoiding redundant climate power writes.
+  - Fix consumer `IlValve` ignoring device class; strengthen its tests (186 passed).
+  - Record an unfixed producer case: `bzyd_45idzfufidgee7ir` emits brightness 393 above max 100 and color
+    `#-2ec-2e6ff`; explicitly exempt it in parity tests pending the later fix.
+- **2026-09-24 step 4 completed: manager plugin**: entry point `rustuya_manager.plugins` registers the same Service
+  using manager broker, TLS, root, `ctx.devices()` and `watch_devices`; add transport TLS, default discovery on,
+  settings/converters data directories and status tab. Test through the real manager plugin host.
+- **Step 5 decision changed**: omit HA discovery output. HACS installs the consumer as `custom_components.ildevice`,
+  not importable as a PyPI `ildevice` package; inside HA use that integration. Rustuya is only an IL producer with
+  `<config>/rustuya_converters`.
+- **2026-09-24 step 6: retirement cleanup, uncommitted**: remove uncommitted v2 code/docs/scripts/golden tools from
+  rustuya-homeassistant after scratch backups, since current copies exist in tuya2ildevice. Revert tracked v2 edits;
+  add retirement/migration notices to README/CHANGELOG. 255 v1 tests passed in isolation. PyPI release/archival remain user decisions.
+- **2026-09-24 discovery removed by user decision**: retain only IL production. Remove discovery modules, CLI,
+  daemon/plugin configuration keys, extra and tests. IL→HA conversion is unrelated to Tuya and created a consumer
+  dependency that blocked PyPI/drop-in distribution. Use ildevice-homeassistant. Code remains at `c646922`;
+  outstanding work is in [ROADMAP.md](ROADMAP.md).
+- **2026-09-24–27 releases**: 0.0.7 drop-in/catalog; 0.0.8 deduplication; 0.0.9 tuya2ildevice 0.3.1 value bounds,
+  power names and source; 0.0.10 0.3.2 handover presence, nonblocking HA and warning placeholders; 0.0.11 0.3.3 and
+  HACS brand assets; 0.0.12 PyPI README. Detailed milestone history is in the archived roadmap.
+- **2026-09-27 0.0.13–0.0.15**: settings/converter editor and migration guide; 0.0.15 with tuya2ildevice 0.3.5 adds
+  producer probe/refusal and restores online override packs. 0.0.14 was tagged but never published: the temporary
+  repository rename blocked PyPI publication. Keep `rustuya-local`, since it is not HA-only.
+- **2026-09-27 0.0.16**: HA install failed because required rustuya-manager 0.2 was not on PyPI (development versions
+  were only on TestPyPI). Release manager 0.2.0 and remove upper dependency caps `<0.4`, `<0.3`, `<0.1`.
+- **2026-09-27 0.0.17**: opening device sync immediately after closing login let two Manager sessions use
+  `rustuya-config`, repeatedly disconnecting each other. Serialize sessions, waiting at most 15 seconds then
+  aborting `manager_busy`; bound close to 15 seconds so the lock cannot remain held forever.
+- **2026-09-27 0.0.18**: r5c's 61 bridge devices became 11 IL devices because broadcast status pages from other
+  requests were accepted and a repeated final page committed as the full list. Track one request cycle, schedule
+  one rerun for overlapping requests and abandon a cycle after ten seconds without replies.
+- **2026-09-27 0.0.19**: use pyrustuyabridge 0.4.0.dev2 `render_command`, verified by the bridge parser. A
+  `{root}/command/{action}/{id}/{dp}` single-DP write now sends the bare value rather than an unresolved `{dp}` and
+  JSON object. Manager 0.2.1 uses it too; embedded bridge modes require the 0.4 development version at that point.
+- **2026-09-27 0.0.20**: require tuya2ildevice 0.3.7, read only its converter format and remove legacy conversion.
+  DP-based props allow position-only window openers as covers; support `auto: false`, writable code converters and
+  curtain `cover_state`. Product-specific corrections belong in user/pack files rather than package code.
+- **2026-09-27 0.0.21**: tuya2ildevice 0.3.8 retries refused devices after converter files are fixed without restart.
+- **2026-09-27 0.0.22**: 0.3.9 preserves bridge position rather than inverting it; use remap for models needing
+  inversion. Changed live passive values count as pushes, enabling motion for passive-only curtains.
+- **2026-09-27 0.0.23**: 0.3.10 prevents merged bridge state snapshots from immediately settling curtain motion.
+- **2026-09-27 0.0.24**: 0.3.11 emits button/events only from active reports, matching rustuya-homeassistant.
+- **2026-09-28 0.0.25**: administrator sidebar panel with missing/orphan/mismatch/synced filters, gateway/subdevice
+  grouping, live links, add/update/remove, converter editing/origins and immediate pack sync; single integration
+  instance. Move defaults under `.storage/rustuya/`, entry migration 1.2 including credentials. Manager tab also labels pack origins.
+- **2026-09-28 0.0.26**: external setup checks broker/config and displays cannot-connect/bridge-not-found errors.
+  Deleting the entry clears all retained IL owned by its source, including previous-run devices, while preserving
+  other sources. Embedded mode also clears bridge topics/state and owned device/login files. Add daemon purge and
+  roundtrip flush before closing so final tombstones/offline are delivered.
+- **2026-09-28 0.0.27**: setup asks bridge mode, broker and IL prefix; login is optional and closing it completes
+  via import. Keep other settings at defaults and edit them in panel Settings, clearing old namespaces when moved.
+  Ask external root only if the default fails. Remove `config_panel_domain`, which redirected Configure away from
+  options; add Hide panel and drag/drop converter import in HA and manager.
+- **2026-09-28 0.0.28**: Configure retains panel visibility; move hazardous control, unused DPs and pack settings to
+  panel Options with restart on changes.
+- **2026-09-28 0.0.29**: permit startup without a device file, recover failed entries after login, and run an
+  embedded bridge during setup using the same state file so registration persists. Accept QR/sync/error submissions
+  only after the corresponding form is shown, avoiding forwarded progress input. Create storage before login,
+  register gateways first and always hand the fetched device file to the entry.
+- **2026-09-28 0.0.30**: label the action “Fetch from Tuya Cloud”, reuse valid login, show QR only when needed;
+  add panel fetch with idle/ten-minute session expiry and report done after closing and handing over the device file.
+  Configure enables/links the panel; save only changed values, warn on hiding with unsaved edits.
+- **2026-09-28 0.0.31**: respond after restart and refresh afterward; preserve the sidebar through reloads, remove
+  it only on disable/delete/option-off, apply panel-only options without restart and confirm Hide only with unsaved edits.
+- **2026-09-28 0.0.32**: Korean integration translations, key/placeholder parity tests; remove Configure's panel-removal option.
+- **2026-09-28 0.0.33**: panel follows HA Korean/English, falls back to English and rebuilds on language changes;
+  localize fetch states/dates and test key/placeholder coverage.
+- **2026-09-28 0.0.34**: `rustuya.send_command` sends one raw DP, accepting Tuya IDs or unambiguous HA device
+  identifiers. Reject lock/alarm/garage commands by category or descriptor unless hazardous control is enabled.
+- **2026-09-28 0.0.35**, tuya2ildevice 0.3.12: prevent unavailable flapping on settings restarts, which made event
+  entities appear pressed and triggered lights/plugs/IR automations. Merge retained per-DP state and seed new drivers
+  with link and state; options restart uses `stop(offline=False)` / `start(resume=True)` to preserve presence.
+- **2026-09-28 0.0.36**, 0.3.13: avoid querying every device on restart when bridge snapshots already provide state.
+  Request get only for live reconnects or a connected device without state.
+- **2026-09-28 0.0.37**: behavior-preserving refactor; no-change options show “Nothing changed” instead of refreshing.
+  Consolidate bridge template following in `_BridgeFollower` and HA broker/session/default helpers in their modules.

@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -31,7 +34,13 @@ def deliver(callback: Callback, msg: Message, tasks: set[asyncio.Task]) -> None:
     if inspect.isawaitable(result):
         task = asyncio.ensure_future(result)
         tasks.add(task)
-        task.add_done_callback(tasks.discard)
+        def finished(done: asyncio.Task) -> None:
+            tasks.discard(done)
+            if not done.cancelled() and (error := done.exception()) is not None:
+                _LOGGER.error("handler for %s failed", msg.topic,
+                              exc_info=(type(error), error, error.__traceback__))
+
+        task.add_done_callback(finished)
 
 
 class Transport(Protocol):

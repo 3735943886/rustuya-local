@@ -399,11 +399,13 @@ async def test_a_failed_connect_stops_its_own_thread():
 
     from rustuya_local.host import MqttTransport
 
-    before = {t.name for t in threading.enumerate()}
+    before = {t.name for t in threading.enumerate() if t.name.startswith("paho-mqtt-client-")}
     t = MqttTransport("127.0.0.1", 1, client_id="dead-end")   # nothing listens on port 1
     with pytest.raises((asyncio.TimeoutError, asyncio.CancelledError)):   # asyncio.TimeoutError != TimeoutError before 3.11
         await t.connect(timeout=0.3)
-    after = {t.name for t in threading.enumerate()}
+    # The event loop's shared executor worker may stay alive; it is not a paho connection thread.
+    after = {t.name for t in threading.enumerate() if t.name.startswith("paho-mqtt-client-")}
+    assert t._client._thread is None
     assert not (after - before), f"leaked thread(s): {after - before}"
 
 

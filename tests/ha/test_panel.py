@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -570,6 +571,77 @@ async def test_a_reload_keeps_the_panel_and_disabling_removes_it(hass, loaded, d
         entry.disabled_by = ConfigEntryDisabler.USER
     await integration.async_unload_entry(hass, entry)
     assert (panel.PANEL_URL in hass.data.get(frontend.DATA_PANELS, {})) is kept
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_unload_stops_the_embedded_bridge_even_when_service_stop_fails(hass, loaded, cancelled):
+    from unittest.mock import AsyncMock
+
+    import custom_components.rustuya as integration
+
+    entry, service = await loaded({CONF_PANEL: True})
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    runtime.restarting = True
+    error = asyncio.CancelledError() if cancelled else RuntimeError("command drain failed")
+    service.stop = AsyncMock(side_effect=error)
+
+    async def stop_bridge():
+        assert hass.data[DOMAIN][entry.entry_id] is runtime
+
+    bridge = AsyncMock()
+    bridge.stop.side_effect = stop_bridge
+    runtime.embedded_bridge = bridge
+    with pytest.raises(type(error)):
+        await integration.async_unload_entry(hass, entry)
+    bridge.stop.assert_awaited_once()
+    assert entry.entry_id not in hass.data[DOMAIN]
+    assert integration.RESUME not in hass.data
+
+
+@pytest.mark.parametrize("endpoint, first, second", [
+    ("options", {"pack": False}, {"expose_unused": True}),
+    ("settings", {"il_prefix": "home/il"}, {"il_source": "second"}),
+])
+async def test_concurrent_partial_saves_keep_both_changes(hass, loaded, hass_client, monkeypatch,
+                                                       endpoint, first, second):
+    entry, _ = await loaded({CONF_PANEL: True, CONF_PACK: True})
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "il_prefix": "il", "il_source": "tuya"})
+    client = await hass_client()
+    saving, release, parsed_second = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    original_body = panel._json_body
+    restarts = []
+
+    async def body(request):
+        result = await original_body(request)
+        if result == second:
+            parsed_second.set()
+        return result
+
+    async def restart(_hass, e, *, data=None, options=None, between=None):
+        restarts.append(1)
+        if len(restarts) == 1:
+            saving.set()
+            await release.wait()
+        changes = {key: value for key, value in (("data", data), ("options", options)) if value is not None}
+        hass.config_entries.async_update_entry(e, **changes)
+
+    monkeypatch.setattr(panel, "_json_body", body)
+    monkeypatch.setattr(panel, "_restart", restart)
+    url = f"/api/rustuya/{endpoint}"
+    a = asyncio.create_task(client.put(url, json=first))
+    b = None
+    try:
+        await asyncio.wait_for(saving.wait(), 5)
+        b = asyncio.create_task(client.put(url, json=second))
+        await asyncio.wait_for(parsed_second.wait(), 5)
+        await asyncio.sleep(0)
+        assert len(restarts) == 1
+    finally:
+        release.set()
+        responses = await asyncio.gather(a, *([b] if b is not None else []))
+    assert all(response.status == 200 for response in responses)
+    saved = entry.options if endpoint == "options" else entry.data
+    assert all(saved[key] == value for key, value in {**first, **second}.items())
 
 
 def test_the_panel_has_every_text_in_korean_too():

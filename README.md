@@ -20,10 +20,28 @@ rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il
 
 ## Daemon
 
+```bash
+uv venv --python 3.13
+uv pip install -e .
+.venv/bin/rustuya-local run --config config.json
 ```
-uv venv && uv pip install -e .
-rustuya-local run --config config.json
+
+Create `config.json` beside the device file before running:
+
+```json
+{
+  "bridge": {"host": "localhost", "port": 1883, "root": "rustuya"},
+  "il": {"host": "localhost", "port": 1883, "prefix": "il", "source": "tuya"},
+  "devices": "tuyadevices.json",
+  "custom_converters": "custom_converters",
+  "pack": true,
+  "watch_interval": 5,
+  "options": {"allow_hazardous": false, "expose_unused": false}
+}
 ```
+
+The package requires Python 3.13 or newer. Device and converter paths are relative to the configuration file.
+`watch_interval: 0` disables polling; use a positive interval to apply file edits and downloaded rules while running.
 
 `config.json` (see `src/rustuya_local/config.py`): the bridge and IL brokers, the IL prefix, the device list, a
 `custom_converters` directory, and options for the Hub (`allow_hazardous`, `expose_unused`, `overrides`).
@@ -108,7 +126,9 @@ device settings are enabled, unless an override selects another source. A settin
 the setting is saved as the device's block in `zz_settings.json` in the converters directory and applied at once, so it
 survives a restart and can be edited there too. Without a converters directory (a daemon with no
 `custom_converters`) the switches are not offered; `"options": {"device_settings": false}` turns them off.
-A block with the same `cover` keys in your own file or the builtin rules sets a model's starting point; the saved settings win.
+A block with the same `cover` keys in your own file or the builtin rules sets a model's starting point.
+User files, including `zz_settings.json`, are applied in filename order; a later file can override saved settings.
+The daemon's inline `options.overrides` is applied after file layers.
 Older `cover.infer_motion` and `converters.cover_motion` blocks are upgraded on loading to `cover.state_source`
 (`inferred`, or `none` for `infer_motion: false`) and `cover.settle`; see [migration notes](docs/MIGRATING.md).
 
@@ -146,15 +166,22 @@ rustuya-local release (bump the patch version and tag; the manager's catalog fol
 
 ## Tests
 
-```
-.venv/bin/python -m pytest
+```bash
+uv venv --python 3.14
+uv pip install -e ../ildevice-homeassistant -e ".[test,test-ha,fullstack,manager]"
+.venv/bin/python -m pytest -q
+ruff check src tests custom_components scripts
 ```
 
-Everything here needs the sibling repos and, for the last two groups, `mosquitto`, `pyrustuya-bridge` and `tuyamock`
-(`pip install -e ".[test,fullstack]"`); those are skipped when missing. Parity with Home Assistant core's fixtures lives in
-`tuya-interpreter/tests/chain`, the wire and topic vectors in `ildevice/vectors`.
+The complete suite uses Python 3.14 because the consumer and Home Assistant test dependencies require it.
+Install `mosquitto` for broker tests and Node.js for panel JavaScript tests. The command above installs the consumer
+from a sibling checkout and other dependencies from the package index; CI follows the same approach.
+Missing base or test dependencies can fail collection; optional broker, emulator and fixture tests skip when their
+prerequisites are unavailable. The full-stack device comparison uses `../tuya-interpreter/tests/golden`; IL wire and
+topic vectors use `../ildevice/vectors` (or the `ILDEVICE` environment variable). Keep those checkouts for these checks.
 
-- `tests/unit/`: the configuration.
+- `tests/unit/`: configuration validation, host lifecycle, IL vectors, rule loading, settings persistence,
+  pack ownership, converter APIs, panel JavaScript and release packaging.
 - `tests/e2e/test_service.py`: the service on in-memory brokers (overrides directory, a failed start).
 - `tests/e2e/test_chain_*.py`, `test_daemon.py`: the runner with ildevice-homeassistant's consumer model on the other side, in one process
   and over a real broker; the daemon as a subprocess.
@@ -164,8 +191,14 @@ Everything here needs the sibling repos and, for the last two groups, `mosquitto
   (`tuyamock`) around the daemon: state, commands, rejections, a device dropping off and returning, a daemon restart, and a
   differential check that 38 real device shapes come out of the whole chain exactly as `tuya-interpreter` computes them.
 
-## Status
+## Documentation
 
-Planning, progress and open decisions: `docs/REDESIGN.md`.
+- [Current status](docs/STATUS.md): version, document index and verification boundaries.
+- [Architecture](docs/ARCHITECTURE.md): current components, lifecycle and rule precedence.
+- [Migration](docs/MIGRATING.md): upgrading old converters and rustuya-homeassistant installations.
+- [Code review](docs/REVIEW.md): findings and local verification from 2026-10-13.
+- [Roadmap](docs/ROADMAP.md): outstanding work and real-device checks.
+- [Design history](docs/REDESIGN.md): the September redesign record; historical APIs and versions.
+- [Changelog](CHANGELOG.md): changes grouped by release.
 
-Licence: `LICENSE` (MIT).
+Licence: [MIT](LICENSE).

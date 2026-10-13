@@ -3,10 +3,25 @@
 All notable changes to this project are documented in this file. A release's GitHub Release notes are its section
 here (the release workflow reads it, and refuses to publish a version without one).
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are `0.0.x` until the first
-stable release.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The current development series uses
+`0.1.0.devN`; the earlier `0.0.x` releases remain below as history.
 
 ## [Unreleased]
+
+## [0.1.0.dev8] — 2026-10-13
+
+### Fixed
+- Always stop the embedded bridge during Home Assistant unload, including service-stop failure or cancellation.
+- Close MQTT callback tasks, ignore queued dispatch after shutdown, retrieve asynchronous handler errors and stop
+  the paho thread outside the event loop, including when a connection attempt fails.
+- Preserve concurrent partial Home Assistant settings/options saves by locking reads, merges and restart together.
+- Reject unsafe pack ownership paths, malformed hashes and bounds; preserve host settings and symlink targets.
+
+### Documentation
+- Separate current status, architecture and outstanding work from the historical redesign record.
+- Document the 2026-10-13 code review, verification results and remaining reliability issues.
+- Correct daemon setup, test prerequisites and saved cover settings precedence.
+- Translate all Korean Markdown documents into English, including archived design and roadmap history.
 
 ## [0.1.0.dev7] — 2026-10-12
 
