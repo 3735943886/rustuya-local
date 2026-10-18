@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 2026-10-18. Baseline: `0.1.0.dev9`.
+Updated: 2026-10-18. Baseline: `0.1.0.dev10`.
 The state of deployed servers has not been checked.
 
 ## Implementation
@@ -12,7 +12,7 @@ rule files and settings persistence. It does not create HA entities or publish M
 
 | Component | Declared requirement |
 |---|---|
-| rustuya-local | `0.1.0.dev9` |
+| rustuya-local | `0.1.0.dev10` |
 | Python | Base package `>=3.13`; full tests use 3.14 |
 | tuya-interpreter | `>=0.1.0a2` |
 | pyrustuyabridge | `>=0.4` |

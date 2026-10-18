@@ -23,24 +23,29 @@ async def test_the_daemon_publishes_devices_and_goes_offline_on_sigterm(broker, 
     cfg.write_text(json.dumps({"bridge": {"port": broker}, "il": {"port": broker, "prefix": "ild"},
                                "devices": [lamp("daemon1")]}))
     seen = {}
+    online, offline = asyncio.Event(), asyncio.Event()
+
+    def on_message(message):
+        seen[message.topic] = message.payload.decode()
+        if seen.get("ild/_producer/tuya") == "online" and "ild/daemon1" in seen:
+            online.set()
+        if seen.get("ild/_producer/tuya") == "offline":
+            offline.set()
+
     watcher = MqttTransport("127.0.0.1", broker, client_id="watcher")
     await watcher.connect()
-    await watcher.subscribe("ild/#", lambda m: seen.__setitem__(m.topic, m.payload.decode()))
+    await watcher.subscribe("ild/#", on_message)
     await answer_status(watcher, "rustuya", ["daemon1"])
     proc = subprocess.Popen([sys.executable, "-m", "rustuya_local", "run", "--config", str(cfg)],  # noqa: ASYNC220  (spawning does not block; the test waits on the broker)
                             stderr=subprocess.DEVNULL)
     try:
-        for _ in range(100):
-            if seen.get("ild/_producer/tuya") == "online" and "ild/daemon1" in seen:
-                break
-            await asyncio.sleep(0.05)
-        assert seen["ild/_producer/tuya"] == "online" and json.loads(seen["ild/daemon1"])["kind"] == "light"
+        # Startup includes the producer-presence deadline and the missing
+        # bridge-config fallback. Wait for readiness, not 100 polling ticks.
+        await asyncio.wait_for(online.wait(), 10)
+        assert json.loads(seen["ild/daemon1"])["kind"] == "light"
         proc.send_signal(signal.SIGTERM)
-        assert proc.wait(10) == 0
-        for _ in range(100):
-            if seen["ild/_producer/tuya"] == "offline":
-                break
-            await asyncio.sleep(0.05)
+        assert await asyncio.to_thread(proc.wait, 10) == 0
+        await asyncio.wait_for(offline.wait(), 10)
         assert seen["ild/_producer/tuya"] == "offline"
     finally:
         if proc.poll() is None:
