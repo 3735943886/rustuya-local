@@ -95,8 +95,8 @@ async def test_setup_publishes_and_unload_goes_offline(hass, broker, tmp_path, s
 
         await until(lambda: "il/_producer/tuya" in watcher.last)
         assert watcher.last["il/_producer/tuya"] == "online"
-        await until(lambda: "il/lamp1" in watcher.last)
-        assert json.loads(watcher.last["il/lamp1"])["kind"] == "light"
+        await until(lambda: "il/lamp1/descriptor" in watcher.last)
+        assert json.loads(watcher.last["il/lamp1/descriptor"])["kind"] == "light"
 
         # the runner asked the bridge for the device's state, exactly as the standalone daemon does
         watcher.publish("rustuya/error/lamp1", '{"errorCode":0,"errorMsg":"Connection Successful"}', retain=True)
@@ -141,7 +141,7 @@ async def test_setup_is_retried_while_another_producer_runs(hass, broker, tmp_pa
     finally:
         await runner.stop()
         await t.publish("il/_producer/tuya", "", 1, True)
-        await t.publish("il/lamp1", "", 1, True)
+        await t.publish("il/lamp1/descriptor", "", 1, True)
         await t.close()
 
 
@@ -191,7 +191,7 @@ async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(ha
     try:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        await until(lambda: "il/lamp1" in watcher.last)
+        await until(lambda: "il/lamp1/descriptor" in watcher.last)
         assert in_loop == []
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
@@ -213,25 +213,25 @@ async def test_deleting_the_entry_takes_its_devices_out_of_il(hass, broker, tmp_
     entry.add_to_hass(hass)
     watcher = Watcher(broker, registered=("lamp1",))
     try:
-        watcher.publish("il/stale1", json.dumps({"il": 1, "id": "stale1", "source": "tuya", "props": {}}), retain=True)
+        watcher.publish("il/stale1/descriptor", json.dumps({"il": 1, "id": "stale1", "source": "tuya", "props": {}}), retain=True)
         watcher.publish("il/stale1/power", "true", retain=True)
-        watcher.publish("il/zb1", json.dumps({"il": 1, "id": "zb1", "source": "zigbee", "props": {}}), retain=True)
+        watcher.publish("il/zb1/descriptor", json.dumps({"il": 1, "id": "zb1", "source": "zigbee", "props": {}}), retain=True)
         watcher.publish("il/zb1/power", "true", retain=True)
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        await until(lambda: "il/lamp1" in watcher.last)
+        await until(lambda: "il/lamp1/descriptor" in watcher.last)
         watcher.publish("rustuya/event/state/lamp1", '{"20":true,"22":1000,"23":0}', retain=True)
         await until(lambda: watcher.last.get("il/lamp1/brightness") == "100")
 
         await hass.config_entries.async_remove(entry.entry_id)
         await hass.async_block_till_done()
 
-        for topic in ("il/lamp1", "il/lamp1/brightness", "il/stale1", "il/stale1/power", "il/_producer/tuya"):
+        for topic in ("il/lamp1/descriptor", "il/lamp1/brightness", "il/stale1/descriptor", "il/stale1/power", "il/_producer/tuya"):
             try:
                 await until(lambda t=topic: watcher.last.get(t) == "")
             except AssertionError:
                 raise AssertionError((topic, dict(watcher.last)))
-        assert watcher.last["il/zb1/power"] == "true" and json.loads(watcher.last["il/zb1"])["source"] == "zigbee"
+        assert watcher.last["il/zb1/power"] == "true" and json.loads(watcher.last["il/zb1/descriptor"])["source"] == "zigbee"
         # nothing is left retained for it: a fresh subscriber sees none of those topics
         late = Watcher(broker)
         await asyncio.sleep(0.5)
@@ -344,7 +344,7 @@ async def test_send_command_writes_a_raw_dp_and_refuses_a_lock(hass, broker, tmp
     try:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        await until(lambda: "il/lamp1" in watcher.last and "il/lock1" in watcher.last)
+        await until(lambda: "il/lamp1/descriptor" in watcher.last and "il/lock1/descriptor" in watcher.last)
 
         await hass.services.async_call(DOMAIN, "send_command", {"device_id": "lamp1", "dp": 20, "value": False},
                                        blocking=True)

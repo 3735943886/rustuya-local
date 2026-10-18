@@ -32,15 +32,15 @@ async def _retained(t: InProcessTransport, topic_filter: str) -> dict[str, str]:
 
 async def test_purge_il_clears_one_source_and_leaves_the_others():
     t = InProcessTransport()
-    for topic, payload in {"il/a": _desc("a", "tuya"), "il/a/power": "true", "il/a/brightness": "40",
-                           "il/b": _desc("b", "tuya"), "il/z": _desc("z", "zigbee"), "il/z/power": "false",
+    for topic, payload in {"il/a": _desc("a", "tuya"), "il/a/descriptor": _desc("a", "tuya"), "il/a/power": "true", "il/a/brightness": "40",
+                           "il/b/descriptor": _desc("b", "tuya"), "il/z/descriptor": _desc("z", "zigbee"), "il/z/power": "false",
                            "il/_producer/tuya": "offline", "il/_producer/zigbee": "online"}.items():
         await t.publish(topic, payload, 1, True)
 
     ids = await purge_il(t, "il", "tuya", settle=0.05)
 
     assert ids == ["a", "b"]
-    assert await _retained(t, "il/#") == {"il/z": _desc("z", "zigbee"), "il/z/power": "false",
+    assert await _retained(t, "il/#") == {"il/a": _desc("a", "tuya"), "il/z/descriptor": _desc("z", "zigbee"), "il/z/power": "false",
                                            "il/_producer/zigbee": "online"}
 
 
@@ -51,11 +51,11 @@ async def test_purge_il_refuses_while_the_producer_answers():
     runner = Runner(Hub([], il=IlTopics("il", "tuya")), t)
     await runner.start()
     await runner.drain()
-    await t.publish("il/a", _desc("a", "tuya"), 1, True)
+    await t.publish("il/a/descriptor", _desc("a", "tuya"), 1, True)
     try:
         with pytest.raises(AnotherProducer):
             await purge_il(t, "il", "tuya", settle=0.05)
-        assert "il/a" in await _retained(t, "il/#")
+        assert "il/a/descriptor" in await _retained(t, "il/#")
     finally:
         await runner.stop()
 
@@ -86,7 +86,7 @@ def test_the_purge_command_clears_the_daemons_devices(broker, tmp_path, capsys):
     c.connect("127.0.0.1", broker)
     c.loop_start()
     try:
-        for topic, payload in (("ilp/a", _desc("a", "tuya")), ("ilp/a/power", "true"),
+        for topic, payload in (("ilp/a/descriptor", _desc("a", "tuya")), ("ilp/a/power", "true"),
                                ("ilp/_producer/tuya", "offline")):
             c.publish(topic, payload, 1, True).wait_for_publish(5)
         config = tmp_path / "config.json"

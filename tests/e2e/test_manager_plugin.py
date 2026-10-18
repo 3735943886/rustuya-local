@@ -42,14 +42,14 @@ async def test_the_plugin_runs_the_service_under_the_manager(broker, tmp_path):
     await answer_status(w, "rmp", ["mp1", "mp2"])
     task = asyncio.ensure_future(reg.services[0]())
     try:
-        await until(lambda: "ilmp/mp1" in seen, "not published")
+        await until(lambda: "ilmp/mp1/descriptor" in seen, "not published")
         assert seen["ilmp/_producer/tuya"] == "online"
         await until(lambda: (state.get_plugin_data("rustuya-local") or {}).get("devices"), "no status", n=300)
         status = state.get_plugin_data("rustuya-local")
         assert [d["id"] for d in status["devices"]] == ["mp1"]
 
         await state.set_cloud({"mp1": Device.from_dict(lamp("mp1")), "mp2": Device.from_dict(lamp("mp2"))})
-        await until(lambda: "ilmp/mp2" in seen, "mp2 not followed")
+        await until(lambda: "ilmp/mp2/descriptor" in seen, "mp2 not followed")
         assert (tmp_path / "rustuya-local" / "custom_converters").is_dir()
     finally:
         task.cancel()
@@ -181,7 +181,7 @@ async def test_a_settings_change_restarts_the_service_and_bad_settings_wait_for_
         assert not task.done()                                    # waits for a fix, no crash-and-retry
         api.save_settings(data, {"il": {"prefix": "ilr1"}, "options": {"pack": False}})
         await plugin.restart()
-        await until(lambda: seen.get("ilr1/_producer/tuya") == "online" and "ilr1/mp1" in seen, "not started")
+        await until(lambda: seen.get("ilr1/_producer/tuya") == "online" and "ilr1/mp1/descriptor" in seen, "not started")
 
         previous = plugin.service
         (data / "settings.json").write_text('{"options":{"pack":"false"}}')
@@ -195,9 +195,9 @@ async def test_a_settings_change_restarts_the_service_and_bad_settings_wait_for_
 
         api.save_settings(data, {"il": {"prefix": "ilr2"}, "options": {"pack": False}})
         await plugin.restart()
-        await until(lambda: seen.get("ilr2/_producer/tuya") == "online" and "ilr2/mp1" in seen, "not restarted")
+        await until(lambda: seen.get("ilr2/_producer/tuya") == "online" and "ilr2/mp1/descriptor" in seen, "not restarted")
         assert seen["ilr1/_producer/tuya"] == ""                # the old namespace was retired
-        assert seen["ilr1/mp1"] == ""
+        assert seen["ilr1/mp1/descriptor"] == ""
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -248,7 +248,7 @@ async def test_another_producer_is_shown_and_the_plugin_starts_once_it_is_gone(b
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-    for topic in ("ilo/_producer/tuya", "ilo/mp1"):
+    for topic in ("ilo/_producer/tuya", "ilo/mp1/descriptor"):
         await w.publish(topic, "", 1, True)
     await asyncio.sleep(0.2)
     await w.close()

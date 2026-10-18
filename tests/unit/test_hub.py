@@ -15,7 +15,7 @@ def test_bridge_to_il_and_back():
     hub = Hub([light(), curtain()])
     start = topics(hub.start(), "il")
     assert start["il/_producer/tuya"].payload == "online" and start["il/_producer/tuya"].retain
-    assert json.loads(start["il/lamp1"].payload)["kind"] == "light" and start["il/lamp1"].retain
+    assert json.loads(start["il/lamp1/descriptor"].payload)["kind"] == "light" and start["il/lamp1/descriptor"].retain
     assert start["il/lamp1/available"].payload == "false"
 
     # bridge says connected -> a `get` goes back to the bridge
@@ -85,7 +85,7 @@ def test_reload_overrides_republishes_and_clears_removed_props():
     pubs = hub.reload({"cur1": {"props": {"stop": {"hide": True}}, "device": {"label": "Bedroom"}}})
     by = topics(pubs)
     assert by["il/cur1/stop"].payload == "" and by["il/cur1/stop"].retain          # M-11
-    assert json.loads(by["il/cur1"].payload)["label"] == "Bedroom" and "stop" not in json.loads(by["il/cur1"].payload)["props"]
+    assert json.loads(by["il/cur1/descriptor"].payload)["label"] == "Bedroom" and "stop" not in json.loads(by["il/cur1/descriptor"].payload)["props"]
     assert by["il/cur1/position"].payload == "30"                                  # worked out again from the last dps
     assert BridgeCommand("cur1", "get") not in pubs                                # which the host has: nothing to ask
     with pytest.raises(OverrideError):
@@ -114,7 +114,7 @@ def test_a_seeded_device_goes_out_up_with_its_values_and_never_false():
     hub = Hub([])
     out = hub.set_device(light(), [Connected(), Message("state", {"20": True, "22": 1000, "23": 0})])
     order = [p.topic for p in out if isinstance(p, Publish)]
-    assert order[0] == "il/lamp1"                                          # R-2: the descriptor first
+    assert order[0] == "il/lamp1/descriptor"                                          # R-2: the descriptor first
     pubs = topics(out)
     assert pubs["il/lamp1/available"].payload == "true" and pubs["il/lamp1/brightness"].payload == "100"
     assert [p for p in out if isinstance(p, Publish) and p.topic == "il/lamp1/available"] == [pubs["il/lamp1/available"]]
@@ -124,7 +124,7 @@ def test_a_seeded_device_goes_out_up_with_its_values_and_never_false():
     assert topics(linked_only)["il/lamp1/available"].payload == "false" and BridgeCommand("lamp1", "get") in linked_only
     down = Hub([]).set_device(light(), [Disconnected()])
     assert topics(down)["il/lamp1/available"].payload == "false" and BridgeCommand("lamp1", "get") not in down
-    assert next(p.topic for p in down if isinstance(p, Publish)) == "il/lamp1"
+    assert next(p.topic for p in down if isinstance(p, Publish)) == "il/lamp1/descriptor"
     # a sub-device has no link state of its own, only its retained snapshot: up with its values, and no `get`
     sub = Hub([]).set_device(light(), [Message("state", {"20": False, "22": 10, "23": 0})])
     assert topics(sub)["il/lamp1/available"].payload == "true" and not any(isinstance(p, BridgeCommand) for p in sub)
@@ -135,7 +135,7 @@ def test_set_device_adds_replaces_and_remove_clears_first():
     hub.start()
     cid = curtain()["id"]
     added = topics(hub.set_device(curtain()))                      # runtime add: descriptor out, retained
-    assert added[f"il/{cid}"].retain and json.loads(added[f"il/{cid}"].payload)["kind"] == "cover"
+    assert added[f"il/{cid}/descriptor"].retain and json.loads(added[f"il/{cid}/descriptor"].payload)["kind"] == "cover"
     assert cid in hub.drivers
 
     # replacing a known device that lost a property clears that property before the new descriptor (M-11)
@@ -144,12 +144,12 @@ def test_set_device_adds_replaces_and_remove_clears_first():
     small["local_strategy"].pop("23")
     out = hub.set_device(small)
     order = [p.topic for p in out]
-    assert order == ["il/lamp1/color_temperature", "il/lamp1", "il/lamp1/available"]
+    assert order == ["il/lamp1/color_temperature", "il/lamp1/descriptor", "il/lamp1/available"]
     assert out[0].payload == "" and out[0].retain
 
     # removal: every retained value cleared, then the descriptor last, and the device is gone
     out = hub.remove_device("lamp1")
-    assert out[-1].topic == "il/lamp1" and out[-1].payload == "" and out[-1].retain
+    assert out[-1].topic == "il/lamp1/descriptor" and out[-1].payload == "" and out[-1].retain
     assert all(p.payload == "" and p.retain for p in out) and len(out) > 2
     assert hub.on_bridge_message(2, "lamp1", Message("state", {"20": True}), retained=True) == [] and hub.remove_device("lamp1") == []
 

@@ -46,7 +46,7 @@ async def mqtt_chain(broker):
     # leave no retained state behind for the next test
     cleaner = MqttTransport("127.0.0.1", broker, client_id="cleaner")
     await cleaner.connect()
-    for topic in ("il/lamp1", "il/lamp1/available", "il/lamp1/switch_led", "il/lamp1/brightness",
+    for topic in ("il/lamp1/descriptor", "il/lamp1/available", "il/lamp1/switch_led", "il/lamp1/brightness",
                   "il/lamp1/color_temperature", "il/_producer/tuya", "rustuya/error/lamp1", "rustuya/event/state/lamp1"):
         await cleaner.publish(topic, "", 1, True)
     await asyncio.sleep(0.1)

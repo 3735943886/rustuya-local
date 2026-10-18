@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0.dev12] — 2026-10-18
+
+### Changed
+- Promote the 0.1 development line to master; preserve the previous 0.0 line on `legacy/0.0.x`.
+- Publish retained IL descriptors at `<prefix>/<id>/descriptor`. Reserve `descriptor` and `reject` as property names.
+  Reconciliation and purge use the new descriptor path; old root topics are left untouched.
+
 ## [0.1.0.dev11] — 2026-10-18
 
 ### Changed

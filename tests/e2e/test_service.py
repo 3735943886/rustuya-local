@@ -66,7 +66,7 @@ async def test_devices_the_bridge_holds_reach_il_and_stop_goes_offline(tmp_path,
     await service.start()
     await settle(service, t)
     assert t.wills == [("il/_producer/tuya", "offline", 1, True)]
-    assert "il/lamp1" in t.il.retained and "il/lamp2" not in t.il.retained      # lamp2: not on the bridge
+    assert "il/lamp1/descriptor" in t.il.retained and "il/lamp2/descriptor" not in t.il.retained      # lamp2: not on the bridge
     await service.stop()
     await service.stop()                                                          # idempotent
     assert t.il.retained["il/_producer/tuya"].payload == "offline"
@@ -88,7 +88,7 @@ async def test_an_overrides_directory_is_applied_and_followed(tmp_path, monkeypa
                        hub_options={"overrides": {"lamp1": {"device": {"label": "Inline"}}}})
     await service.start()
     await settle(service, t)
-    desc = json.loads(t.il.retained["il/lamp1"].payload)
+    desc = json.loads(t.il.retained["il/lamp1/descriptor"].payload)
     assert "glow" in desc["props"] and desc["model"] == "Desk lamp" and desc["label"] == "Inline"
 
     await t.bridge.publish("rustuya/error/lamp1", '{"errorCode":0}', 0, True)
@@ -99,7 +99,7 @@ async def test_an_overrides_directory_is_applied_and_followed(tmp_path, monkeypa
     (conv / "10.json").unlink()                                   # followed: the converter goes away
     assert service.override_watcher.check()
     await settle(service, t)
-    assert "glow" not in json.loads(t.il.retained["il/lamp1"].payload)["props"]
+    assert "glow" not in json.loads(t.il.retained["il/lamp1/descriptor"].payload)["props"]
     await service.stop()
 
 
@@ -123,7 +123,7 @@ async def test_a_cover_setting_written_through_il_is_saved_and_applied(tmp_path,
     await t.bridge.publish("rustuya/error/cur1", '{"errorCode":0}', 0, True)
     await t.bridge.publish("rustuya/event/state/cur1", '{"3":30}', 0, True)
     await settle(service, t)
-    props = json.loads(t.il.retained["il/cur1"].payload)["props"]
+    props = json.loads(t.il.retained["il/cur1/descriptor"].payload)["props"]
     assert {"cover_invert_position", "cover_invert_set_position", "cover_state_source"} <= set(props)
     assert "cover_infer_motion" not in props                   # replaced by the state-source selector in 0.3.16
     assert "cover_invert_control" not in props                  # the target position opens and closes it
@@ -151,7 +151,7 @@ async def test_a_cover_setting_written_through_il_is_saved_and_applied(tmp_path,
                       connect_il=t.connect_il)
     await service.start()
     await settle(service, t)
-    assert not [p for p in json.loads(t.il.retained["il/cur1"].payload)["props"] if p.startswith("cover_")]
+    assert not [p for p in json.loads(t.il.retained["il/cur1/descriptor"].payload)["props"] if p.startswith("cover_")]
     await service.stop()
 
 
@@ -282,19 +282,23 @@ async def test_restart_removes_only_old_owned_devices():
     ids = ["lamp1", "lamp2"]
     await _answer_status(t.bridge, ids)
     # Another producer's data must survive reconciliation.
-    await t.il.publish("il/other", '{"source":"other"}', 1, True)
+    await t.il.publish("il/other/descriptor", '{"source":"other"}', 1, True)
     first = Service(Settings(devices=[lamp(i) for i in ids]),
                     connect_bridge=t.connect_bridge, connect_il=t.connect_il)
     await first.start()
     await settle(first, t)
     await first.stop()
+    # Simulate retained descriptors from a producer using the legacy layout.
+    for device_id in ids:
+        await t.il.publish(f"il/{device_id}", json.dumps({"id": device_id, "source": "tuya"}), 1, True)
     ids.remove("lamp2")
     second = Service(Settings(devices=[lamp("lamp1"), lamp("lamp2")]),
                      connect_bridge=t.connect_bridge, connect_il=t.connect_il)
     await second.start()
     await settle(second, t)
-    assert "il/lamp1" in t.il.retained and "il/other" in t.il.retained
-    assert not any(topic == "il/lamp2" or topic.startswith("il/lamp2/") for topic in t.il.retained)
+    assert "il/lamp1/descriptor" in t.il.retained and "il/other/descriptor" in t.il.retained
+    assert "il/lamp1" in t.il.retained and "il/lamp2" in t.il.retained
+    assert not any(topic == "il/lamp2/descriptor" or topic.startswith("il/lamp2/") for topic in t.il.retained)
     await second.stop()
 
 

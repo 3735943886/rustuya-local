@@ -72,7 +72,7 @@ class IlTopics:
         self.prefix, self.source = prefix, source
 
     def descriptor(self, device_id: str) -> str:
-        return f"{self.prefix}/{device_id}"
+        return f"{self.prefix}/{device_id}/descriptor"
 
     def state(self, device_id: str, prop: str) -> str:
         return f"{self.prefix}/{device_id}/{prop}"
@@ -106,6 +106,9 @@ class IlTopics:
         actions = []
         for output in outputs:
             if isinstance(output, Descriptor):
+                reserved = {"descriptor", "reject"} & output.desc.get("props", {}).keys()
+                if reserved:
+                    raise ValueError(f"reserved IL property names: {', '.join(sorted(reserved))}")
                 desc = {**output.desc, "source": self.source}
                 actions.append(Publish(IL, self.descriptor(device_id), json.dumps(desc, ensure_ascii=False), True))
             elif isinstance(output, Value):

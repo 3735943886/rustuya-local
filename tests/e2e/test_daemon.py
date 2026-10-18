@@ -27,7 +27,7 @@ async def test_the_daemon_publishes_devices_and_goes_offline_on_sigterm(broker, 
 
     def on_message(message):
         seen[message.topic] = message.payload.decode()
-        if seen.get("ild/_producer/tuya") == "online" and "ild/daemon1" in seen:
+        if seen.get("ild/_producer/tuya") == "online" and "ild/daemon1/descriptor" in seen:
             online.set()
         if seen.get("ild/_producer/tuya") == "offline":
             offline.set()
@@ -42,7 +42,7 @@ async def test_the_daemon_publishes_devices_and_goes_offline_on_sigterm(broker, 
         # Startup includes the producer-presence deadline and the missing
         # bridge-config fallback. Wait for readiness, not 100 polling ticks.
         await asyncio.wait_for(online.wait(), 10)
-        assert json.loads(seen["ild/daemon1"])["kind"] == "light"
+        assert json.loads(seen["ild/daemon1/descriptor"])["kind"] == "light"
         proc.send_signal(signal.SIGTERM)
         assert await asyncio.to_thread(proc.wait, 10) == 0
         await asyncio.wait_for(offline.wait(), 10)
@@ -50,7 +50,7 @@ async def test_the_daemon_publishes_devices_and_goes_offline_on_sigterm(broker, 
     finally:
         if proc.poll() is None:
             proc.kill()
-        cleaner = ["ild/daemon1", "ild/daemon1/available", "ild/daemon1/switch_led", "ild/daemon1/brightness",
+        cleaner = ["ild/daemon1/descriptor", "ild/daemon1/available", "ild/daemon1/switch_led", "ild/daemon1/brightness",
                    "ild/daemon1/color_temperature", "ild/_producer/tuya"]
         for t in cleaner:
             await watcher.publish(t, "", 1, True)
@@ -82,14 +82,14 @@ async def test_the_daemon_uses_the_bridges_templates_and_follows_the_device_file
         raise AssertionError(what)
 
     try:
-        await until(lambda: "ilw/w1" in seen, "w1 was not published")
+        await until(lambda: "ilw/w1/descriptor" in seen, "w1 was not published")
         await t.publish("rb/error/w1", '{"errorCode":0,"errorMsg":"Connection Successful"}', 1, True)
         await t.publish("rb/ev/state/w1", '{"20":true,"22":1000,"23":0}', 1, True)
         await until(lambda: seen.get("ilw/w1/brightness") == "100", "the state on the bridge's own topic was not followed")
         devfile.write_text(json.dumps([lamp("w1"), lamp("w2")]))               # manager adds a device
-        await until(lambda: "ilw/w2" in seen, "the new device was not picked up")
+        await until(lambda: "ilw/w2/descriptor" in seen, "the new device was not picked up")
         devfile.write_text(json.dumps([lamp("w2")]))                            # and removes one
-        await until(lambda: seen.get("ilw/w1") == "" and seen.get("ilw/w1/brightness") == "", "w1 was not removed")
+        await until(lambda: seen.get("ilw/w1/descriptor") == "" and seen.get("ilw/w1/brightness") == "", "w1 was not removed")
     finally:
         proc.send_signal(signal.SIGTERM)
         proc.wait(10)

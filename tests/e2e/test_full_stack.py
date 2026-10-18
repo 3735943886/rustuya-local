@@ -101,7 +101,7 @@ def stack(broker, tmp_path_factory):
                                "devices": "tuyadevices.json", "watch_interval": 0.2}))
     daemon = subprocess.Popen([sys.executable, "-m", "rustuya_local", "run", "--config", str(cfg)],
                               stderr=subprocess.PIPE, text=True)
-    assert wait(lambda: obs.last.get(f"{prefix}/{DEV}"), 20), "the daemon never published the descriptor"
+    assert wait(lambda: obs.last.get(f"{prefix}/{DEV}/descriptor"), 20), "the daemon never published the descriptor"
     st = type("Stack", (), {"obs": obs, "mock": mock, "root": root, "prefix": prefix, "daemon": daemon, "bridge": bridge,
                             "devfile": devfile})
     yield st
@@ -123,7 +123,7 @@ def il(stack, prop):
 
 
 def test_the_device_appears_as_an_il_light_with_its_real_state(stack):
-    desc = json.loads(stack.obs.last[f"{stack.prefix}/{DEV}"])
+    desc = json.loads(stack.obs.last[f"{stack.prefix}/{DEV}/descriptor"])
     assert desc["kind"] == "light" and desc["source"] == "tuya" and desc["props"]["brightness"]["role"] == "brightness"
     assert stack.obs.last[f"{stack.prefix}/_producer/tuya"] == "online"
     assert wait(lambda: il(stack, "available") == "true"), "the device never became available"

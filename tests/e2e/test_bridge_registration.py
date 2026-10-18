@@ -32,7 +32,7 @@ async def settle(runner, bridge_client, *buses):
 
 
 def advertised(il):
-    return {t.split("/")[1] for t, m in il.retained.items() if t.count("/") == 1 and not t.startswith("il/_") and m.payload}
+    return {t.split("/")[1] for t, m in il.retained.items() if t.count("/") == 2 and t.endswith("/descriptor") and not t.startswith("il/_") and m.payload}
 
 
 async def reply(bridge, payload):

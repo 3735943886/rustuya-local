@@ -75,7 +75,7 @@ async def running():
 async def test_start_publishes_presence_and_descriptors_and_values_flow_both_ways(running):
     il, runner, _, commands = running
     assert il.retained["il/_producer/tuya"].payload == "online"
-    assert json.loads(il.retained["il/lamp1"].payload)["kind"] == "light"
+    assert json.loads(il.retained["il/lamp1/descriptor"].payload)["kind"] == "light"
 
     runner.on_bridge_message("lamp1", Connected())
     runner.on_bridge_message("lamp1", Message("state", {"20": True, "22": 1000, "23": 0}))
@@ -163,7 +163,7 @@ async def test_sync_adds_changes_and_removes_and_clears_before_removing(running)
     assert done == {"added": ["new"], "changed": ["edit"], "removed": ["gone"], "failed": []}
     await runner.drain()
     assert set(hub.records) == {"lamp1", "edit", "new"} and not [t for t in il.retained if t.startswith("il/gone")]
-    assert json.loads(il.retained["il/edit"].payload)["label"] == "Renamed"
+    assert json.loads(il.retained["il/edit/descriptor"].payload)["label"] == "Renamed"
     bad = lamp("bad")
     bad["id"] = "_reserved"
     assert runner.sync_devices([lamp("lamp1"), bad])["failed"] == ["_reserved"]
@@ -175,10 +175,10 @@ async def test_a_device_an_override_refused_is_driven_once_the_overrides_are_fix
     assert runner.sync_devices([lamp("lamp1"), lamp("late")])["failed"] == ["late"]       # it has no dp 99 to rename
     runner.reload({"late": {"dp": {"98": {"code": "gone"}}}})         # still refused
     await runner.drain()
-    assert "late" not in hub.records and "il/late" not in il.retained
+    assert "late" not in hub.records and "il/late/descriptor" not in il.retained
     runner.reload({"late": {"device": {"label": "Late"}}})            # fixed: driven now, without a device-list change
     await runner.drain()
-    assert "late" in hub.records and json.loads(il.retained["il/late"].payload)["label"] == "Late"
+    assert "late" in hub.records and json.loads(il.retained["il/late/descriptor"].payload)["label"] == "Late"
 
 
 async def test_overrides_the_engine_refuses_are_refused_whole_and_the_ones_in_effect_stay(running):
@@ -188,7 +188,7 @@ async def test_overrides_the_engine_refuses_are_refused_whole_and_the_ones_in_ef
     with pytest.raises(OverrideError):                                # any block, even one for no device here
         runner.reload({"lamp1": {"device": {"label": "Other"}}, "late": {"bogus": True}})
     await runner.drain()
-    assert json.loads(il.retained["il/lamp1"].payload)["label"] == "Desk"
+    assert json.loads(il.retained["il/lamp1/descriptor"].payload)["label"] == "Desk"
 
 
 # ---- the device file --------------------------------------------------------------------------------------------------
@@ -299,7 +299,7 @@ async def test_the_override_watcher_reloads_the_hub(running, tmp_path):
     (tmp_path / "a.json").write_text(json.dumps({"overrides": {"p": {"converters": {"declarative": {**LIT, "word": "bright"}}}}}))
     assert watcher.check()
     await runner.drain()
-    desc = json.loads(il.retained["il/lamp1"].payload)
+    desc = json.loads(il.retained["il/lamp1/descriptor"].payload)
     assert "lit" in desc["props"] and desc["label"] == "Desk"
     runner.on_bridge_message("lamp1", Connected())
     runner.on_bridge_message("lamp1", Message("state", {"20": True}))
@@ -309,16 +309,16 @@ async def test_the_override_watcher_reloads_the_hub(running, tmp_path):
     (tmp_path / "a.json").write_text(json.dumps({"overrides": {"p": {"converters": {"nope": {}}}}}))      # refused: left out
     assert watcher.check()
     await runner.drain()
-    assert "lit" not in json.loads(il.retained["il/lamp1"].payload)["props"]
+    assert "lit" not in json.loads(il.retained["il/lamp1/descriptor"].payload)["props"]
     assert [w.split(":")[0] for w in watcher.load().warnings] == ["a.json"]
     (tmp_path / "a.json").write_text(json.dumps({"overrides": {"p": {"converters": {"declarative": LIT}}}}))
     assert watcher.check()
     await runner.drain()
-    assert "lit" in json.loads(il.retained["il/lamp1"].payload)["props"]
+    assert "lit" in json.loads(il.retained["il/lamp1/descriptor"].payload)["props"]
     (tmp_path / "a.json").unlink()
     assert watcher.check()
     await runner.drain()
-    assert "lit" not in json.loads(il.retained["il/lamp1"].payload)["props"]
+    assert "lit" not in json.loads(il.retained["il/lamp1/descriptor"].payload)["props"]
 
 
 # ---- paho against a real broker --------------------------------------------------------------------------------------
@@ -371,7 +371,7 @@ async def test_paho_transport_runs_the_runner_survives_a_dropped_connection_and_
     runner = Runner(hub, il_side, on_bridge_command=commands.append)
     await runner.start()
     try:
-        await until(lambda: seen.get("il/_producer/tuya") == "online" and "il/lamp1" in seen)
+        await until(lambda: seen.get("il/_producer/tuya") == "online" and "il/lamp1/descriptor" in seen)
         runner.on_bridge_message("lamp1", Connected())
         await until(lambda: BridgeCommand("lamp1", "get") in commands)
         runner.on_bridge_message("lamp1", Message("state", {"20": True, "22": 1000, "23": 0}))

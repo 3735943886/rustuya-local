@@ -360,8 +360,10 @@ class Service:
 def _owned_ids(retained: dict, prefix: str, source: str) -> set[str]:
     ids = set()
     for topic, payload in retained.items():
-        device_id = topic[len(prefix) + 1:]
-        if "/" in device_id or device_id.startswith("_"):
+        if not topic.startswith(f"{prefix}/") or not topic.endswith("/descriptor"):
+            continue
+        device_id = topic[len(prefix) + 1:-len("/descriptor")]
+        if "/" in device_id or not device_id or device_id.startswith("_"):
             continue
         try:
             desc = json.loads(payload)
@@ -373,8 +375,9 @@ def _owned_ids(retained: dict, prefix: str, source: str) -> set[str]:
 
 
 def _device_topics(retained: dict, prefix: str, ids: set[str]) -> list[str]:
-    descriptors = {f"{prefix}/{i}" for i in ids}
-    return sorted((t for t in retained if t[len(prefix) + 1:].split("/", 1)[0] in ids),
+    descriptors = {f"{prefix}/{i}/descriptor" for i in ids}
+    roots = tuple(f"{prefix}/{i}/" for i in ids)
+    return sorted((t for t in retained if t.startswith(roots)),
                   key=lambda t: (t in descriptors, t))
 
 
@@ -382,8 +385,9 @@ async def purge_il(il: Transport, prefix: str, source: str, *, settle: float = 0
     """Take a producer out of IL for good (the integration deleted, not just stopped): every retained topic it left is
     cleared, so IL consumers drop its devices. `stop()` only says `offline`; the descriptors and values stay retained on
     purpose then, since the producer is expected back. What is cleared is found on the broker, not in a Hub: every
-    descriptor `<prefix>/<id>` whose `source` is this one (devices published by an earlier run included), each retained
-    topic below it, and the presence `<prefix>/_producer/<source>`. Returns the device ids taken out.
+    descriptor `<prefix>/<id>/descriptor` whose `source` is this one
+    (devices published by an earlier run included), each retained topic under that device, and the presence
+    `<prefix>/_producer/<source>`. Returns the device ids taken out.
 
     Refuses (`AnotherProducer`) while a producer still answers on that presence: it would publish them all again."""
     presence = IlTopics(prefix, source).presence

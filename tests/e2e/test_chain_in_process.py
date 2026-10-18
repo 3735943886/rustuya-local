@@ -99,7 +99,7 @@ async def test_devices_can_be_added_and_removed_while_running(chain):
     assert set(model.devices) == {"lamp1", "lamp2"}
     runner.remove_device("lamp2")
     await settle(runner, bridge_client, bridge, il)
-    assert set(model.devices) == {"lamp1"} and "il/lamp2" not in il.retained
+    assert set(model.devices) == {"lamp1"} and "il/lamp2/descriptor" not in il.retained
     assert not [t for t in il.retained if t.startswith("il/lamp2/")]     # M-11: values cleared before the descriptor
 
 

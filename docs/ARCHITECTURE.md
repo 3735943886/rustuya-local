@@ -34,6 +34,15 @@ ildevice-homeassistant / other IL consumers
 
 HA entity creation belongs to the IL consumer. The base package does not import Home Assistant.
 
+## IL topics
+
+Descriptors are retained at `<prefix>/<id>/descriptor`; property values stay at
+`<prefix>/<id>/<prop>` and commands at `<prefix>/<id>/<prop>/set`.
+`descriptor` and `reject` are reserved property names. Consumers can discover devices by
+subscribing to `<prefix>/+/descriptor`. The consumer must support this descriptor layout.
+Reconciliation and purge identify owned devices only through this descriptor path.
+Other topics, including `<prefix>/<id>`, are ignored and left untouched.
+
 ## Startup and shutdown
 
 `Service.start()` prepares the native library and rules in worker threads, then connects the bridge and IL transports

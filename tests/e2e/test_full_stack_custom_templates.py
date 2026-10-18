@@ -48,7 +48,7 @@ def test_a_custom_event_command_and_payload_template_all_work_together(broker, t
             daemon = subprocess.Popen([sys.executable, "-m", "rustuya_local", "run", "--config", str(cfg)],
                                       stderr=subprocess.PIPE, text=True)
             try:
-                assert wait(lambda: obs.last.get(f"{prefix}/{DEV}"), 20), "the daemon never published the descriptor"
+                assert wait(lambda: obs.last.get(f"{prefix}/{DEV}/descriptor"), 20), "the daemon never published the descriptor"
                 assert wait(lambda: obs.last.get(f"{prefix}/{DEV}/switch_led") == "true"
                             and obs.last.get(f"{prefix}/{DEV}/brightness") == "49", 20), \
                     "state through the custom event/payload templates never reached IL"
