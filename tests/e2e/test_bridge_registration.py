@@ -321,10 +321,19 @@ async def test_panel_uses_service_registry_and_transport_without_a_manager_conne
     diff = await panel.sync()
     assert {d.id for d in diff.synced} == {'a', 'sub'}
     assert len(status_requests(bridge)) == asked
-    await panel.publish_command('add', target_id='new', target_name='New', extra={'cid': 'c2', 'parent_id': 'a'})
+    command = asyncio.create_task(panel.publish_command(
+        'add', target_id='new', target_name='New', extra={'cid': 'c2', 'parent_id': 'a'}))
+    await settle(runner, client, bridge, il)
+    await asyncio.sleep(0)
     assert json.loads(bridge.published[-1][1]) == {
         'action': 'add', 'id': 'new', 'name': 'New', 'cid': 'c2', 'parent_id': 'a'}
-    await panel.remove_device('a')
+    assert not command.done()
+    await reply(bridge, json.dumps({'action': 'add', 'id': 'new', 'status': 'ok'}))
+    await command
+    command = asyncio.create_task(panel.remove_device('a'))
+    await asyncio.sleep(0)
+    await reply(bridge, json.dumps({'action': 'remove', 'id': 'a', 'status': 'ok'}))
+    await command
     refresh = asyncio.create_task(panel.wait_registry_refresh())
     await asyncio.sleep(0)
     await settle(runner, client, bridge, il)
@@ -334,3 +343,44 @@ async def test_panel_uses_service_registry_and_transport_without_a_manager_conne
     diff = await panel.sync()
     assert [d.id for d in diff.missing] == ['a']
     assert [d.id for d in diff.orphaned] == ['new']
+
+
+async def test_panel_command_ignores_retained_and_unrelated_acknowledgements(chain):
+    import asyncio
+
+    from rustuya_local.host.transport import Message
+
+    bridge, _il, _runner, client = chain
+    command = asyncio.create_task(client.publish_command('add', target_id='new'))
+    await asyncio.sleep(0)
+    client._on_message(Message('rustuya/response/new', '{"action":"add","id":"new","status":"ok"}', True))
+    await reply(bridge, '{"action":"add","id":"other","status":"ok"}')
+    await reply(bridge, '{"action":"remove","id":"new","status":"ok"}')
+    await asyncio.sleep(0)
+    assert not command.done()
+    await reply(bridge, '{"action":"add","id":"new","status":"ok"}')
+    await command
+    assert not client._command_waiters
+
+
+@pytest.mark.parametrize('outcome', ['timeout', 'cancel', 'stop', 'error'])
+async def test_panel_command_cleans_up_pending_acknowledgement(chain, outcome):
+    import asyncio
+
+    bridge, _il, _runner, client = chain
+    command = asyncio.create_task(client.publish_command('add', target_id='new', timeout=0.02))
+    await asyncio.sleep(0)
+    if outcome == 'cancel':
+        command.cancel()
+        expected = asyncio.CancelledError
+    elif outcome == 'stop':
+        client.stop()
+        expected = RuntimeError
+    elif outcome == 'error':
+        await reply(bridge, '{"action":"add","id":"new","status":"error","error":"rejected"}')
+        expected = RuntimeError
+    else:
+        expected = TimeoutError
+    with pytest.raises(expected):
+        await command
+    assert not client._command_waiters

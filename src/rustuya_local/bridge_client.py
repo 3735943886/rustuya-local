@@ -168,6 +168,7 @@ class BridgeClient(_BridgeFollower):
         super().__init__(transport, root)
         self.runner: Runner | None = None
         self._pending: set[asyncio.Task] = set()
+        self._command_waiters: dict[tuple[str, str], asyncio.Future] = {}
         # registration tracking (only when `sync_devices` was ever called; otherwise the caller owns the Hub's set)
         self._records: dict[str, dict] | None = None      # every device in the device file, by id
         self._registered: set[str] | None = None          # what the bridge holds; None until its first `status`
@@ -186,6 +187,9 @@ class BridgeClient(_BridgeFollower):
         self._last_state: dict[str, dict] = {}
 
     def stop(self) -> None:
+        for waiter in self._command_waiters.values():
+            if not waiter.done():
+                waiter.set_exception(RuntimeError("bridge client stopped"))
         self._registry_ready.clear()
         if self._status_timer is not None:
             self._status_timer.cancel()
@@ -223,11 +227,30 @@ class BridgeClient(_BridgeFollower):
         return {key: dict(value) for key, value in (self._registry or {}).items()}
 
     async def publish_command(self, action: str, *, target_id: str, target_name: str | None = None,
-                              extra: dict[str, Any] | None = None) -> None:
-        """Send a panel command through the service's established connection."""
-        await asyncio.wait_for(self._ready.wait(), 15.0)
-        await self._publish(action, target_id, {**(extra or {}), **({"name": target_name} if target_name else {})},
-                            strict=True)
+                              extra: dict[str, Any] | None = None, timeout: float = 15.0) -> None:
+        """Send a panel mutation and wait for its live bridge acknowledgement.
+
+        A subsequent status request can otherwise overtake a concurrent mutation.
+        The bridge has no request IDs; reject overlapping commands for the same action/id.
+        """
+        key = (action, target_id)
+        if key in self._command_waiters:
+            raise RuntimeError(f"bridge {action} for {target_id} is already pending")
+        waiter = asyncio.get_running_loop().create_future()
+        self._command_waiters[key] = waiter
+        try:
+            async with asyncio.timeout(timeout):
+                await self._ready.wait()
+                await self._publish(action, target_id,
+                                    {**(extra or {}), **({"name": target_name} if target_name else {})}, strict=True)
+                await waiter
+        finally:
+            self._command_waiters.pop(key, None)
+            # Retrieve a shutdown error even if publishing failed at the same time.
+            if waiter.done() and not waiter.cancelled():
+                waiter.exception()
+            else:
+                waiter.cancel()
 
     async def _publish(self, action: str, device_id: str, extra: dict[str, Any], *, strict: bool = False) -> None:
         if self._templates is None:
@@ -355,6 +378,16 @@ class BridgeClient(_BridgeFollower):
             self._last_conn[device_id] = conn
             self.runner.on_bridge_message(device_id, conn, retained=retained)       # a retained one asks for no `get`
             return
+        if not retained:
+            key = (parsed.get("action"), parsed.get("id") or vars_.get("id"))
+            # Only string identities are valid, including in malformed broker input.
+            if all(isinstance(part, str) for part in key):
+                waiter = self._command_waiters.get(key)
+                if waiter is not None and not waiter.done():
+                    if parsed.get("status") == "ok":
+                        waiter.set_result(None)
+                    elif parsed.get("status") == "error":
+                        waiter.set_exception(RuntimeError(str(parsed.get("error") or "bridge command failed")))
         if self._records is None or retained:                # a retained reply is an old one; `status` is asked live
             return
         if parsed.get("action") == "status":

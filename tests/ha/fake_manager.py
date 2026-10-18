@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 
 
@@ -23,12 +24,11 @@ class Session:
 class FakeWizard:
     """No background task, no wall-clock timing: `session.state` only changes when a test calls `advance()` (or the
     convenience `autoplay`, for a test that just wants a normal login to finish). `async_step_cloud_wizard_progress`
-    polls with a real `asyncio.sleep`-based task (`_async_wait_wizard_tick`), so driving state changes from a task
-    the flow's own machinery can observe — not a task of the fake's own that Home Assistant doesn't track — is what
-    keeps `hass.async_block_till_done()` able to settle deterministically instead of racing it."""
+    waits for `wait_state_change()`, so `advance()` wakes its progress task without a polling timer."""
 
     def __init__(self, script: list[str] | None = None, autoplay: bool = True) -> None:
         self.session = Session()
+        self._changed = asyncio.Event()
         self._script = script or [WizardState.REQUESTING_QR, WizardState.AWAITING_SCAN, WizardState.LOGGED_IN,
                                   WizardState.FETCHING, WizardState.DONE]
         self._i = 0
@@ -40,6 +40,11 @@ class FakeWizard:
         self._advance()
         return self.session
 
+    async def wait_state_change(self, state):
+        while self.session.state == state:
+            await self._changed.wait()
+        return self.session
+
     async def read_saved_user_code(self):
         return None
 
@@ -49,6 +54,8 @@ class FakeWizard:
         self._advance()
 
     def _advance(self) -> None:
+        changed, self._changed = self._changed, asyncio.Event()
+        changed.set()
         self.session.state = self._script[self._i]
         if self.session.state == WizardState.AWAITING_SCAN:
             self.session.qr_url = "tuyaSmart--qrLogin?token=fake"
@@ -107,6 +114,9 @@ class FakeManager:
 
     async def __aexit__(self, *exc):
         self.closed = True
+
+    async def wait_registry_refresh(self):
+        pass
 
     async def sync(self):
         return self._sync_result

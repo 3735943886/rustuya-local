@@ -74,5 +74,6 @@ requests share a lock covering the current-entry read, patch merge, validation, 
 ## Verification and coupling
 
 Unit tests, in-process services, real MQTT brokers, Tuya emulators and HA integration tests verify different
-boundaries. They do not replace real LAN-device tests. Driver state internals and the manager's private registry API
-remain coupling points that need checking when dependencies change. See [REVIEW](REVIEW.md) for fixes and limits.
+boundaries. They do not replace real LAN-device tests. Driver state internals remain a coupling point that needs
+checking when dependencies change. Manager sessions use public registry readiness and wizard state-change APIs;
+HA no longer patches manager internals or polls wizard state. See [REVIEW](REVIEW.md) for fixes and limits.

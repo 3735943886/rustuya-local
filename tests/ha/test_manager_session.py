@@ -27,7 +27,7 @@ class Manager:
         assert len(Manager.open) == 1, "two sessions connected at once"
         return self
 
-    async def wait_ready(self) -> None:
+    async def wait_ready(self, **kwargs) -> None:
         await asyncio.sleep(0)
 
     async def __aexit__(self, *exc) -> None:

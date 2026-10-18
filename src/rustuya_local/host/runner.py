@@ -44,12 +44,21 @@ async def producer_running(il: Transport, presence: str, timeout: float = 2.0) -
     None: it is `online` but nothing answered: a producer whose Last Will never reached the broker (a power cut that
     took the broker along), or one on tuya2ildevice before 0.3.5, which does not answer."""
     seen: list[str] = []
-    unsub = await il.subscribe(presence, lambda m: seen.append(_text(m.payload)) if m.retain else None)
+    received = asyncio.Event()
+
+    def on_presence(message: Message) -> None:
+        if message.retain:
+            seen.append(_text(message.payload))
+            received.set()
+
+    unsub = await il.subscribe(presence, on_presence)
     try:
-        for _ in range(10):                        # the retained replay, if any
-            if seen:
-                break
-            await asyncio.sleep(0.05)
+        # MQTT has no end-of-retained-replay signal. Bound the wait explicitly;
+        # an arriving presence wakes us immediately instead of waiting for a tick.
+        try:
+            await asyncio.wait_for(received.wait(), timeout)
+        except TimeoutError:
+            return False
     finally:
         unsub()
     if not seen or seen[-1] != "online":

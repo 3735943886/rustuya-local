@@ -193,9 +193,7 @@ async def test_the_bridge_list(hass, loaded, hass_client, monkeypatch):
 async def test_bridge_commands(hass, loaded, hass_client, monkeypatch):
     from fake_manager import FakeManager, install
 
-    from custom_components.rustuya.panel import BridgeView
 
-    monkeypatch.setattr(BridgeView, "SETTLE", 0)
     manager = FakeManager(sync_result=_diff())
     install(monkeypatch, manager)
     await loaded({CONF_PANEL: True})
@@ -673,7 +671,6 @@ def test_the_panel_has_every_text_in_korean_too():
 async def test_manual_bridge_registration(hass, loaded, hass_client, monkeypatch, device, expected_id, extra):
     from fake_manager import FakeManager, install
 
-    monkeypatch.setattr(panel.BridgeView, 'SETTLE', 0)
     manager = FakeManager(sync_result=_diff())
     install(monkeypatch, manager)
     await loaded({CONF_PANEL: True})
@@ -708,7 +705,6 @@ async def test_manual_registration_rejects_existing_device(hass, loaded, hass_cl
 async def test_edit_registered_device(hass, loaded, hass_client, monkeypatch, device_id):
     from fake_manager import FakeManager, install
 
-    monkeypatch.setattr(panel.BridgeView, 'SETTLE', 0)
     manager = FakeManager(sync_result=_diff())
     install(monkeypatch, manager)
     await loaded({CONF_PANEL: True})
@@ -774,7 +770,6 @@ async def test_registration_waits_for_registry_refresh_before_closing(hass, load
 
     from fake_manager import FakeManager, install
 
-    monkeypatch.setattr(panel.BridgeView, "SETTLE", 0)
     manager = FakeManager(sync_result=_diff())
     manager.wait_registry_refresh = AsyncMock()
     install(monkeypatch, manager)
@@ -814,7 +809,6 @@ async def test_panel_registry_and_commands_use_the_service_without_opening_manag
 
     service.bridge_client = Client()
     monkeypatch.setattr(manager_session, 'open_manager', forbidden)
-    monkeypatch.setattr(panel.BridgeView, 'SETTLE', 0)
     c = await hass_client()
     r = await c.get('/api/rustuya/bridge')
     assert r.status == 200
@@ -825,3 +819,22 @@ async def test_panel_registry_and_commands_use_the_service_without_opening_manag
     assert r.status == 200
     assert commands == [('remove', 'gw')] and refreshes.count(True) == 1
     assert next(d for d in (await r.json())['devices'] if d['id'] == 'gw')['category'] == 'missing'
+
+
+async def test_cloud_status_polls_extend_the_idle_deadline(hass, loaded, hass_client, monkeypatch):
+    import asyncio
+
+    from fake_manager import FakeManager, WizardState, install
+
+    await loaded({CONF_PANEL: True})
+    manager = FakeManager(wizard_script=[WizardState.AWAITING_SCAN])
+    install(monkeypatch, manager)
+    monkeypatch.setattr(panel.CloudFetch, "IDLE_TIMEOUT", 0.3)
+    c = await hass_client()
+    assert (await c.post("/api/rustuya/cloud", json={})).status == 200
+    for _ in range(3):
+        await asyncio.sleep(0.12)
+        assert (await (await c.get("/api/rustuya/cloud")).json())["state"] == "awaiting_scan"
+        assert not manager.closed
+    assert (await c.delete("/api/rustuya/cloud")).status == 200
+    assert manager.closed

@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0.dev9] — 2026-10-18
+
+### Changed
+- Wait for live bridge acknowledgements and the panel's registry refresh instead of sleeping after device commands.
+- Verify embedded bridge startup through a live MQTT config publication, supervise its native async task, and
+  retain ownership when shutdown times out.
+- Wait for producer presence with an event and an explicit timeout instead of repeated short sleeps.
+- Use manager state-change notifications for wizard progress and cloud-fetch completion; remove status polling.
+- Use manager registry readiness instead of patching its private methods; require rustuya-manager 0.2.3.
+- Create session directories with a regular loop instead of a discarded list comprehension.
+
 ## [0.1.0.dev8] — 2026-10-13
 
 ### Fixed

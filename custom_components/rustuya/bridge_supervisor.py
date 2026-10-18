@@ -1,19 +1,16 @@
-"""An embedded rustuya-bridge: `pyrustuyabridge.PyBridgeServer` run in a background thread, tied to this config
-entry's lifecycle instead of a separate rustuya-bridge process. Same class our own end-to-end tests drive
-(tuya-interpreter/rustuya-local tests/e2e/test_full_stack.py) — proven against a real broker and real Tuya-protocol
-devices, just supervised here instead of by a test fixture.
-
-The embedded bridge still needs a real MQTT broker to talk through (it manages its own native MQTT client); it does
-not remove that requirement, only who launches and owns the bridge process.
-"""
+"""Own the embedded bridge's native async task and verify its MQTT startup signal."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-import threading
+import secrets
+from urllib.parse import urlsplit
 
 _LOGGER = logging.getLogger(__name__)
+START_TIMEOUT = 15.0
+STOP_TIMEOUT = 10.0
 
 
 class EmbeddedBridge:
@@ -26,41 +23,82 @@ class EmbeddedBridge:
         self.username = username
         self.password = password
         self._server = None
-        self._thread: threading.Thread | None = None
+        self._task: asyncio.Future | None = None
+        self._stopping = False
 
     async def start(self) -> None:
         import pyrustuyabridge as pb
 
-        kwargs = {"mqtt_broker": self.broker, "mqtt_root_topic": self.root, "mqtt_retain": True,
-                  "state_file": self.state_file, "no_signals": True, "log_level": self.log_level}
-        if self.username:
-            kwargs["mqtt_username"] = self.username
-        if self.password:
-            kwargs["mqtt_password"] = self.password
-        self._server = pb.PyBridgeServer(**kwargs)
-        loop = asyncio.get_running_loop()
-        started = loop.create_future()
+        from rustuya_local.host.mqtt import MqttTransport
 
-        def run() -> None:
+        if self._task is not None:
+            raise RuntimeError("the embedded bridge has already been started")
+        address = urlsplit(self.broker)
+        observer = MqttTransport(address.hostname, address.port or 1883,
+                                 client_id=f"rustuya-startup-{secrets.token_hex(8)}",
+                                 username=self.username, password=self.password,
+                                 tls=address.scheme == "mqtts")
+        ready = asyncio.Event()
+
+        def on_config(message) -> None:
+            # A retained config may belong to an earlier, dead bridge instance.
+            if message.retain or not message.payload:
+                return
             try:
-                self._server.start()
-            except Exception:
-                _LOGGER.exception("the embedded bridge stopped unexpectedly")
-            finally:
-                if not started.done():
-                    loop.call_soon_threadsafe(started.set_result, None)
+                config = json.loads(message.payload)
+            except (ValueError, UnicodeDecodeError):
+                return
+            if isinstance(config, dict) and config:
+                ready.set()
 
-        self._thread = threading.Thread(target=run, name="rustuya-embedded-bridge", daemon=True)
-        self._thread.start()
-        # give the bridge a moment to fail fast (a bad broker URL, a locked state file) before reporting success;
-        # `run()` resolves `started` on exit, so a quick crash surfaces as this future finishing early too
-        await asyncio.wait([asyncio.ensure_future(asyncio.sleep(0.2)), started], return_when=asyncio.FIRST_COMPLETED)
-        if self._thread is not None and not self._thread.is_alive():
-            raise RuntimeError("the embedded bridge exited during startup; check the log")
+        waiter = None
+        try:
+            async with asyncio.timeout(START_TIMEOUT):
+                await observer.connect()
+                await observer.subscribe(f"{self.root}/bridge/config", on_config)
+                kwargs = {"mqtt_broker": self.broker, "mqtt_root_topic": self.root, "mqtt_retain": True,
+                          "state_file": self.state_file, "no_signals": True, "log_level": self.log_level}
+                if self.username:
+                    kwargs["mqtt_username"] = self.username
+                if self.password:
+                    kwargs["mqtt_password"] = self.password
+                self._server = pb.PyBridgeServer(**kwargs)
+                self._stopping = False
+                self._task = asyncio.ensure_future(self._server.start_async())
+                self._task.add_done_callback(self._exited)
+                waiter = asyncio.create_task(ready.wait())
+                await asyncio.wait((waiter, self._task), return_when=asyncio.FIRST_COMPLETED)
+                if self._task.done():
+                    await self._task  # preserve the native startup exception
+                    raise RuntimeError("the embedded bridge exited during startup")
+        except BaseException:
+            await self.stop()
+            raise
+        finally:
+            if waiter is not None:
+                waiter.cancel()
+                await asyncio.gather(waiter, return_exceptions=True)
+            try:
+                await observer.close()
+            except BaseException:
+                # Startup has not returned ownership to the caller yet.
+                await self.stop()
+                raise
+
+    def _exited(self, task: asyncio.Future) -> None:
+        if task.cancelled():
+            return
+        error = task.exception()
+        if not self._stopping:
+            _LOGGER.error("the embedded bridge stopped unexpectedly: %s", error or "server exited")
 
     async def stop(self) -> None:
-        if self._server is not None:
-            self._server.stop()
-        if self._thread is not None:
-            await asyncio.get_running_loop().run_in_executor(None, self._thread.join, 10)
-            self._thread = None
+        if self._task is None:
+            return
+        self._stopping = True
+        self._server.stop()
+        # Shield the native task: a timed-out shutdown must retain ownership so
+        # another stop can still wait for cleanup, rather than losing the server.
+        await asyncio.wait_for(asyncio.shield(asyncio.gather(self._task, return_exceptions=True)), STOP_TIMEOUT)
+        self._task = None
+        self._server = None

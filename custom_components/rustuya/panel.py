@@ -392,7 +392,6 @@ class CloudFetch:
 
     IDLE_TIMEOUT = 30.0         # seconds without a poll before the session is closed
     MAX_TIME = 600.0            # a QR not scanned in 10 minutes is given up
-    WATCH_INTERVAL = 0.5        # seconds between looks at the wizard's state
 
     def __init__(self, hass: HomeAssistant, entry: Any) -> None:
         self.hass, self.entry = hass, entry
@@ -435,14 +434,21 @@ class CloudFetch:
 
     async def _watch(self) -> None:
         while self.running and not self._finishing:
-            await asyncio.sleep(self.WATCH_INTERVAL)
             session = self.manager.wizard.session
             state = _wizard_state(session)
-            now = self.hass.loop.time()
             if state in ("done", "error"):
                 await self._finish(_outcome(state, session.message or "", session.error))
-            elif now - self._polled > self.IDLE_TIMEOUT or now - self._started > self.MAX_TIME:
+                return
+            now = self.hass.loop.time()
+            remaining = min(self._polled + self.IDLE_TIMEOUT, self._started + self.MAX_TIME) - now
+            if remaining <= 0:
                 await self._finish(_outcome("cancelled", "Stopped: the page stopped asking, or it took too long"))
+                return
+            try:
+                await asyncio.wait_for(self.manager.wizard.wait_state_change(session.state), remaining)
+            except TimeoutError:
+                # A page poll may have extended the idle deadline while we waited.
+                continue
 
     async def _finish(self, final: dict[str, Any]) -> None:
         from . import async_refresh_devices, manager_session
@@ -457,6 +463,9 @@ class CloudFetch:
         finally:
             # reported only now: the page reloads the bridge list on `done`, which needs the session lock this held
             self.final = final
+            if self._task is not None and self._task is not asyncio.current_task():
+                self._task.cancel()
+                await asyncio.gather(self._task, return_exceptions=True)
 
 
 def _fetch_status(fetch: CloudFetch | None) -> dict[str, Any]:
@@ -554,7 +563,6 @@ class BridgeView(_View):
 
     url = "/api/rustuya/bridge"
     name = "api:rustuya:bridge"
-    SETTLE = 1.5            # seconds for the bridge's replies to land before the list is read again after a POST
 
     @_entry_view
     async def get(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
@@ -587,13 +595,6 @@ class BridgeView(_View):
             return self.json_message(str(e), HTTPStatus.BAD_REQUEST)
         return await self._session(request, entry, runtime, None, manual=device, editing=True)
 
-    @staticmethod
-    async def _wait_registry_refresh(manager: Any) -> None:
-        # Older manager versions refresh immediately and have no wait method.
-        wait = getattr(manager, "wait_registry_refresh", None)
-        if wait is not None:
-            await wait()
-
     async def _session(self, request: web.Request, entry: Any, runtime: Any,
                        selection: dict[str, list[str]] | None, *, manual: dict[str, str] | None = None,
                        editing: bool = False) -> web.Response:
@@ -622,14 +623,12 @@ class BridgeView(_View):
                 await manager.publish_command("add", target_id=manual["id"], target_name=manual.get("name"),
                                               extra={k: v for k, v in manual.items() if k not in ("id", "name")} or None)
                 sent = 1
-                await asyncio.sleep(self.SETTLE)
-                await self._wait_registry_refresh(manager)
+                await manager.wait_registry_refresh()
                 diff = await manager.sync()
             if selection is not None:
                 sent = await bridge_sync.apply(manager, diff, selection)      # gateways first, as the flows do
                 if sent:
-                    await asyncio.sleep(self.SETTLE)
-                    await self._wait_registry_refresh(manager)
+                    await manager.wait_registry_refresh()
                     diff = await manager.sync()
             state = getattr(manager, "state", None)
             return self.json({"devices": bridge_sync.listing(diff, getattr(state, "bridge", None)), "sent": sent,

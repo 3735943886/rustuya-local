@@ -68,9 +68,7 @@ async def open_manager(*, broker: str, root: str, devices_path: str, username: s
         # `sync()`'s diff is only meaningful once the bridge's device list has arrived; without this every cloud
         # device looks "missing" (an empty bridge side), which is how a whole device list ended up offered for
         # registration.
-        from .manager_registry import ready_registry
-
-        await ready_registry(manager, WAIT)
+        await manager.wait_ready(bootstrap_timeout=WAIT, bridge_timeout=WAIT)
     except BaseException:
         await close_manager(manager)
         raise
@@ -103,7 +101,12 @@ async def open_for_entry(hass: Any, data: dict[str, Any], *, run_bridge: bool = 
         dirs.append(os.path.dirname(state_file))
         bridge = {"bridge_state": state_file,
                   "bridge_log_level": data.get(CONF_BRIDGE_LOG_LEVEL, DEFAULT_BRIDGE_LOG_LEVEL)}
-    await hass.async_add_executor_job(lambda: [os.makedirs(d, exist_ok=True) for d in dirs if d])
+    def ensure_directories() -> None:
+        for directory in dirs:
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+
+    await hass.async_add_executor_job(ensure_directories)
     username, password = broker.credentials(data)
     return await open_manager(broker=broker.url(data), root=data[CONF_BRIDGE_ROOT],
                               devices_path=data[CONF_DEVICES_PATH], username=username, password=password, **bridge)

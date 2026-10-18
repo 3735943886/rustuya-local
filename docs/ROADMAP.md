@@ -14,7 +14,8 @@ Completed milestones and earlier deployment records are preserved in the [previo
 
 ## Maintenance
 
-- [ ] Reduce dependence on driver state internals in `Hub._same` and private manager registry APIs through public contracts.
+- [x] Replace private manager registry patches and wizard state polling with public async contracts.
+- [ ] Reduce dependence on driver state internals in `Hub._same` through a public contract.
 - [ ] Verify Python 3.13 with minimum supported dependency versions. The full CI suite uses 3.14; wheel import/CLI smoke tests pass on 3.13.
 - [ ] Define the supported drop-in OS/architectures and provide platform assets as needed. Each archive includes its build host's native library.
 - [ ] Verify ownership/conflict policy when manual file editing, IL settings saves and automatic pack updates overlap.

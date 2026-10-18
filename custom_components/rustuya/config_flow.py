@@ -54,8 +54,6 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 PROBE_TIMEOUT = 5.0      # seconds each for the broker to accept us and the bridge's retained config to arrive
-TICK = 0.1               # seconds between looks at the login's state while its progress shows
-TICKS = 50               # looks before the progress step is redrawn anyway
 
 
 def _qr_schema(qr_url: str) -> vol.Schema:
@@ -164,7 +162,7 @@ class _ManagerSteps:
             return self.async_show_progress_done(next_step_id="cloud_wizard_scan")
         return self.async_show_progress(step_id="cloud_wizard_progress", progress_action="cloud_wizard_working",
                                         description_placeholders={"message": session.message},
-                                        progress_task=self.hass.async_create_task(self._async_wizard_tick()))
+                                        progress_task=self.hass.async_create_task(self._async_wait_wizard_state()))
 
     async def async_step_cloud_wizard_scan(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """`async_show_progress` only takes plain description text -- no selector, so a QR needs an actual form
@@ -176,18 +174,14 @@ class _ManagerSteps:
         return self.async_show_form(step_id="cloud_wizard_scan",
                                     data_schema=_qr_schema(self._manager.wizard.session.qr_url))
 
-    async def _async_wizard_tick(self) -> None:
-        """`async_show_progress` needs a task to await; the wizard already runs in the background
-        (`WizardManager._run`), so this just waits for its state to change (or a short cap) so the
-        frontend's re-poll of `cloud_wizard_progress` promptly redraws instead of only on its own timer."""
+    async def _async_wait_wizard_state(self) -> None:
+        """Wake HA progress when the manager reports a wizard state change."""
         from rustuya_manager.wizard import WizardState
 
-        session = self._manager.wizard.session
-        start_state = session.state
-        for _ in range(TICKS):
-            if session.state != start_state or session.state in (WizardState.DONE, WizardState.ERROR):
-                return
-            await asyncio.sleep(TICK)
+        wizard = self._manager.wizard
+        state = wizard.session.state
+        if state not in (WizardState.DONE, WizardState.ERROR):
+            await wizard.wait_state_change(state)
 
     def _sync_form(self, step_id: str, diff: Any, error: str | None = None) -> FlowResult:
         self._sync_shown = True
