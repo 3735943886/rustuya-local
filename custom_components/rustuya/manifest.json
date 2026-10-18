@@ -9,12 +9,12 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/3735943886/rustuya-local/issues",
   "requirements": [
-    "tuya-interpreter>=0.1.0a2",
+    "tuya-interpreter>=0.1.0rc2",
     "paho-mqtt>=2.0",
     "rustuya-manager>=0.2.3",
     "pyrustuyabridge>=0.4",
-    "rustuya-local>=0.1.0.dev10"
+    "rustuya-local>=0.1.0.dev11"
   ],
   "single_config_entry": true,
-  "version": "0.1.0.dev10"
+  "version": "0.1.0.dev11"
 }

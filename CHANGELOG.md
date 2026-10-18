@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0.dev11] — 2026-10-18
+
+### Changed
+- Decide which drivers a reload replaces with tuya-interpreter's public `TuyaDriver.same_config` instead of
+  comparing its version-specific state snapshot; require tuya-interpreter 0.1.0rc2.
+
 ## [0.1.0.dev10] — 2026-10-18
 
 ### Changed

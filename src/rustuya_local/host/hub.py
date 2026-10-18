@@ -87,15 +87,6 @@ class Hub:
         if not usable_id(device_id):
             raise ValueError(f'device id {device_id!r} is not usable as an il-mqtt topic level (M-2)')
 
-    @staticmethod
-    def _same(old: TuyaDriver, new: TuyaDriver) -> bool:
-        # Version-specific driver configuration metadata, compared without interpreting Tuya DPs.
-        return (old.rules_id == new.rules_id
-                and old.state['block'] == new.state['block']
-                and old.state['delta'] == new.state['delta']
-                and old.descriptor == new.descriptor
-                and [c['settings'] for c in old.state['covers']] == [c['settings'] for c in new.state['covers']])
-
     def _adopt(self, old: TuyaDriver | None, new: TuyaDriver, seed: Sequence, now: float,
                *, rules: dict) -> list:
         device_id = new.descriptor['id']
@@ -160,7 +151,7 @@ class Hub:
         replacements = {}
         for device_id, new in fresh.items():
             old = self.drivers[device_id]
-            if self._same(old, new):
+            if old.same_config(new):
                 continue
             seed = [Connected()] if old.linked else []
             if old.synced:

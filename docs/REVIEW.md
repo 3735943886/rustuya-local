@@ -71,7 +71,8 @@ reproduction. README, architecture and migration notes now explain actual preced
 
 ## Remaining maintenance considerations
 
-- `Hub._same` depends on driver state keys `block`, `delta` and `covers`; check compatibility when dependencies change.
+- ~~`Hub._same` depends on driver state keys `block`, `delta` and `covers`.~~ Resolved: the reload comparison uses
+  tuya-interpreter's public `TuyaDriver.same_config`.
 - `manager_registry.ready_registry` patches private manager methods/fields; a public registry contract would reduce coupling.
 - Producer probing is a startup check, not atomic exclusion of two simultaneously starting producers.
 - Bridge status has no request ID; contiguous-page validation cannot perfectly distinguish all other-client responses.
