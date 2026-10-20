@@ -4,6 +4,11 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
+## [0.1.1]
+
+- Use the Rustuya gear-and-t brand icon in the Home Assistant sidebar, following theme and selection colors.
+- Load the sidebar icon on every Home Assistant page, with content-based cache invalidation.
+
 ## [0.1.0]
 
 Initial release.
