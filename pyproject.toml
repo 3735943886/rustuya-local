@@ -4,16 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rustuya-local"
-version = "0.1.0.dev12"
+version = "0.1.0"
 description = "Local Tuya control: rustuya-bridge -> tuya-interpreter -> IL (ildevice). HA-independent core."
 readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
-dependencies = ["tuya-interpreter>=0.1.0rc2", "pyrustuyabridge>=0.4", "paho-mqtt>=2.0"]
-# rustuya-manager (custom_components/rustuya's config flow) is optional at the package level (the HA manifest
-# pulls it in); declared here too so the venv used for this repo's tests has it. pyrustuyabridge is a base dependency
-# now (not just for the embedded bridge): rustuya-local's own bridge_client uses it to interpret rustuya-bridge's
-# configurable MQTT topic/payload templates correctly, for BOTH bridge modes.
+dependencies = ["tuya-interpreter>=0.1.0", "pyrustuyabridge>=0.4.0", "paho-mqtt>=2.0"]
 
 [project.urls]
 Homepage = "https://github.com/3735943886/rustuya-local"
@@ -29,8 +25,8 @@ rustuya-local = "rustuya_local.manager_plugin:register"
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio", "ildevice-homeassistant", "httpx2"]      # ildevice-homeassistant: the IL consumer; httpx2: Starlette TestClient
-test-ha = ["pytest-homeassistant-custom-component"]   # custom_components/rustuya's own tests
-fullstack = ["tuyamock"]      # the device emulator, for tests/e2e/test_full_stack*.py (pyrustuyabridge is now a base dep)
+test-ha = ["pytest-homeassistant-custom-component"]   # Home Assistant integration tests
+fullstack = ["tuyamock"]      # device emulator for full-stack tests
 manager = ["rustuya-manager[web]>=0.2.3"]      # tests/e2e/test_manager_plugin*.py: the manager's real plugin host, its web app
 
 [tool.hatch.build.targets.wheel]

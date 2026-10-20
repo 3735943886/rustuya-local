@@ -1,7 +1,6 @@
-# Current architecture
+# Architecture
 
-Baseline: 2026-10-13, `rustuya-local 0.1.0.dev8`.
-See [README](../README.md) for installation and [REDESIGN](REDESIGN.md) for earlier designs.
+See [README](../README.md) for installation and operation.
 
 ```text
 Tuya LAN devices
@@ -24,7 +23,7 @@ ildevice-homeassistant / other IL consumers
 | `host/hub.py` | Driver registry, replacement/reload, native rule-pack reference management |
 | `host/runner.py` | IL subscriptions and publish queue, timers, presence/probes, settings callbacks |
 | `host/il.py` | Mapping driver outputs to IL MQTT topics and values |
-| `host/rules.py`, `overrides.py` | Rule discovery/merging, legacy cover keys, file watching and settings persistence |
+| `host/rules.py`, `overrides.py` | Rule discovery/merging, cover settings, file watching and settings persistence |
 | `host/pack.py` | Official rule downloads, hash verification and ownership ledger |
 | `host/mqtt.py`, `memory.py` | paho MQTT and in-process test transports |
 | `cli.py`, `config.py` | Standalone daemon and configuration validation |
@@ -83,6 +82,5 @@ requests share a lock covering the current-entry read, patch merge, validation, 
 ## Verification and coupling
 
 Unit tests, in-process services, real MQTT brokers, Tuya emulators and HA integration tests verify different
-boundaries. They do not replace real LAN-device tests. Driver state internals remain a coupling point that needs
-checking when dependencies change. Manager sessions use public registry readiness and wizard state-change APIs;
-HA no longer patches manager internals or polls wizard state. See [REVIEW](REVIEW.md) for fixes and limits.
+boundaries. They do not replace real LAN-device tests. Dependency upgrades must preserve the driver's descriptor, timers, snapshot and rule-registration contracts.
+Manager sessions use public registry readiness and wizard state-change APIs.

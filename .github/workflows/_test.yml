@@ -47,6 +47,12 @@ jobs:
           repository: 3735943886/tuya-interpreter
           path: tuya-interpreter
 
+      - name: Check out IL conformance vectors
+        uses: actions/checkout@v7
+        with:
+          repository: 3735943886/ildevice
+          path: ildevice
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v7
         with:
@@ -89,6 +95,22 @@ jobs:
       - name: pytest
         working-directory: rustuya-local
         run: pytest -q
+
+  minimum:
+    name: minimum runtime dependencies (py3.13)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v7
+      - name: Install minimum runtime dependencies and core test tools
+        run: >-
+          uv pip install --system -e . pytest pytest-asyncio
+          tuya-interpreter==0.1.0 pyrustuyabridge==0.4.0 paho-mqtt==2.0.0
+      - name: Run core unit tests
+        run: pytest -q tests/unit
 
   package:
     # The test job uses an ildevice-homeassistant checkout; this one checks what a user gets: the wheel in a fresh

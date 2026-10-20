@@ -3,7 +3,7 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
 Local control of Tuya devices through [rustuya-bridge](https://github.com/3735943886/rustuya-bridge), as IL
-([ildevice](https://github.com/3735943886/ildevice)) devices, and in Home Assistant. It replaces rustuya-homeassistant.
+([ildevice](https://github.com/3735943886/ildevice)) devices, and in Home Assistant.
 
 ```
 rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► ildevice-homeassistant (Home Assistant integration), or any IL consumer
@@ -22,7 +22,7 @@ rustuya-bridge ──MQTT──► rustuya-local ──MQTT (il/…)──► il
 
 ```bash
 uv venv --python 3.13
-uv pip install -e .
+uv pip install rustuya-local
 .venv/bin/rustuya-local run --config config.json
 ```
 
@@ -65,7 +65,7 @@ MQTT and in-process transport tests exercise the same adapter and the bidirectio
 
 ## Home Assistant
 
-Coming from rustuya-homeassistant: [docs/MIGRATING.md](docs/MIGRATING.md).
+Requires Home Assistant 2026.10 or newer.
 
 Install ildevice-homeassistant, and run one IL producer per bridge: the daemon, the integration below, or the manager plugin. A second
 one with the same IL prefix and source refuses to start while the first runs (every device would show twice): the
@@ -129,15 +129,12 @@ survives a restart and can be edited there too. Without a converters directory (
 A block with the same `cover` keys in your own file or the builtin rules sets a model's starting point.
 User files, including `zz_settings.json`, are applied in filename order; a later file can override saved settings.
 The daemon's inline `options.overrides` is applied after file layers.
-Older `cover.infer_motion` and `converters.cover_motion` blocks are upgraded on loading to `cover.state_source`
-(`inferred`, or `none` for `infer_motion: false`) and `cover.settle`; see [migration notes](docs/MIGRATING.md).
 
 In Home Assistant the files can be edited from a sidebar panel: the integration's *Configure* → *Add the Rustuya
 panel to the sidebar* adds it and links to it. The panel is for administrators. It fetches the device list from Tuya Cloud, shows the
 bridge's devices using the running service's complete registry and MQTT connection against the cloud list (missing, bridge only, mismatch, online and offline, each a filter you can
 turn off; sub-devices under their gateway; each device's bridge connection, live while the panel is open) with add /
-update / remove. Online and offline split devices whose cloud and bridge records match; selecting both shows the
-previous synced view. Sub-devices use their own link state, falling back to their gateway when unavailable; an offline
+update / remove. Online and offline split devices whose cloud and bridge records match. Sub-devices use their own link state, falling back to their gateway when unavailable; an offline
 gateway makes its sub-devices offline. Unknown state is grouped under offline. A gateway stays visible for context
 when one of its children matches the filters. *Register manually* adds Wi-Fi devices or sub-devices without a cloud login, using the same
 fields as rustuya-manager. Devices absent from the cloud list appear under *Bridge only*; their removal is not
@@ -154,7 +151,7 @@ language: Korean, or English.
 Installed next to rustuya-manager, as a pip package (`pip install rustuya-local` in the manager's environment) or as
 the drop-in zip each release carries (`rustuya_local-<version>-dropin.zip`, tuya-interpreter binding, native library and builtin rules vendored inside, built by
 `scripts/build_dropin.py`; unpack it into the manager's plugin directory, or install it from the manager's plugin
-catalog once listed there), it appears as a **Tuya (IL)** tab and runs the service under the manager: the manager's broker and bridge root, the manager's device
+catalog), it appears as a **Tuya (IL)** tab and runs the service under the manager: the manager's broker and bridge root, the manager's device
 list (followed). Its data dir (`rustuya-local/` next to the manager's plugins) holds `settings.json` (`il`,
 `options`) and `custom_converters/`, and the tab edits both: saved settings restart the service in place, saved
 converter files are picked up while it runs. A settings file it cannot use is shown on the tab until it is fixed.
@@ -170,7 +167,7 @@ rustuya-local release (bump the patch version and tag; the manager's catalog fol
 uv venv --python 3.14
 uv pip install -e ../ildevice-homeassistant -e ".[test,test-ha,fullstack,manager]"
 .venv/bin/python -m pytest -q
-ruff check src tests custom_components scripts
+uvx ruff==0.16.8 check src tests custom_components scripts
 ```
 
 The complete suite uses Python 3.14 because the consumer and Home Assistant test dependencies require it.
@@ -193,12 +190,8 @@ topic vectors use `../ildevice/vectors` (or the `ILDEVICE` environment variable)
 
 ## Documentation
 
-- [Current status](docs/STATUS.md): version, document index and verification boundaries.
-- [Architecture](docs/ARCHITECTURE.md): current components, lifecycle and rule precedence.
-- [Migration](docs/MIGRATING.md): upgrading old converters and rustuya-homeassistant installations.
-- [Code review](docs/REVIEW.md): findings and local verification from 2026-10-13.
-- [Roadmap](docs/ROADMAP.md): outstanding work and real-device checks.
-- [Design history](docs/REDESIGN.md): the September redesign record; historical APIs and versions.
-- [Changelog](CHANGELOG.md): changes grouped by release.
+- [Architecture](docs/ARCHITECTURE.md): components, lifecycle, MQTT topics and rule precedence.
+- [Release readiness](docs/ROADMAP.md): verification requirements and remaining checks.
+- [Changelog](CHANGELOG.md): release notes.
 
 Licence: [MIT](LICENSE).
