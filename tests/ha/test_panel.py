@@ -82,6 +82,7 @@ async def loaded(hass, tmp_path, monkeypatch):
 
 
 async def test_the_panel_follows_the_option(hass, loaded):
+    hass.data[frontend.DATA_EXTRA_MODULE_URL] = frontend.UrlManager(lambda *_: None, [])
     await loaded({CONF_PANEL: False})
     assert panel.PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {})
     hass.data[DOMAIN].clear()
@@ -91,6 +92,11 @@ async def test_the_panel_follows_the_option(hass, loaded):
     await loaded({CONF_PANEL: True})
     p = hass.data[frontend.DATA_PANELS][panel.PANEL_URL]
     assert p.require_admin and p.sidebar_title == "Rustuya"
+    assert p.sidebar_icon == "rustuya:logo"
+    icons = Path(panel.__file__).parent / "www" / "rustuya-icons.js"
+    icon_hash = hashlib.sha256(icons.read_bytes()).hexdigest()[:10]
+    assert any(url.startswith(f"{panel.STATIC_URL}/rustuya-icons.js?v=") and url.endswith(f"-{icon_hash}")
+               for url in hass.data[frontend.DATA_EXTRA_MODULE_URL].urls)
     assert p.config_panel_domain is None          # Configure stays the options flow, where the panel is turned off
     # the file's hash in the URL: a changed file is never taken from a browser's cache (same release or not)
     js = (Path(panel.__file__).parent / "www" / "rustuya-panel.js").read_bytes()
