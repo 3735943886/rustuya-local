@@ -4,6 +4,12 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
+## [0.1.2]
+
+- Lower the minimum Home Assistant version to 2025.3.
+- Rewrite the README for Home Assistant (HACS) users, with guidance on choosing the IL topic prefix; the daemon,
+  manager plugin and development notes move to their own pages under `docs/`.
+
 ## [0.1.1]
 
 - Use the Rustuya gear-and-t brand icon in the Home Assistant sidebar, following theme and selection colors.

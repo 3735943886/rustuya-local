@@ -1,6 +1,5 @@
 # Rustuya
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/v/release/3735943886/rustuya-local)](https://github.com/3735943886/rustuya-local/releases)
 
 Local control of Tuya devices in Home Assistant, with no cloud round trip for state or commands.
@@ -19,7 +18,7 @@ Tuya Cloud is only used once, to fetch your device list and local keys (QR code 
 
 ## Requirements
 
-- Home Assistant **2026.10** or newer.
+- Home Assistant **2025.3** or newer.
 - An MQTT broker (for example the **Mosquitto broker** add-on) and Home Assistant's **MQTT** integration connected to it.
 - The **IL device** integration (in HACS), which creates the entities. Rustuya creates no entities itself.
 - rustuya-bridge, either one you already run, or the one Rustuya can run inside Home Assistant (amd64 and aarch64).
@@ -30,7 +29,8 @@ Tuya Cloud is only used once, to fetch your device list and local keys (QR code 
 
 1. In HACS, search for **Rustuya** and download it. Download **IL device** too.
 2. Restart Home Assistant.
-3. *Settings → Devices & services → Add integration → IL device*, keeping the topic prefix `il`.
+3. *Settings → Devices & services → Add integration → IL device*, with the topic prefix Rustuya will publish under
+   (see [IL topic prefix](#il-topic-prefix)).
 4. *Add integration → Rustuya* (see below).
 
 ## Setup
@@ -42,7 +42,14 @@ Setup first asks how to reach rustuya-bridge:
 | **An external rustuya-bridge** | You already run rustuya-bridge (or rustuya-manager). Setup checks that the bridge answers on the broker; if it is not on the default topic root `rustuya`, it asks for that root. |
 | **Run rustuya-bridge inside Home Assistant** | Nothing else is running. Rustuya starts and owns the bridge itself. It still needs the MQTT broker. |
 
-Then enter the broker (host, port, optional username and password) and the IL topic prefix (`il`, the one IL device reads).
+Then enter the broker (host, port, optional username and password) and the IL topic prefix.
+
+### IL topic prefix
+
+The default is `il`, which is also IL device's default, and is fine when Rustuya is your only IL producer.
+If you use, or may later add, other IL producers (for example rusthinq), give each its own prefix such as `il/tuya`.
+IL device then gets one entry per prefix, a separate hub with its own devices and options. Use the same prefix in
+Rustuya and in its IL device entry. The prefix can be changed later in the panel's *Settings*.
 
 Next, setup offers to **fetch your devices from Tuya Cloud**:
 
@@ -144,7 +151,7 @@ Then remove Rustuya in HACS and restart.
   rustuya-manager plugin) already publishes on the same IL prefix and source. Run only one per bridge: stop the
   other one, and this one starts on its next retry.
 - **No devices appear**: check the device is registered on the bridge (the panel's *Devices*), that IL device uses the
-  same prefix (`il`), and that the device was added in IL device's discovered list.
+  same prefix as Rustuya (see [IL topic prefix](#il-topic-prefix)), and that the device was added in IL device's discovered list.
 - **Debug logs**:
 
   ```yaml

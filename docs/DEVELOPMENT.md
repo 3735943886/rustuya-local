@@ -56,3 +56,6 @@ Bump the version in `pyproject.toml` and `custom_components/rustuya/manifest.jso
 `rustuya-local==` requirement), add a `## [X.Y.Z]` section to `CHANGELOG.md`, and push a `vX.Y.Z` tag. The release
 workflow runs the tests, publishes to PyPI, and creates the GitHub release with the wheel, sdist and manager drop-in zip.
 HACS installs from the GitHub release, and the integration then installs the exact `rustuya-local` version from PyPI.
+
+`hacs.json` declares Home Assistant 2025.3 or newer: the first release with both Python 3.13 (required by
+`rustuya-local`) and paho-mqtt 2.x (2025.2 pins 1.6.1). `tests/ha` passes on 2025.3.0 as well as the current release.
