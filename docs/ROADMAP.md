@@ -1,6 +1,7 @@
 # Release readiness
 
-Target: first stable release, `0.1.0`. Installation and operation are in the [README](../README.md).
+Current release: `0.1.1`. Home Assistant installation is in the [README](../README.md); the [daemon](DAEMON.md) and
+[manager plugin](MANAGER_PLUGIN.md) have their own pages.
 The [architecture](ARCHITECTURE.md) describes the runtime boundaries.
 
 ## Automated verification
@@ -55,9 +56,10 @@ Requirements: [HACS inclusion guide](https://hacs.xyz/docs/publish/include/).
 Before submitting:
 
 1. Push the release commit and confirm HACS Action and Hassfest pass for that commit.
-2. Publish the matching `rustuya-local==0.1.0` package to PyPI and the full `v0.1.0` GitHub release.
-   The integration installs that exact PyPI version; a tag alone is insufficient.
+2. Publish the matching `rustuya-local==X.Y.Z` package to PyPI and the full `vX.Y.Z` GitHub release
+   (done for `0.1.1`). The integration installs that exact PyPI version; a tag alone is insufficient.
 3. As the owner or a major contributor, open an editable PR from a new branch in a personal fork of
    `hacs/default`. Add `3735943886/rustuya-local` to `integration` in sorted order and complete its PR template.
 
-The repository is not currently in the default list. Submission and upstream review are separate from local validation.
+The companion ildevice-homeassistant is already in the default list. After this repository is merged,
+switch the README badge from *HACS-Custom* to *HACS-Default*. Submission and upstream review are separate from local validation.
