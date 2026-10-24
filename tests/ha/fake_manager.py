@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from unittest.mock import AsyncMock
 
 
 class WizardState:
@@ -153,7 +154,7 @@ def install(monkeypatch, manager: FakeManager) -> None:
     monkeypatch.setattr(manager_session, "open_panel_for_entry", open_panel_for_entry)
     monkeypatch.setattr(manager_session, "open_manager", open_manager)
     monkeypatch.setattr(manager_session, "close_manager", close_manager)
-    monkeypatch.setattr(manager_session, "available", lambda: True)
+    monkeypatch.setattr(manager_session, "available", AsyncMock(return_value=True))
 
     import sys
     import types

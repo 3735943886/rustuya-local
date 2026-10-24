@@ -7,6 +7,7 @@ import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.components import frontend
@@ -220,7 +221,7 @@ async def test_the_bridge_list_when_it_cannot_be_had(hass, loaded, hass_client, 
 
     await loaded({CONF_PANEL: True})
     c = await hass_client()
-    monkeypatch.setattr(manager_session, "available", lambda: False)
+    monkeypatch.setattr(manager_session, "available", AsyncMock(return_value=False))
     assert (await c.get("/api/rustuya/bridge")).status == 501
 
     async def open_panel(hass, data, service):
@@ -233,7 +234,7 @@ async def test_the_bridge_list_when_it_cannot_be_had(hass, loaded, hass_client, 
     async def down(**kw):
         raise TimeoutError("no bridge status")
 
-    monkeypatch.setattr(manager_session, "available", lambda: True)
+    monkeypatch.setattr(manager_session, "available", AsyncMock(return_value=True))
     monkeypatch.setattr(manager_session, "open_manager", busy)
     assert (await c.get("/api/rustuya/bridge")).status == 409
     monkeypatch.setattr(manager_session, "open_manager", down)

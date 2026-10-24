@@ -499,7 +499,7 @@ class CloudView(_View):
     async def post(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
         from . import manager_session
 
-        if not manager_session.available():
+        if not await manager_session.available(request.app["hass"]):
             return self.json_message("rustuya-manager is not installed", HTTPStatus.NOT_IMPLEMENTED)
         hass = request.app["hass"]
         body = await _json_body(request)
@@ -604,7 +604,7 @@ class BridgeView(_View):
                        editing: bool = False) -> web.Response:
         from . import bridge_sync, manager_session
 
-        if not manager_session.available():
+        if not await manager_session.available(request.app["hass"]):
             return self.json_message("rustuya-manager is not installed", HTTPStatus.NOT_IMPLEMENTED)
         try:
             manager = await manager_session.open_panel_for_entry(request.app["hass"], entry.data, runtime.service)

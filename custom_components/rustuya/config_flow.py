@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import importlib.util
 import logging
 import secrets
 from typing import Any
@@ -256,7 +255,7 @@ class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN)
             user_input = {**user_input, CONF_IL_PREFIX: user_input[CONF_IL_PREFIX].strip()}
             if not broker.topic_ok(user_input[CONF_IL_PREFIX]):
                 errors[CONF_IL_PREFIX] = "invalid_prefix"
-            elif importlib.util.find_spec("pyrustuyabridge") is None:
+            elif not await broker.importable(self.hass, "pyrustuyabridge"):
                 errors["base"] = "pyrustuyabridge_missing"
             else:
                 self._data.update({**self._defaults(BRIDGE_EMBEDDED), **user_input})
@@ -268,7 +267,7 @@ class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN)
     async def async_step_onboard(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Log in now, or finish: the login is also in Configure later, and a device file rustuya-manager already
         keeps elsewhere is pointed at from the panel's Settings card."""
-        if not manager_session.available():
+        if not await manager_session.available(self.hass):
             return await self.async_step_finish()
         return self.async_show_menu(step_id="onboard", menu_options=["cloud_wizard_start", "finish"])
 
@@ -374,7 +373,7 @@ class RustuyaOptionsFlow(_ManagerSteps, config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         # the panel's own Hide panel removes it; here only adding it, or its link once added
         panel = ["panel_open"] if self.config_entry.options.get(CONF_PANEL) else ["panel_show"]
-        options = [*panel, "cloud_wizard", "bridge_sync"] if manager_session.available() else panel
+        options = [*panel, "cloud_wizard", "bridge_sync"] if await manager_session.available(self.hass) else panel
         return self.async_show_menu(step_id="init", menu_options=options)
 
     # ---- the panel: one click, then a link to it (a flow cannot navigate the page itself) --------------------------

@@ -3,7 +3,7 @@ those are exercised in test_init.py against real infrastructure instead)."""
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fake_manager import FakeDevice, FakeDiff, FakeManager, WizardState, install
@@ -105,16 +105,13 @@ async def test_setup_asks_only_for_the_broker_and_uses_the_defaults(hass, manage
 
 
 async def test_embedded_setup_asks_only_for_the_broker(hass, monkeypatch):
-    import importlib.util
-
+    from custom_components.rustuya import broker
     from custom_components.rustuya.const import (
         CONF_BRIDGE_LOG_LEVEL,
         CONF_BRIDGE_STATE_FILE,
     )
 
-    real_find_spec = importlib.util.find_spec
-    monkeypatch.setattr(importlib.util, "find_spec",
-                        lambda name: object() if name == "pyrustuyabridge" else real_find_spec(name))
+    monkeypatch.setattr(broker, "importable", AsyncMock(return_value=True))
     with patch("custom_components.rustuya.manager_session.available", return_value=False):
         result = await _start(hass)
         r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "embedded"})
@@ -209,11 +206,9 @@ async def test_closing_before_the_login_adds_nothing(hass):
 
 
 async def test_embedded_mode_without_pyrustuyabridge_shows_an_error(hass, monkeypatch):
-    import importlib.util
+    from custom_components.rustuya import broker
 
-    real_find_spec = importlib.util.find_spec
-    monkeypatch.setattr(importlib.util, "find_spec",
-                        lambda name: None if name == "pyrustuyabridge" else real_find_spec(name))
+    monkeypatch.setattr(broker, "importable", AsyncMock(return_value=False))
     result = await _start(hass)
     r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "embedded"})
     r = await hass.config_entries.flow.async_configure(r["flow_id"], BROKER)
@@ -341,7 +336,7 @@ async def test_a_session_still_open_elsewhere_aborts_with_a_hint(hass, tmp_path,
     async def busy(**kw):
         raise manager_session.Busy
 
-    monkeypatch.setattr(manager_session, "available", lambda: True)
+    monkeypatch.setattr(manager_session, "available", AsyncMock(return_value=True))
     monkeypatch.setattr(manager_session, "open_manager", busy)
     entry = _entry(hass, tmp_path)
     result = await hass.config_entries.options.async_init(entry.entry_id)
@@ -352,7 +347,7 @@ async def test_a_session_still_open_elsewhere_aborts_with_a_hint(hass, tmp_path,
 async def test_options_menu_hides_manager_steps_when_manager_is_unavailable(hass, tmp_path, monkeypatch):
     from custom_components.rustuya import manager_session
 
-    monkeypatch.setattr(manager_session, "available", lambda: False)
+    monkeypatch.setattr(manager_session, "available", AsyncMock(return_value=False))
     entry = _entry(hass, tmp_path)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["menu_options"] == ["panel_show"]

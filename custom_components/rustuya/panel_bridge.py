@@ -20,6 +20,7 @@ class PanelBridge:
         await self.sync()
 
     async def sync(self):
+        # loaded already: setup ran `broker.import_runtime` first
         from rustuya_manager.diff import diff
         from rustuya_manager.models import Device
 

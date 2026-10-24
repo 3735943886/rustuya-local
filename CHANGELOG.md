@@ -4,6 +4,11 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
+## [0.1.3.dev1]
+
+- Load rustuya-manager and pyrustuyabridge in Home Assistant's import executor, once, instead of importing them on
+  the event loop from the config flow, the panel and the embedded bridge's start.
+
 ## [0.1.2]
 
 - Lower the minimum Home Assistant version to 2025.3.

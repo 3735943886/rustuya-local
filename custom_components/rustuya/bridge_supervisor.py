@@ -27,6 +27,7 @@ class EmbeddedBridge:
         self._stopping = False
 
     async def start(self) -> None:
+        # loaded already: setup ran `broker.import_runtime` first
         import pyrustuyabridge as pb
 
         from rustuya_local.host.mqtt import MqttTransport

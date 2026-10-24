@@ -2,8 +2,9 @@
 registering/removing devices on the bridge. Opened for the few seconds a flow step needs it, closed right after
 (`architecture_device_management_via_manager`: the always-on connection is `MqttTransport`/`Runner`, not this).
 
-Importing `rustuya_manager` here, not at module load of `config_flow.py`, keeps a broken/absent install from
-breaking config flow discovery; the flow surfaces a clear abort instead (`_open`'s caller checks `available()`).
+`rustuya_manager` is not imported at module load of `config_flow.py`, so a broken/absent install does not break config
+flow discovery; `broker.import_runtime` loads it in the import executor, and the flow offers its steps only when
+`available()`.
 
 One session at a time: they share one MQTT client id, and a second connection with it makes the broker drop the first,
 so the two would knock each other off in a reconnect loop. A session holds a lock from `open_manager` to
@@ -17,6 +18,8 @@ import asyncio
 import logging
 import weakref
 from typing import Any
+
+from . import broker
 
 _LOGGER = logging.getLogger(__name__)
 WAIT = 15.0
@@ -35,12 +38,8 @@ def _lock() -> asyncio.Lock:
     return _LOCKS[loop]
 
 
-def available() -> bool:
-    try:
-        import rustuya_manager  # noqa: F401
-    except ImportError:
-        return False
-    return True
+async def available(hass: Any) -> bool:
+    return await broker.importable(hass, "rustuya_manager")
 
 
 async def open_manager(*, broker: str, root: str, devices_path: str, username: str | None, password: str | None,
@@ -80,7 +79,6 @@ async def open_for_entry(hass: Any, data: dict[str, Any], *, run_bridge: bool = 
     state file) — for when the entry does not (setup, or an entry that failed to start)."""
     import os
 
-    from . import broker
     from .const import (
         BRIDGE_EMBEDDED,
         CONF_BRIDGE_LOG_LEVEL,
@@ -107,6 +105,7 @@ async def open_for_entry(hass: Any, data: dict[str, Any], *, run_bridge: bool = 
                 os.makedirs(directory, exist_ok=True)
 
     await hass.async_add_executor_job(ensure_directories)
+    await broker.import_runtime(hass)               # `open_manager` imports rustuya_manager
     username, password = broker.credentials(data)
     return await open_manager(broker=broker.url(data), root=data[CONF_BRIDGE_ROOT],
                               devices_path=data[CONF_DEVICES_PATH], username=username, password=password, **bridge)
@@ -139,16 +138,12 @@ async def saved_user_code(hass: Any, data: dict[str, Any]) -> str | None:
 
     from .const import CONF_DEVICES_PATH
 
-    if not available():
+    if not await available(hass):
         return None
-
-    def wizard_class() -> Any:                      # the import pulls in tuyawizard and qrcode: not on the event loop
-        from rustuya_manager.wizard import WizardManager
-
-        return WizardManager
+    from rustuya_manager.wizard import WizardManager
 
     creds_path = os.path.join(os.path.dirname(data[CONF_DEVICES_PATH]), "tuyacreds.json")
-    return await (await hass.async_add_executor_job(wizard_class))(creds_path=creds_path).read_saved_user_code()
+    return await WizardManager(creds_path=creds_path).read_saved_user_code()
 
 
 async def close_manager(manager: Any) -> None:
