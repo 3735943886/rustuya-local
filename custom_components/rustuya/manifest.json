@@ -13,8 +13,8 @@
     "paho-mqtt>=2.0",
     "rustuya-manager>=0.2.3",
     "pyrustuyabridge>=0.4.0",
-    "rustuya-local==0.1.3.dev1"
+    "rustuya-local==0.1.3"
   ],
   "single_config_entry": true,
-  "version": "0.1.3.dev1"
+  "version": "0.1.3"
 }
