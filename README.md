@@ -138,6 +138,20 @@ data:
 
 Locks, alarms and garage doors are refused unless their remote control is allowed in the panel's *Options*.
 
+## Removing a device
+
+For a device you no longer have:
+
+1. Remove it from the bridge: in the panel's *Devices*, or under *Configure → Sync devices with the bridge* by
+   selecting it in *Remove from the bridge*. Rustuya then clears it from IL, IL device deletes it from Home Assistant,
+   and the bridge clears its own retained topics. Removing a gateway removes its sub-devices too.
+2. Once it is gone from the Smart Life / Tuya Smart app (delete it there if it is still listed), fetch the device list
+   again (*Configure → Fetch devices from Tuya Cloud*), so it no longer shows as *missing*.
+
+Deleting it only in Home Assistant hides it, and leaves it on the bridge and in IL. Fetching the list again after it is
+gone from the app takes it out of Home Assistant, but the bridge keeps it, as *bridge only* in the panel, and keeps
+trying to reach it until you remove it from the bridge.
+
 ## Removing
 
 Deleting the integration removes its devices from IL (so IL device removes them from Home Assistant) and deletes the
