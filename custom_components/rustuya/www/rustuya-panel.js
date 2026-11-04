@@ -176,8 +176,6 @@ const I18N = {
     act_add: "Add", act_update: "Update", act_remove: "Remove",
     confirm_remove_device: "Remove {who} from the bridge?",
     set_bridge_root: "Bridge topic root", set_bridge_root_hint: "The MQTT root rustuya-bridge uses (its mqtt_root_topic).",
-    set_il_prefix: "IL topic prefix", set_il_prefix_hint: "Where the IL devices are published; ildevice-homeassistant reads il by default.",
-    set_il_source: "IL source name", set_il_source_hint: "This producer's name on IL (one topic level).",
     set_devices_path: "Device file", set_devices_path_hint: "The tuyadevices.json rustuya-manager keeps; relative to the config directory.",
     set_bridge_state_file: "Bridge state file", set_bridge_state_file_hint: "Where the embedded bridge keeps its device registry.",
     set_bridge_log_level: "Bridge log level", set_bridge_log_level_hint: "error, warn, info or debug.",
@@ -191,7 +189,7 @@ const I18N = {
     options_unreadable: "Cannot read the options: {error}", nothing_changed: "Nothing changed",
     saving_restarting: "Saving; Rustuya is restarting…", not_saved: "Not saved: {error}",
     settings_title: "Settings",
-    settings_intro: "Set up with their defaults. Saving restarts the integration; moving the IL prefix or source clears what the old one left on the broker, so IL consumers drop those devices and see them again under the new one.",
+    settings_intro: "Set up with their defaults. Saving restarts the integration.",
     settings_unreadable: "Cannot read the settings: {error}", confirm_settings: "Save {names} and restart Rustuya?",
     sync_now: "Update builtin rules", hide_title: "Remove this panel from the sidebar; the integration's Configure adds it back",
     hide: "Hide panel", pack_title: "Builtin rules",
@@ -247,8 +245,6 @@ const I18N = {
     act_add: "추가", act_update: "갱신", act_remove: "삭제",
     confirm_remove_device: "{who}을(를) 브리지에서 삭제할까요?",
     set_bridge_root: "브리지 토픽 root", set_bridge_root_hint: "rustuya-bridge가 쓰는 MQTT root(mqtt_root_topic).",
-    set_il_prefix: "IL 토픽 prefix", set_il_prefix_hint: "IL 기기를 게시하는 곳. ildevice-homeassistant는 기본으로 il을 읽습니다.",
-    set_il_source: "IL source 이름", set_il_source_hint: "IL에서 이 생산자의 이름(토픽 한 단계).",
     set_devices_path: "기기 파일", set_devices_path_hint: "rustuya-manager가 관리하는 tuyadevices.json. config 디렉터리 기준 상대 경로.",
     set_bridge_state_file: "브리지 상태 파일", set_bridge_state_file_hint: "내장 브리지가 기기 목록을 저장하는 곳.",
     set_bridge_log_level: "브리지 로그 레벨", set_bridge_log_level_hint: "error, warn, info, debug 중 하나.",
@@ -262,7 +258,7 @@ const I18N = {
     options_unreadable: "옵션을 읽을 수 없습니다: {error}", nothing_changed: "바뀐 것이 없습니다",
     saving_restarting: "저장하는 중. Rustuya를 재시작합니다…", not_saved: "저장하지 못했습니다: {error}",
     settings_title: "설정",
-    settings_intro: "설정 과정에서 기본값으로 정해진 값들입니다. 저장하면 통합구성요소가 재시작됩니다. IL prefix나 source를 옮기면 예전 값으로 브로커에 남은 것을 지워서, IL 소비자가 그 기기를 지우고 새 값으로 다시 보게 됩니다.",
+    settings_intro: "설정 과정에서 기본값으로 정해진 값들입니다. 저장하면 통합구성요소가 재시작됩니다.",
     settings_unreadable: "설정을 읽을 수 없습니다: {error}", confirm_settings: "{names}을(를) 저장하고 Rustuya를 재시작할까요?",
     sync_now: "Builtin 규칙 업데이트", hide_title: "사이드바에서 이 패널을 없앱니다. 통합구성요소의 구성(Configure)에서 다시 추가할 수 있습니다",
     hide: "패널 숨기기", pack_title: "Builtin 규칙",
@@ -852,7 +848,7 @@ class OptionsSection extends SavedSection {
 }
 
 // what setup leaves at its defaults (SettingsView); label and hint: t(`set_${key}`), t(`set_${key}_hint`)
-const SETTINGS = ["bridge_root", "il_prefix", "il_source", "devices_path", "bridge_state_file", "bridge_log_level"];
+const SETTINGS = ["bridge_root", "devices_path", "bridge_state_file", "bridge_log_level"];
 
 class SettingsSection extends SavedSection {
   constructor(panel) {

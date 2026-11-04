@@ -31,7 +31,11 @@ _found: dict[str, bool] = {}
 
 def _import_runtime() -> dict[str, bool]:
     """Load host modules in Home Assistant's import executor; Service loads native code and rules off the loop, and
-    rustuya_manager pulls in pyrustuyabridge, tuyawizard and qrcode. Which of the `OPTIONAL` packages imported."""
+    rustuya_manager pulls in pyrustuyabridge, tuyawizard and qrcode; the ildevice hub imports its entity classes, and
+    with them Home Assistant's platforms, when the first device arrives. Which of the `OPTIONAL` packages imported."""
+    import ildevice_ha.attach
+    import ildevice_ha.entity  # noqa: F401
+
     import rustuya_local.host
     import rustuya_local.service  # noqa: F401
 

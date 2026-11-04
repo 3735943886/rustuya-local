@@ -18,6 +18,7 @@ CONF_BRIDGE_ROOT = "bridge_root"
 CONF_BRIDGE_STATE_FILE = "bridge_state_file"    # embedded only
 CONF_BRIDGE_LOG_LEVEL = "bridge_log_level"      # embedded only
 
+# Only in entries from before the embedded hub: where they left IL on the broker, cleared when the entry is deleted.
 CONF_IL_PREFIX = "il_prefix"
 CONF_IL_SOURCE = "il_source"
 
@@ -36,8 +37,8 @@ DEFAULT_OPTIONS = {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_
 DEFAULT_BROKER_HOST = "localhost"
 DEFAULT_BROKER_PORT = 1883
 DEFAULT_BRIDGE_ROOT = "rustuya"
-DEFAULT_IL_PREFIX = "il"
-DEFAULT_IL_SOURCE = "tuya"
+IL_PREFIX = "il"                            # on the in-process transport, where nothing else shares them
+IL_SOURCE = "tuya"
 BRIDGE_LOG_LEVELS = ("error", "warn", "info", "debug")
 DEFAULT_BRIDGE_LOG_LEVEL = "warn"
 STORAGE_DIR = ".storage/rustuya"            # not user-facing config: our own subdirectory of HA's storage area, so
@@ -48,3 +49,25 @@ CREDS_FILE = "tuyacreds.json"               # rustuya-manager keeps the Tuya log
 LEGACY_DEVICES_FILE = ".storage/rustuya_tuyadevices.json"          # the defaults before entry version 1.2
 LEGACY_BRIDGE_STATE_FILE = ".storage/rustuya_bridge_state.json"
 CONVERTERS_DIR = "rustuya_converters"       # <config>/rustuya_converters: user rule files (overrides, declarative converters), followed live
+
+PLATFORMS = [
+    "alarm_control_panel",
+    "binary_sensor",
+    "button",
+    "climate",
+    "cover",
+    "event",
+    "fan",
+    "humidifier",
+    "light",
+    "lock",
+    "number",
+    "select",
+    "sensor",
+    "siren",
+    "switch",
+    "text",
+    "vacuum",
+    "valve",
+]
+"""ildevice's platforms (`ildevice_ha.const.PLATFORMS`); each needs a module here."""

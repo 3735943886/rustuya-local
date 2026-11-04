@@ -2,7 +2,7 @@
 through rustuya-manager's `Manager` — the Tuya Cloud QR login wizard and registering devices on the bridge
 (`architecture_device_management_via_manager`: this flow drives `Manager`, never rolls its own bridge protocol).
 
-Setup asks only for the bridge mode, the broker and the IL prefix, then offers the (optional) cloud login; closing the
+Setup asks only for the bridge mode and the broker, then offers the (optional) cloud login; closing the
 window anywhere in the login finishes the setup without it (`async_remove`). Everything else starts at its default —
 the bridge topic root, the IL source, the device file, the embedded bridge's state file and log level — and is changed
 later in the panel's Settings card. The one exception: an external bridge the check does not find on the default root
@@ -36,8 +36,6 @@ from .const import (
     CONF_BROKER_PORT,
     CONF_BROKER_USERNAME,
     CONF_DEVICES_PATH,
-    CONF_IL_PREFIX,
-    CONF_IL_SOURCE,
     CONF_PANEL,
     DEFAULT_BRIDGE_LOG_LEVEL,
     DEFAULT_BRIDGE_ROOT,
@@ -45,8 +43,6 @@ from .const import (
     DEFAULT_BROKER_HOST,
     DEFAULT_BROKER_PORT,
     DEFAULT_DEVICES_FILE,
-    DEFAULT_IL_PREFIX,
-    DEFAULT_IL_SOURCE,
     DEFAULT_OPTIONS,
     DOMAIN,
 )
@@ -72,7 +68,6 @@ def _broker_schema(defaults: dict[str, Any] | None = None, *, root: bool = False
         vol.Required(CONF_BROKER_PORT, default=d.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT)): int,
         vol.Optional(CONF_BROKER_USERNAME, default=d.get(CONF_BROKER_USERNAME, "")): str,
         vol.Optional(CONF_BROKER_PASSWORD, default=d.get(CONF_BROKER_PASSWORD, "")): str,
-        vol.Required(CONF_IL_PREFIX, default=d.get(CONF_IL_PREFIX, DEFAULT_IL_PREFIX)): str,
     }
     if root:
         fields[vol.Required(CONF_BRIDGE_ROOT, default=d.get(CONF_BRIDGE_ROOT, DEFAULT_BRIDGE_ROOT))] = str
@@ -221,8 +216,7 @@ class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN)
     def _defaults(self, mode: str) -> dict[str, Any]:
         """What setup no longer asks: each at its default, changed later in the panel's Settings card."""
         data = {CONF_BRIDGE_MODE: mode, CONF_BRIDGE_ROOT: DEFAULT_BRIDGE_ROOT,
-                CONF_DEVICES_PATH: self.hass.config.path(DEFAULT_DEVICES_FILE),
-                CONF_IL_PREFIX: DEFAULT_IL_PREFIX, CONF_IL_SOURCE: DEFAULT_IL_SOURCE}
+                CONF_DEVICES_PATH: self.hass.config.path(DEFAULT_DEVICES_FILE)}
         if mode == BRIDGE_EMBEDDED:
             data.update({CONF_BRIDGE_STATE_FILE: self.hass.config.path(DEFAULT_BRIDGE_STATE_FILE),
                          CONF_BRIDGE_LOG_LEVEL: DEFAULT_BRIDGE_LOG_LEVEL})
@@ -232,19 +226,14 @@ class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN)
         errors: dict[str, str] = {}
         ask_root = False
         if user_input is not None:
-            user_input = {**user_input, CONF_IL_PREFIX: user_input[CONF_IL_PREFIX].strip()}
-            if not broker.topic_ok(user_input[CONF_IL_PREFIX]):
-                errors[CONF_IL_PREFIX] = "invalid_prefix"
-                ask_root = CONF_BRIDGE_ROOT in user_input
-            else:
-                data = {**self._defaults(BRIDGE_EXTERNAL), **user_input}
-                error = await _probe_bridge(self.hass, data)
-                if error is None:
-                    self._data.update(data)
-                    return await self.async_step_onboard()
-                errors["base"] = error
-                # not on the default root: it may run on another one, so the form asks for it from now on
-                ask_root = error == "bridge_not_found" or CONF_BRIDGE_ROOT in user_input
+            data = {**self._defaults(BRIDGE_EXTERNAL), **user_input}
+            error = await _probe_bridge(self.hass, data)
+            if error is None:
+                self._data.update(data)
+                return await self.async_step_onboard()
+            errors["base"] = error
+            # not on the default root: it may run on another one, so the form asks for it from now on
+            ask_root = error == "bridge_not_found" or CONF_BRIDGE_ROOT in user_input
         # what was typed stays on the form after an error, rather than falling back to the defaults
         return self.async_show_form(step_id="external", data_schema=_broker_schema(user_input, root=ask_root),
                                     errors=errors)
@@ -252,10 +241,7 @@ class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN)
     async def async_step_embedded(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            user_input = {**user_input, CONF_IL_PREFIX: user_input[CONF_IL_PREFIX].strip()}
-            if not broker.topic_ok(user_input[CONF_IL_PREFIX]):
-                errors[CONF_IL_PREFIX] = "invalid_prefix"
-            elif not await broker.importable(self.hass, "pyrustuyabridge"):
+            if not await broker.importable(self.hass, "pyrustuyabridge"):
                 errors["base"] = "pyrustuyabridge_missing"
             else:
                 self._data.update({**self._defaults(BRIDGE_EMBEDDED), **user_input})

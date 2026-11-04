@@ -4,6 +4,15 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
+- Create the Home Assistant entities in the integration itself, with the ildevice hub embedded on an in-process
+  transport. The IL device integration is no longer needed, and the integration publishes no IL on the broker; the
+  bridge still needs one. **Existing entities are not taken over**: see *Upgrading from a version before 0.2* in the
+  README.
+- Remove the IL prefix and source settings from setup and the panel.
+- Keep the last values across Home Assistant restarts in the integration's own storage.
+- An options change restarts the service only, keeping the entities.
+- Allow deleting a Home Assistant device nothing drives any more; one the bridge still holds is refused with a reason.
+
 ## [0.1.3]
 
 - Load rustuya-manager and pyrustuyabridge in Home Assistant's import executor, once, instead of importing them on

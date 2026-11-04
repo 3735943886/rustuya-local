@@ -37,8 +37,6 @@ from .const import (
     CONF_BRIDGE_ROOT,
     CONF_BRIDGE_STATE_FILE,
     CONF_DEVICES_PATH,
-    CONF_IL_PREFIX,
-    CONF_IL_SOURCE,
     CONF_PACK,
     CONF_PANEL,
     CONVERTERS_DIR,
@@ -235,7 +233,7 @@ class OptionsView(_View):
 
 def settings_of(data: Any) -> dict[str, Any]:
     """The entry's settings the panel edits (setup leaves them at their defaults); the embedded bridge's only with it."""
-    keys = [CONF_BRIDGE_ROOT, CONF_IL_PREFIX, CONF_IL_SOURCE, CONF_DEVICES_PATH]
+    keys = [CONF_BRIDGE_ROOT, CONF_DEVICES_PATH]
     if data.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED:
         keys += [CONF_BRIDGE_STATE_FILE, CONF_BRIDGE_LOG_LEVEL]
     return {k: data.get(k) for k in keys}
@@ -250,11 +248,8 @@ def validate_settings(hass: HomeAssistant, data: Any, body: Any) -> dict[str, An
     for key, value in new.items():
         if not isinstance(value, str) or not value.strip() or value != value.strip():
             raise ValueError(f"{key} is a non-empty text without surrounding spaces")
-    for key in (CONF_BRIDGE_ROOT, CONF_IL_PREFIX, CONF_IL_SOURCE):
-        if not broker.topic_ok(new[key]):
-            raise ValueError(f"{key} is an MQTT topic without wildcards or empty levels")
-    if "/" in new[CONF_IL_SOURCE] or new[CONF_IL_SOURCE].startswith("_"):
-        raise ValueError(f"{CONF_IL_SOURCE} is one topic level, not starting with _")
+    if not broker.topic_ok(new[CONF_BRIDGE_ROOT]):
+        raise ValueError(f"{CONF_BRIDGE_ROOT} is an MQTT topic without wildcards or empty levels")
     for key in (CONF_DEVICES_PATH, CONF_BRIDGE_STATE_FILE):
         if key in new:
             new[key] = hass.config.path(new[key])       # relative to the config directory; an absolute path as is
@@ -264,8 +259,7 @@ def validate_settings(hass: HomeAssistant, data: Any, body: Any) -> dict[str, An
 
 
 class SettingsView(_View):
-    """GET / PUT the settings setup leaves at their defaults: the bridge topic root, the IL prefix and source, the
-    device file, the embedded bridge's state file and log level. A change restarts the integration (`_apply`); a new
+    """GET / PUT the settings setup leaves at their defaults: the bridge topic root, the device file, the embedded bridge's state file and log level. A change restarts the integration (`_apply`); a new
     root for an external bridge is checked first, as setup does."""
 
     allow_unloaded = True
@@ -307,15 +301,14 @@ def _settings_lock(hass: HomeAssistant) -> asyncio.Lock:
 
 
 async def _apply(hass: HomeAssistant, entry: Any, old: dict[str, Any], data: dict[str, Any]) -> None:
-    """Stop, clear what the old IL prefix / source (and an embedded bridge's old root) left retained, which would
-    otherwise stay on the broker, then start with the new settings."""
+    """Stop, clear what an embedded bridge's old root left retained, which would otherwise stay on the broker, then
+    start with the new settings."""
     from . import async_clear_retained
 
-    il_moved = (old.get(CONF_IL_PREFIX), old.get(CONF_IL_SOURCE)) != (data[CONF_IL_PREFIX], data[CONF_IL_SOURCE])
     bridge_moved = old.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED and old[CONF_BRIDGE_ROOT] != data[CONF_BRIDGE_ROOT]
     async def clear() -> None:
-        if il_moved or bridge_moved:
-            await async_clear_retained(hass, old, il=il_moved, bridge=bridge_moved)
+        if bridge_moved:
+            await async_clear_retained(hass, old, il=False, bridge=True)
 
     await _restart(hass, entry, data=data, between=clear)
 
@@ -328,14 +321,13 @@ async def _restart(hass: HomeAssistant, entry: Any, *, data: dict[str, Any] | No
                    options: dict[str, Any] | None = None, between: Callable[[], Any] | None = None) -> None:
     """Stop the entry, run `between`, store the new data / options, start it again — all awaited, so the panel's save
     answers once the restart is over (the page then reloads onto the restarted entry, not onto one about to go).
-    Stopped, the entry has no update listener, so storing does not start a second reload. An options-only restart
-    keeps the IL presence online across it (`mark_restart`); new data may move the broker or the IL topics.
+    Stopped, the entry has no update listener, so storing does not start a second reload. A running entry's options
+    change restarts the service alone, which keeps the entities (`_restart_service`); new data may move the broker.
     The request handler holds `_settings_lock` from reading the current entry through this restart."""
     old_data, old_options = dict(entry.data), dict(entry.options)
-    if data is None:
-        from . import mark_restart
-
-        mark_restart(hass, entry)
+    if data is None and entry.entry_id in hass.data.get(DOMAIN, {}):
+        await _restart_service(hass, entry, options)
+        return
     if not await hass.config_entries.async_unload(entry.entry_id):
         raise RestartFailed("Could not stop the integration; settings were not changed")
     try:
@@ -356,6 +348,28 @@ async def _restart(hass: HomeAssistant, entry: Any, *, data: dict[str, Any] | No
             restored = False
         suffix = "Previous settings restored" if restored else "Previous settings restored, but startup still fails"
         raise RestartFailed(f"{e}. {suffix}; settings remain editable") from e
+
+
+async def _restart_service(hass: HomeAssistant, entry: Any, options: dict[str, Any]) -> None:
+    """Store the new options and start the service over; the previous options again if it cannot start."""
+    from . import async_restart_service
+
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    old_options = dict(entry.options)
+    runtime.options = dict(options)                     # the update listener then has no restart of its own to do
+    hass.config_entries.async_update_entry(entry, options=options)
+    try:
+        await async_restart_service(hass, entry)
+    except Exception as e:
+        runtime.options = old_options
+        hass.config_entries.async_update_entry(entry, options=old_options)
+        try:
+            await async_restart_service(hass, entry)
+            suffix = "Previous settings restored"
+        except Exception:  # noqa: BLE001 -- keep the recovery API usable even if rollback startup fails
+            hass.config_entries.async_schedule_reload(entry.entry_id)
+            suffix = "Previous settings restored, but startup still fails"
+        raise RestartFailed(f"The integration could not start with these settings: {e}. {suffix}") from e
 
 
 class PackView(_View):

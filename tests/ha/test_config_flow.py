@@ -15,7 +15,6 @@ from custom_components.rustuya.const import (
     CONF_BRIDGE_ROOT,
     CONF_DEVICES_PATH,
     CONF_EXPOSE_UNUSED,
-    CONF_IL_PREFIX,
     CONF_PACK,
     CONF_PANEL,
     DOMAIN,
@@ -82,13 +81,11 @@ async def test_the_user_menu_offers_external_and_embedded(hass):
     assert result["type"] == "menu" and set(result["menu_options"]) == {"external", "embedded"}
 
 
-BROKER = {"broker_host": "h", "broker_port": 1883, "broker_username": "", "broker_password": "", "il_prefix": "home/il"}
+BROKER = {"broker_host": "h", "broker_port": 1883, "broker_username": "", "broker_password": ""}
 
 
 @pytest.mark.parametrize("manager_installed", [True, False])
 async def test_setup_asks_only_for_the_broker_and_uses_the_defaults(hass, manager_installed):
-    from custom_components.rustuya.const import CONF_IL_SOURCE
-
     with patch("custom_components.rustuya.manager_session.available", return_value=manager_installed):
         result = await _start(hass)
         r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
@@ -99,8 +96,7 @@ async def test_setup_asks_only_for_the_broker_and_uses_the_defaults(hass, manage
             r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "finish"})
     assert r["type"] == "create_entry"
     assert r["data"] == {**BROKER, CONF_BRIDGE_MODE: "external", CONF_BRIDGE_ROOT: "rustuya",
-                         CONF_DEVICES_PATH: hass.config.path(".storage/rustuya/tuyadevices.json"),
-                         CONF_IL_PREFIX: "home/il", CONF_IL_SOURCE: "tuya"}
+                         CONF_DEVICES_PATH: hass.config.path(".storage/rustuya/tuyadevices.json")}
     assert r["options"] == {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True}
 
 
@@ -123,8 +119,7 @@ async def test_embedded_setup_asks_only_for_the_broker(hass, monkeypatch):
 
 
 async def test_an_unreachable_broker_keeps_the_form_open(hass):
-    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p",
-             "il_prefix": "il"}
+    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p"}
     result = await _start(hass)
     r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
     with patch("custom_components.rustuya.config_flow._probe_bridge", return_value="cannot_connect"):
@@ -134,8 +129,7 @@ async def test_an_unreachable_broker_keeps_the_form_open(hass):
 
 
 async def test_a_bridge_not_on_the_default_root_asks_for_its_root(hass):
-    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p",
-             "il_prefix": "il"}
+    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p"}
     result = await _start(hass)
     r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
     with patch("custom_components.rustuya.config_flow._probe_bridge", return_value="bridge_not_found") as probe:
@@ -148,16 +142,6 @@ async def test_a_bridge_not_on_the_default_root_asks_for_its_root(hass):
         r = await hass.config_entries.flow.async_configure(r["flow_id"], {**typed, CONF_BRIDGE_ROOT: "rb"})
     assert probe.call_args.args[1][CONF_BRIDGE_ROOT] == "rb"
     assert r["type"] == "create_entry" and r["data"][CONF_BRIDGE_ROOT] == "rb"
-
-
-@pytest.mark.parametrize("mode", ["external", "embedded"])
-@pytest.mark.parametrize("prefix", ["il/#", "a//b", "+", " "])
-async def test_an_il_prefix_that_is_no_topic_is_refused(hass, mode, prefix):
-    result = await _start(hass)
-    r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": mode})
-    with patch("custom_components.rustuya.config_flow._probe_bridge", return_value=None) as probe:
-        r = await hass.config_entries.flow.async_configure(r["flow_id"], {**BROKER, "il_prefix": prefix})
-    assert r["type"] == "form" and r["errors"] == {"il_prefix": "invalid_prefix"} and not probe.called
 
 
 async def _to_login(hass, monkeypatch, manager):
@@ -176,7 +160,7 @@ async def test_closing_the_login_window_finishes_the_setup_without_it(hass, monk
     hass.config_entries.flow.async_abort(r["flow_id"])             # what closing the window does
     await hass.async_block_till_done()
     entry, = hass.config_entries.async_entries(DOMAIN)
-    assert entry.data[CONF_IL_PREFIX] == "home/il" and entry.data[CONF_BRIDGE_MODE] == "external"
+    assert entry.data[CONF_BRIDGE_MODE] == "external"
     assert entry.options == {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True}
     assert manager.closed
 
@@ -292,7 +276,7 @@ def _entry(hass, tmp_path):
     entry = MockConfigEntry(domain=DOMAIN, data={
         CONF_BRIDGE_MODE: "external", "broker_host": "h", "broker_port": 1883,
         "broker_username": "", "broker_password": "", CONF_BRIDGE_ROOT: "rustuya",
-        CONF_DEVICES_PATH: str(tmp_path / "tuyadevices.json"), CONF_IL_PREFIX: "il", "il_source": "tuya",
+        CONF_DEVICES_PATH: str(tmp_path / "tuyadevices.json"),
     }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
     entry.add_to_hass(hass)
     return entry

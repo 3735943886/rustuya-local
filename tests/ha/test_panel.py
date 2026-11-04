@@ -51,6 +51,10 @@ class FakeHub:
 class FakeRuntime:
     service: FakeService
     embedded_bridge: Any = None
+    options: dict[str, Any] | None = None
+    hub: Any = field(default_factory=AsyncMock)
+    retained: Any = field(default_factory=AsyncMock)
+    service_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 @pytest.fixture
@@ -64,6 +68,7 @@ async def loaded(hass, tmp_path, monkeypatch):
         return None
 
     monkeypatch.setattr(integration, "async_remove_entry", no_cleanup)
+    monkeypatch.setattr(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True))   # none forwarded
     hass.config.config_dir = str(tmp_path)
     assert await async_setup_component(hass, "http", {})
 
@@ -310,13 +315,12 @@ async def test_live_links_refuse_when_off_or_unreachable(hass, loaded, hass_ws_c
 
 async def test_settings_show_what_setup_left_at_its_defaults(hass, loaded, hass_client):
     entry, _ = await loaded({CONF_PANEL: True})
-    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external", "il_prefix": "il",
-                                                        "il_source": "tuya"})
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external"})
     c = await hass_client()
     r = await c.get("/api/rustuya/settings")
     assert r.status == 200
     assert await r.json() == {"mode": "external", "settings": {
-        "bridge_root": "rustuya", "il_prefix": "il", "il_source": "tuya", "devices_path": entry.data["devices_path"]},
+        "bridge_root": "rustuya", "devices_path": entry.data["devices_path"]},
         "log_levels": ["error", "warn", "info", "debug"]}
     hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "embedded",
                                                         "bridge_state_file": "/s.json", "bridge_log_level": "warn"})
@@ -325,13 +329,12 @@ async def test_settings_show_what_setup_left_at_its_defaults(hass, loaded, hass_
 
 
 @pytest.mark.parametrize("body", [
-    {"il_prefix": "il/#"}, {"il_prefix": ""}, {"il_prefix": "a//b"}, {"il_source": "a/b"}, {"il_source": "_x"},
+    {"bridge_root": "il/#"}, {"bridge_root": ""}, {"bridge_root": "a//b"}, {"il_prefix": "il"}, {"il_source": "tuya"},
     {"bridge_root": " rustuya"}, {"bridge_log_level": "warn"}, {"broker_host": "x"}, ["il"],
 ])
 async def test_settings_refuse_what_cannot_work(hass, loaded, hass_client, monkeypatch, body):
     entry, _ = await loaded({CONF_PANEL: True})
-    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external", "il_prefix": "il",
-                                                        "il_source": "tuya"})
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external"})
     applied = []
     monkeypatch.setattr(panel, "_apply", lambda *a: applied.append(a))
     c = await hass_client()
@@ -341,8 +344,7 @@ async def test_settings_refuse_what_cannot_work(hass, loaded, hass_client, monke
 
 async def test_a_settings_change_restarts_with_the_new_ones(hass, loaded, hass_client, monkeypatch):
     entry, _ = await loaded({CONF_PANEL: True})
-    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external", "il_prefix": "il",
-                                                        "il_source": "tuya"})
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external"})
     applied = []
 
     async def fake_apply(_hass, e, old, data):
@@ -350,21 +352,20 @@ async def test_a_settings_change_restarts_with_the_new_ones(hass, loaded, hass_c
 
     monkeypatch.setattr(panel, "_apply", fake_apply)
     c = await hass_client()
-    r = await c.put("/api/rustuya/settings", json={"il_prefix": "il"})               # the same: nothing to do
+    r = await c.put("/api/rustuya/settings", json={"bridge_root": "rustuya"})      # the same: nothing to do
     assert await r.json() == {"restarting": False}
-    r = await c.put("/api/rustuya/settings", json={"il_prefix": "home/il", "devices_path": "my/tuyadevices.json"})
+    r = await c.put("/api/rustuya/settings", json={"devices_path": "my/tuyadevices.json"})
     assert await r.json() == {"restarting": True}
     await hass.async_block_till_done()
     (e, old, data), = applied
-    assert e is entry and old["il_prefix"] == "il"
-    assert data["il_prefix"] == "home/il" and data["devices_path"] == hass.config.path("my/tuyadevices.json")
+    assert e is entry and old["devices_path"] == entry.data["devices_path"]
+    assert data["devices_path"] == hass.config.path("my/tuyadevices.json")
     assert data["broker_host"] == "h"                                                # the rest kept
 
 
 async def test_a_new_root_for_an_external_bridge_is_checked(hass, loaded, hass_client, monkeypatch):
     entry, _ = await loaded({CONF_PANEL: True})
-    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external", "il_prefix": "il",
-                                                        "il_source": "tuya"})
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external"})
     applied = []
     monkeypatch.setattr(panel, "_apply", lambda *a: applied.append(a))
     from custom_components.rustuya import config_flow
@@ -380,7 +381,6 @@ async def test_a_new_root_for_an_external_bridge_is_checked(hass, loaded, hass_c
 
 
 @pytest.mark.parametrize(("mode", "change", "cleared"), [
-    ("external", {"il_prefix": "home/il"}, {"il": True, "bridge": False}),
     ("external", {"bridge_root": "rb"}, None),                          # an external bridge's topics are not ours
     ("embedded", {"bridge_root": "rb"}, {"il": False, "bridge": True}),
     ("embedded", {"devices_path": "/d.json"}, None),
@@ -388,7 +388,7 @@ async def test_a_new_root_for_an_external_bridge_is_checked(hass, loaded, hass_c
 async def test_apply_clears_the_old_topics_between_stop_and_start(hass, monkeypatch, mode, change, cleared):
     import custom_components.rustuya as integration
 
-    old = {"bridge_mode": mode, "bridge_root": "rustuya", "il_prefix": "il", "il_source": "tuya",
+    old = {"bridge_mode": mode, "bridge_root": "rustuya",
            "devices_path": "/t.json", "broker_host": "h", "broker_port": 1883}
     entry = MockConfigEntry(domain=DOMAIN, data=old)
     entry.add_to_hass(hass)
@@ -545,23 +545,23 @@ async def test_a_panel_only_change_adds_or_removes_it_without_a_restart(hass, mo
     entry.add_to_hass(hass)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = integration.RuntimeData(
         service=FakeService(), embedded_bridge=None, options=dict(entry.options))
-    panel_calls, reloads = [], []
+    panel_calls, restarts = [], []
 
     async def panel_setup(_hass, e):
         panel_calls.append(e.options.get(CONF_PANEL))
 
     monkeypatch.setattr(panel, "async_setup", panel_setup)
-    monkeypatch.setattr(hass.config_entries, "async_reload", lambda entry_id: reloads.append(entry_id) or _done())
+
+    async def restart(_hass, e):
+        restarts.append(e.entry_id)
+
+    monkeypatch.setattr(integration, "async_restart_service", restart)
     hass.config_entries.async_update_entry(entry, options={CONF_PANEL: True, CONF_PACK: True})
     await integration._async_reload(hass, entry)
-    assert panel_calls == [True] and reloads == []
+    assert panel_calls == [True] and restarts == []
     hass.config_entries.async_update_entry(entry, options={CONF_PANEL: True, CONF_PACK: False})
     await integration._async_reload(hass, entry)
-    assert reloads == [entry.entry_id]
-
-
-async def _done():
-    return True
+    assert restarts == [entry.entry_id]
 
 
 @pytest.mark.parametrize(("disabled", "kept"), [(False, True), (True, False)])
@@ -578,15 +578,41 @@ async def test_a_reload_keeps_the_panel_and_disabling_removes_it(hass, loaded, d
     assert (panel.PANEL_URL in hass.data.get(frontend.DATA_PANELS, {})) is kept
 
 
+async def test_an_options_save_restarts_the_service_alone_and_rolls_back(hass, loaded, monkeypatch):
+    import custom_components.rustuya as integration
+
+    entry, _ = await loaded({CONF_PANEL: True, CONF_PACK: True})
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    seen = []
+
+    async def restart(_hass, e):
+        seen.append(e.options[CONF_PACK])
+
+    monkeypatch.setattr(integration, "async_restart_service", restart)
+    unload = hass.config_entries.async_unload
+    monkeypatch.setattr(hass.config_entries, "async_unload", AsyncMock(side_effect=AssertionError("no full restart")))
+    await panel._restart(hass, entry, options={CONF_PANEL: True, CONF_PACK: False})
+    monkeypatch.setattr(hass.config_entries, "async_unload", unload)
+    assert seen == [False] and entry.options[CONF_PACK] is False and runtime.options[CONF_PACK] is False
+
+    async def fails_with_the_new(_hass, e):
+        seen.append(e.options[CONF_PACK])
+        if e.options[CONF_PACK]:
+            raise RuntimeError("no")
+
+    monkeypatch.setattr(integration, "async_restart_service", fails_with_the_new)
+    seen.clear()
+    with pytest.raises(panel.RestartFailed, match="Previous settings restored"):
+        await panel._restart(hass, entry, options={CONF_PANEL: True, CONF_PACK: True})
+    assert seen == [True, False] and entry.options[CONF_PACK] is False and runtime.options[CONF_PACK] is False
+
+
 @pytest.mark.parametrize("cancelled", [False, True])
 async def test_unload_stops_the_embedded_bridge_even_when_service_stop_fails(hass, loaded, cancelled):
-    from unittest.mock import AsyncMock
-
     import custom_components.rustuya as integration
 
     entry, service = await loaded({CONF_PANEL: True})
     runtime = hass.data[DOMAIN][entry.entry_id]
-    runtime.restarting = True
     error = asyncio.CancelledError() if cancelled else RuntimeError("command drain failed")
     service.stop = AsyncMock(side_effect=error)
 
@@ -600,17 +626,17 @@ async def test_unload_stops_the_embedded_bridge_even_when_service_stop_fails(has
         await integration.async_unload_entry(hass, entry)
     bridge.stop.assert_awaited_once()
     assert entry.entry_id not in hass.data[DOMAIN]
-    assert integration.RESUME not in hass.data
 
 
 @pytest.mark.parametrize("endpoint, first, second", [
     ("options", {"pack": False}, {"expose_unused": True}),
-    ("settings", {"il_prefix": "home/il"}, {"il_source": "second"}),
+    ("settings", {"devices_path": "/first.json"}, {"bridge_log_level": "debug"}),
 ])
 async def test_concurrent_partial_saves_keep_both_changes(hass, loaded, hass_client, monkeypatch,
                                                        endpoint, first, second):
     entry, _ = await loaded({CONF_PANEL: True, CONF_PACK: True})
-    hass.config_entries.async_update_entry(entry, data={**entry.data, "il_prefix": "il", "il_source": "tuya"})
+    hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "embedded",
+                                                        "bridge_state_file": "/s.json", "bridge_log_level": "warn"})
     client = await hass_client()
     saving, release, parsed_second = asyncio.Event(), asyncio.Event(), asyncio.Event()
     original_body = panel._json_body
@@ -743,8 +769,6 @@ async def test_edit_rejects_invalid_device(hass, loaded, hass_client, monkeypatc
 
 
 async def test_failed_restart_restores_previous_settings(hass, monkeypatch):
-    from unittest.mock import AsyncMock
-
     entry = MockConfigEntry(domain=DOMAIN, data={"devices_path": "good.json"}, options={CONF_PANEL: True})
     entry.add_to_hass(hass)
     monkeypatch.setattr(hass.config_entries, "async_unload", AsyncMock(return_value=True))
@@ -757,14 +781,11 @@ async def test_failed_restart_restores_previous_settings(hass, monkeypatch):
 
 
 async def test_settings_remain_editable_after_startup_failure(hass, loaded, hass_client, monkeypatch):
-    from unittest.mock import AsyncMock
-
     entry, _ = await loaded({CONF_PANEL: True})
     entry.mock_state(hass, ConfigEntryState.SETUP_ERROR)
     hass.data[DOMAIN].pop(entry.entry_id)
     apply = AsyncMock()
     monkeypatch.setattr(panel, "_apply", apply)
-    hass.config_entries.async_update_entry(entry, data={**entry.data, "il_prefix": "il", "il_source": "tuya"})
     client = await hass_client()
     assert (await client.get("/api/rustuya/settings")).status == 200
     response = await client.put("/api/rustuya/settings", json={"devices_path": "fixed.json"})
@@ -773,8 +794,6 @@ async def test_settings_remain_editable_after_startup_failure(hass, loaded, hass
 
 
 async def test_registration_waits_for_registry_refresh_before_closing(hass, loaded, hass_client, monkeypatch):
-    from unittest.mock import AsyncMock
-
     from fake_manager import FakeManager, install
 
     manager = FakeManager(sync_result=_diff())

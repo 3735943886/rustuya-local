@@ -6,12 +6,12 @@ Local control of Tuya devices in Home Assistant, with no cloud round trip for st
 
 Rustuya talks to your devices over the LAN through [rustuya-bridge](https://github.com/3735943886/rustuya-bridge),
 interprets them the way Home Assistant's own `tuya` integration does (via
-[tuya-interpreter](https://github.com/3735943886/tuya-interpreter)), and publishes them over MQTT as
-[IL](https://github.com/3735943886/ildevice) devices. The companion integration
-[IL device](https://github.com/3735943886/ildevice-homeassistant) turns them into Home Assistant devices and entities.
+[tuya-interpreter](https://github.com/3735943886/tuya-interpreter)), and creates their Home Assistant devices and
+entities itself, with the [IL device](https://github.com/3735943886/ildevice-homeassistant) hub built in. You do not
+need to install the IL device integration.
 
 ```
-Tuya devices ──LAN──► rustuya-bridge ──MQTT──► Rustuya ──MQTT (il/…)──► IL device ──► Home Assistant entities
+Tuya devices ──LAN──► rustuya-bridge ──MQTT──► Rustuya ──► Home Assistant entities
 ```
 
 Tuya Cloud is only used once, to fetch your device list and local keys (QR code login from the Smart Life / Tuya Smart app).
@@ -19,19 +19,17 @@ Tuya Cloud is only used once, to fetch your device list and local keys (QR code 
 ## Requirements
 
 - Home Assistant **2025.3** or newer.
-- An MQTT broker (for example the **Mosquitto broker** add-on) and Home Assistant's **MQTT** integration connected to it.
-- The **IL device** integration (in HACS), which creates the entities. Rustuya creates no entities itself.
+- An MQTT broker (for example the **Mosquitto broker** add-on), which rustuya-bridge needs. Rustuya connects to it
+  itself; Home Assistant's **MQTT** integration is not required.
 - rustuya-bridge, either one you already run, or the one Rustuya can run inside Home Assistant (amd64 and aarch64).
 
 ## Installation
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=3735943886&repository=rustuya-local&category=integration)
 
-1. In HACS, search for **Rustuya** and download it. Download **IL device** too.
+1. In HACS, search for **Rustuya** and download it.
 2. Restart Home Assistant.
-3. *Settings → Devices & services → Add integration → IL device*, with the topic prefix Rustuya will publish under
-   (see [IL topic prefix](#il-topic-prefix)).
-4. *Add integration → Rustuya* (see below).
+3. *Add integration → Rustuya* (see below).
 
 ## Setup
 
@@ -42,26 +40,8 @@ Setup first asks how to reach rustuya-bridge:
 | **An external rustuya-bridge** | You already run rustuya-bridge (or rustuya-manager). Setup checks that the bridge answers on the broker; if it is not on the default topic root `rustuya`, it asks for that root. |
 | **Run rustuya-bridge inside Home Assistant** | Nothing else is running. Rustuya starts and owns the bridge itself. It still needs the MQTT broker. |
 
-Then enter the broker (host, port, optional username and password) and the IL topic prefix.
+Then enter the broker (host, port, optional username and password).
 
-### IL topic prefix
-
-The default is `il`, which is also IL device's default, and is fine when Rustuya is your only IL producer.
-If you use, or may later add, other IL producers (for example rusthinq), give each its own prefix such as `il/tuya`.
-IL device then gets one entry per prefix, a separate hub with its own devices and options. Use the same prefix in
-Rustuya and in its IL device entry. The prefix can be changed later in the panel's *Settings*.
-
-Next, setup offers to **fetch your devices from Tuya Cloud**:
-
-1. Enter the *user code* from Smart Life → Me → Settings → Account and Security (only needed for the first login).
-2. Scan the QR code with the Smart Life or Tuya Smart app and submit.
-3. Choose which devices to add to, update on, or remove from the bridge. Nothing changes unless you select it.
-
-A saved login is reused next time. You can skip this step by closing the window and run it later from the
-integration's **Configure**.
-
-Only devices registered on the bridge are published. They are then discovered by IL device: add them there
-(or turn on its *Add discovered devices automatically*).
 
 ## The Rustuya panel
 
@@ -78,11 +58,10 @@ Only devices registered on the bridge are published. They are then discovered by
   - automatic builtin rule updates (on by default)
 - **Settings**:
   - bridge topic root
-  - IL prefix and source
   - device file
   - embedded bridge's state file and log level
 
-  Saving restarts the integration. Moving the IL prefix or source first clears what the old one left on the broker.
+  Saving restarts the integration.
 
 *Hide panel* in its toolbar removes it from the sidebar again. The integration and the panel are available in English and Korean.
 
@@ -143,29 +122,44 @@ Locks, alarms and garage doors are refused unless their remote control is allowe
 For a device you no longer have:
 
 1. Remove it from the bridge: in the panel's *Devices*, or under *Configure → Sync devices with the bridge* by
-   selecting it in *Remove from the bridge*. Rustuya then clears it from IL, IL device deletes it from Home Assistant,
+   selecting it in *Remove from the bridge*. Rustuya then deletes it from Home Assistant,
    and the bridge clears its own retained topics. Removing a gateway removes its sub-devices too.
 2. Once it is gone from the Smart Life / Tuya Smart app (delete it there if it is still listed), fetch the device list
    again (*Configure → Fetch devices from Tuya Cloud*), so it no longer shows as *missing*.
 
-Deleting it only in Home Assistant hides it, and leaves it on the bridge and in IL. Fetching the list again after it is
+Home Assistant refuses to delete a device the bridge still holds, since it would come right back. Fetching the list again after it is
 gone from the app takes it out of Home Assistant, but the bridge keeps it, as *bridge only* in the panel, and keeps
 trying to reach it until you remove it from the bridge.
 
+## Upgrading from a version before 0.2
+
+Rustuya used to publish IL over MQTT for the IL device integration. It now creates the entities itself and publishes
+nothing on the broker, and it does not take over the old entities. To move, keeping the same entity IDs (areas, custom
+names and other registry changes are lost):
+
+1. Before updating, disable the Rustuya entry.
+2. Clear what it left on the broker, so IL device deletes those devices. This clears every retained topic under the
+   prefix: if another IL producer shares it, restart that producer afterwards, or clear only the topics of your devices.
+
+   ```sh
+   mosquitto_sub -h <broker> -t 'il/#' --retained-only --remove-retained -W 3
+   ```
+
+3. Update Rustuya, restart Home Assistant and enable the entry. Remove IL device if nothing else uses it.
+
+Done in another order, the old entities keep their IDs and the new ones get a `_2` suffix.
+
 ## Removing
 
-Deleting the integration removes its devices from IL (so IL device removes them from Home Assistant) and deletes the
-device list and Tuya login it kept under `.storage/rustuya/`. With the embedded bridge it also clears that bridge's
+Deleting the integration removes its devices from Home Assistant and deletes the device list and Tuya login it kept under `.storage/rustuya/`. With the embedded bridge it also clears that bridge's
 retained topics and state file. A device file you pointed elsewhere and everything on an external bridge are left alone.
 Then remove Rustuya in HACS and restart.
 
 ## Troubleshooting
 
-- **The integration keeps retrying with "another producer"**: another Rustuya (the standalone daemon or the
-  rustuya-manager plugin) already publishes on the same IL prefix and source. Run only one per bridge: stop the
-  other one, and this one starts on its next retry.
-- **No devices appear**: check the device is registered on the bridge (the panel's *Devices*), that IL device uses the
-  same prefix as Rustuya (see [IL topic prefix](#il-topic-prefix)), and that the device was added in IL device's discovered list.
+- **No devices appear**: check the device is registered on the bridge (the panel's *Devices*) and in the device list.
+- **Commands or values look doubled**: run only one Rustuya per bridge. The integration cannot see a standalone daemon or
+  rustuya-manager plugin on the same bridge, since it no longer shares IL with them over MQTT.
 - **Debug logs**:
 
   ```yaml
