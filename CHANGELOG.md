@@ -6,6 +6,8 @@ Release notes are read by the release workflow before publishing.
 
 - Fix the embedded bridge connecting without a username to a broker that requires one: it passed `mqtt_username`
   where the bridge takes `mqtt_user`, and an unknown option is silently ignored.
+- Load `rustuya_local.validation` and the panel's `rustuya_local.manager_plugin.api` in Home Assistant's import
+  executor as well, and before the setup flow first checks a topic, instead of on the event loop at first use.
 
 ## [0.1.3]
 

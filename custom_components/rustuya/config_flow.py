@@ -233,6 +233,7 @@ class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN)
         ask_root = False
         if user_input is not None:
             user_input = {**user_input, CONF_IL_PREFIX: user_input[CONF_IL_PREFIX].strip()}
+            await broker.import_runtime(self.hass)
             if not broker.topic_ok(user_input[CONF_IL_PREFIX]):
                 errors[CONF_IL_PREFIX] = "invalid_prefix"
                 ask_root = CONF_BRIDGE_ROOT in user_input
@@ -253,6 +254,7 @@ class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN)
         errors: dict[str, str] = {}
         if user_input is not None:
             user_input = {**user_input, CONF_IL_PREFIX: user_input[CONF_IL_PREFIX].strip()}
+            await broker.import_runtime(self.hass)
             if not broker.topic_ok(user_input[CONF_IL_PREFIX]):
                 errors[CONF_IL_PREFIX] = "invalid_prefix"
             elif not await broker.importable(self.hass, "pyrustuyabridge"):
