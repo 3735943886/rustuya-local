@@ -4,7 +4,7 @@ import json
 
 import pytest
 from devices import lamp
-from ildevice.core import IlModel
+from ildevice_ha.core import IlModel
 
 from rustuya_local.bridge_client import BridgeClient
 from rustuya_local.host import Hub, IlTopics, InProcessTransport, Runner
