@@ -4,6 +4,9 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
+- Fix the embedded bridge connecting without a username to a broker that requires one: it passed `mqtt_username`
+  where the bridge takes `mqtt_user`, and an unknown option is silently ignored.
+
 ## [0.1.3]
 
 - Load rustuya-manager and pyrustuyabridge in Home Assistant's import executor, once, instead of importing them on
