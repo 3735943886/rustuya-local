@@ -5,7 +5,7 @@ import json
 
 import pytest
 from devices import lamp
-from ildevice.core import IlModel
+from ildevice_ha.core import IlModel
 from test_chain_in_process import Recorder, Timers
 
 from rustuya_local.bridge_client import BridgeClient

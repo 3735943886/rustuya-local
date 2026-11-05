@@ -36,6 +36,39 @@ async def test_real_embedded_bridge_start_and_stop(broker, tmp_path, socket_enab
     await bridge.stop()
 
 
+async def test_real_embedded_bridge_sends_the_credentials(monkeypatch, tmp_path, socket_enabled):
+    """The binding silently ignores a keyword it doesn't know, so only the real bridge's
+    CONNECT shows whether the credentials got through. Without a username it drops the
+    password too, and connects anonymously."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from rustuya_local.host import mqtt
+
+    connected = asyncio.get_running_loop().create_future()
+
+    async def on_connect(reader, writer):
+        packet = await reader.read(512)
+        if not connected.done():
+            connected.set_result(packet)
+        writer.close()
+
+    broker = await asyncio.start_server(on_connect, "127.0.0.1", 0)
+    port = broker.sockets[0].getsockname()[1]
+    observer = SimpleNamespace(connect=AsyncMock(), subscribe=AsyncMock(), close=AsyncMock())
+    monkeypatch.setattr(mqtt, "MqttTransport", lambda *args, **kwargs: observer)
+    bridge = EmbeddedBridge(f"mqtt://127.0.0.1:{port}", "auth-test", str(tmp_path / "bridge.json"),
+                            username="hauser", password="secretpw")
+    start = asyncio.ensure_future(bridge.start())
+    try:
+        packet = await asyncio.wait_for(connected, 5)
+    finally:
+        start.cancel()
+        await asyncio.gather(start, return_exceptions=True)
+        broker.close()
+    assert b"hauser" in packet and b"secretpw" in packet
+
+
 async def test_shutdown_timeout_keeps_ownership(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import Mock

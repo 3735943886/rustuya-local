@@ -13,6 +13,13 @@ Release notes are read by the release workflow before publishing.
 - An options change restarts the service only, keeping the entities.
 - Allow deleting a Home Assistant device nothing drives any more; one the bridge still holds is refused with a reason.
 
+## [0.1.4]
+
+- Fix the embedded bridge connecting without a username to a broker that requires one: it passed `mqtt_username`
+  where the bridge takes `mqtt_user`, and an unknown option is silently ignored.
+- Load `rustuya_local.validation` and the panel's `rustuya_local.manager_plugin.api` in Home Assistant's import
+  executor as well, and before the setup flow first checks a topic, instead of on the event loop at first use.
+
 ## [0.1.3]
 
 - Load rustuya-manager and pyrustuyabridge in Home Assistant's import executor, once, instead of importing them on

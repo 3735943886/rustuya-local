@@ -3,6 +3,9 @@ those are exercised in test_init.py against real infrastructure instead)."""
 
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -142,6 +145,19 @@ async def test_a_bridge_not_on_the_default_root_asks_for_its_root(hass):
         r = await hass.config_entries.flow.async_configure(r["flow_id"], {**typed, CONF_BRIDGE_ROOT: "rb"})
     assert probe.call_args.args[1][CONF_BRIDGE_ROOT] == "rb"
     assert r["type"] == "create_entry" and r["data"][CONF_BRIDGE_ROOT] == "rb"
+
+
+def test_the_import_executor_loads_what_the_event_loop_imports_later():
+    """In a fresh interpreter, since this process has them loaded already."""
+    code = """
+import sys
+from custom_components.rustuya import broker
+names = ("rustuya_local.validation", "rustuya_local.manager_plugin.api")
+assert not [n for n in names if n in sys.modules], "loaded before the executor ran"
+broker._import_runtime()
+assert all(n in sys.modules for n in names)
+"""
+    subprocess.run([sys.executable, "-c", code], check=True, cwd=Path(__file__).resolve().parents[2], timeout=60)
 
 
 async def _to_login(hass, monkeypatch, manager):

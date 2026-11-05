@@ -37,7 +37,9 @@ def _import_runtime() -> dict[str, bool]:
     import ildevice_ha.entity  # noqa: F401
 
     import rustuya_local.host
-    import rustuya_local.service  # noqa: F401
+    import rustuya_local.manager_plugin.api  # the panel's converter views
+    import rustuya_local.service
+    import rustuya_local.validation  # noqa: F401
 
     found = {}
     for name in OPTIONAL:
@@ -72,7 +74,7 @@ def transport(data: dict[str, Any], client_id: str, will: Any = None) -> Any:
 
 
 def topic_ok(value: str) -> bool:
-    """An MQTT topic to publish on: not empty, no wildcards, no empty levels."""
+    """An MQTT topic to publish on: not empty, no wildcards, no empty levels (`import_runtime` first)."""
     from rustuya_local.validation import topic_ok as valid_topic
 
     return valid_topic(value)
