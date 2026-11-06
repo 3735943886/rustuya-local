@@ -631,6 +631,21 @@ async def test_unload_stops_the_embedded_bridge_even_when_service_stop_fails(has
     assert entry.entry_id not in hass.data[DOMAIN]
 
 
+async def test_unload_platform_failure_keeps_the_runtime_running(hass, loaded, monkeypatch):
+    import custom_components.rustuya as integration
+
+    entry, service = await loaded({CONF_PANEL: True})
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    service.stop = AsyncMock()
+    monkeypatch.setattr(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=False))
+
+    assert await integration.async_unload_entry(hass, entry) is False
+    service.stop.assert_not_awaited()
+    assert hass.data[DOMAIN][entry.entry_id] is runtime
+    runtime.hub.async_stop.assert_not_awaited()
+    runtime.retained.async_stop.assert_not_awaited()
+
+
 @pytest.mark.parametrize("endpoint, first, second", [
     ("options", {"pack": False}, {"expose_unused": True}),
     ("settings", {"devices_path": "/first.json"}, {"bridge_log_level": "debug"}),

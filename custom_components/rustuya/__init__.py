@@ -325,7 +325,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     await runtime.embedded_bridge.stop()
                 hass.data[DOMAIN].pop(entry.entry_id, None)
     if stop_error is not None:
-        _LOGGER.error("service stop failed during unload; the service resources were closed: %s", stop_error)
+        _LOGGER.error("service stop failed during unload; the service resources were closed",
+                      exc_info=(type(stop_error), stop_error, stop_error.__traceback__))
     return True
 
 
