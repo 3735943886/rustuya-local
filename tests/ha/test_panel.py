@@ -622,8 +622,11 @@ async def test_unload_stops_the_embedded_bridge_even_when_service_stop_fails(has
     bridge = AsyncMock()
     bridge.stop.side_effect = stop_bridge
     runtime.embedded_bridge = bridge
-    with pytest.raises(type(error)):
-        await integration.async_unload_entry(hass, entry)
+    if cancelled:
+        with pytest.raises(asyncio.CancelledError):
+            await integration.async_unload_entry(hass, entry)
+    else:
+        assert await integration.async_unload_entry(hass, entry)
     bridge.stop.assert_awaited_once()
     assert entry.entry_id not in hass.data[DOMAIN]
 
