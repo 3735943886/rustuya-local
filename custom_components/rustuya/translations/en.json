@@ -77,7 +77,8 @@
       "bridge_not_found": "The broker answers, but no rustuya-bridge is running on that topic root. Start the bridge, or enter the topic root it runs on, and try again.",
       "cannot_connect": "Could not connect to the MQTT broker. Check the host, port and credentials.",
       "publish_failed": "Could not send the command to the bridge.",
-      "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead"
+      "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead",
+      "user_code_required": "Enter the user code: there is no saved Tuya login to use yet"
     },
     "abort": {
       "already_configured": "Already set up.",
@@ -133,7 +134,8 @@
       "panel_open": "[Open the Rustuya panel]({url})."
     },
     "error": {
-      "publish_failed": "Could not send the command to the bridge."
+      "publish_failed": "Could not send the command to the bridge.",
+      "user_code_required": "Enter the user code: there is no saved Tuya login to use yet"
     }
   },
   "services": {

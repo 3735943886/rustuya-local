@@ -140,14 +140,19 @@ class _ManagerSteps:
         self._scan_shown = self._sync_shown = False
 
     async def _async_login_form(self, step_id: str, user_input: dict[str, Any] | None) -> FlowResult:
-        """The login's user-code form (the saved code filled in), or once submitted the login started."""
+        """The login's user-code form (the saved code filled in), or once submitted the login started. Without a code
+        and a saved login (one always keeps its code) the login could only fail, so the form says so instead."""
         manager = await self._async_manager()
-        if user_input is not None:
-            self._new_login()
-            await manager.wizard.start(user_input.get("user_code") or None, scan=False)
-            return await self.async_step_cloud_wizard_progress()
         saved_code = await manager.wizard.read_saved_user_code()
-        return self.async_show_form(step_id=step_id,
+        errors = None
+        if user_input is not None:
+            user_code = (user_input.get("user_code") or "").strip()
+            if user_code or saved_code:
+                self._new_login()
+                await manager.wizard.start(user_code or None, scan=False)
+                return await self.async_step_cloud_wizard_progress()
+            errors = {"user_code": "user_code_required"}
+        return self.async_show_form(step_id=step_id, errors=errors,
                                     data_schema=vol.Schema({vol.Optional("user_code", default=saved_code or ""): str}))
 
     def _login_running(self, session: Any) -> FlowResult:

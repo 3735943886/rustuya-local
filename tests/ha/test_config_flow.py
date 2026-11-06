@@ -187,7 +187,7 @@ async def test_finishing_the_login_adds_no_second_entry(hass, tmp_path, monkeypa
     manager = FakeManager(wizard_script=[WizardState.REQUESTING_QR, WizardState.ERROR])
     install(monkeypatch, manager)
     flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
-    r = await flow.async_step_cloud_wizard_start({"user_code": ""})
+    r = await flow.async_step_cloud_wizard_start({"user_code": "code1"})
     r["progress_task"].cancel()
     r = await _drain_progress(flow, manager)
     r = await flow.async_step_cloud_wizard_error({"retry": False})                  # skip it after a failure
@@ -219,7 +219,7 @@ async def test_a_successful_login_registers_only_the_selected_devices_then_finis
     manager = FakeManager(sync_result=FakeDiff(missing=[FakeDevice("a", "Plug"), FakeDevice("b", "Lamp")]))
     install(monkeypatch, manager)
     flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
-    r = await flow.async_step_cloud_wizard_start({"user_code": ""})
+    r = await flow.async_step_cloud_wizard_start({"user_code": "code1"})
     assert r["type"] == "progress"
     r["progress_task"].cancel()
     r = await _drain_progress(flow, manager)
@@ -233,7 +233,7 @@ async def test_no_missing_devices_finishes_straight_away(hass, tmp_path, monkeyp
     manager = FakeManager(sync_result=FakeDiff())
     install(monkeypatch, manager)
     flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
-    r = await flow.async_step_cloud_wizard_start({"user_code": ""})
+    r = await flow.async_step_cloud_wizard_start({"user_code": "code1"})
     r["progress_task"].cancel()
     r = await _drain_progress(flow, manager)
     assert r["type"] == "create_entry" and manager.closed
@@ -243,7 +243,7 @@ async def test_a_failed_login_can_be_retried_or_skipped(hass, tmp_path, monkeypa
     manager = FakeManager(wizard_script=[WizardState.REQUESTING_QR, WizardState.ERROR])
     install(monkeypatch, manager)
     flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
-    r = await flow.async_step_cloud_wizard_start({"user_code": ""})
+    r = await flow.async_step_cloud_wizard_start({"user_code": "code1"})
     r["progress_task"].cancel()
     r = await _drain_progress(flow, manager)
     assert r["step_id"] == "cloud_wizard_error"
@@ -557,7 +557,7 @@ async def test_a_login_in_configure_is_handed_to_the_entry_however_the_flow_ends
     entry = _entry(hass, tmp_path)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "cloud_wizard"})
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {"user_code": ""})
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"user_code": "code1"})
     if r["type"] == "progress_done":                                          # on to the devices
         r = await hass.config_entries.options.async_configure(r["flow_id"])
     if ending == "no_devices":
@@ -584,7 +584,7 @@ async def test_submitting_the_qr_after_the_login_finished_shows_the_devices(hass
         flows, device_step = hass.config_entries.options, "bridge_sync"
         r = await flows.async_init(entry.entry_id)
         r = await flows.async_configure(r["flow_id"], {"next_step_id": "cloud_wizard"})
-    r = await flows.async_configure(r["flow_id"], {"user_code": ""})
+    r = await flows.async_configure(r["flow_id"], {"user_code": "code1"})
     while r["type"] in ("progress", "progress_done"):
         r = await flows.async_configure(r["flow_id"])
     assert r["type"] == "form" and r["step_id"] == "cloud_wizard_scan"
@@ -607,6 +607,26 @@ async def test_a_login_that_fails_at_once_shows_the_retry_form(hass, monkeypatch
     assert r["type"] == "form" and r["step_id"] == "cloud_wizard_error"
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"retry": False})
     assert r["type"] == "create_entry"
+
+
+async def test_an_empty_user_code_without_a_saved_login_is_asked_for_again(hass, monkeypatch):
+    """Without a saved login the user code is needed: the form says so rather than start a login that can only
+    fail."""
+    manager = FakeManager()
+    r = await _to_login(hass, monkeypatch, manager)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"user_code": "  "})
+    assert r["type"] == "form" and r["step_id"] == "cloud_wizard_start"
+    assert r["errors"] == {"user_code": "user_code_required"} and manager.wizard.session.state == WizardState.IDLE
+
+
+async def test_an_empty_user_code_uses_the_saved_login(hass, monkeypatch):
+    manager = FakeManager()
+    manager.wizard.saved_code = "saved1"
+    r = await _to_login(hass, monkeypatch, manager)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"user_code": ""})
+    assert r["type"] == "progress" and manager.wizard.started_with is None
+    hass.config_entries.flow.async_abort(r["flow_id"])
+    await hass.async_block_till_done()
 
 
 async def test_the_login_directory_exists_before_the_session(hass, tmp_path, monkeypatch):

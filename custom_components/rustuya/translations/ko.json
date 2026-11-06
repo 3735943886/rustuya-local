@@ -77,7 +77,8 @@
       "bridge_not_found": "브로커는 응답하지만 그 토픽 root에서 실행 중인 rustuya-bridge가 없습니다. 브리지를 시작하거나, 브리지가 쓰는 토픽 root를 입력한 뒤 다시 시도하세요.",
       "cannot_connect": "MQTT 브로커에 연결할 수 없습니다. 호스트, 포트, 계정 정보를 확인하세요.",
       "publish_failed": "브리지에 명령을 보내지 못했습니다.",
-      "pyrustuyabridge_missing": "pyrustuyabridge가 설치되어 있지 않습니다. 외부 브리지를 선택하세요."
+      "pyrustuyabridge_missing": "pyrustuyabridge가 설치되어 있지 않습니다. 외부 브리지를 선택하세요.",
+      "user_code_required": "사용자 코드를 입력하세요. 아직 저장된 Tuya 로그인이 없습니다."
     },
     "abort": {
       "already_configured": "이미 설정되어 있습니다.",
@@ -133,7 +134,8 @@
       "panel_open": "[Rustuya 패널 열기]({url})"
     },
     "error": {
-      "publish_failed": "브리지에 명령을 보내지 못했습니다."
+      "publish_failed": "브리지에 명령을 보내지 못했습니다.",
+      "user_code_required": "사용자 코드를 입력하세요. 아직 저장된 Tuya 로그인이 없습니다."
     }
   },
   "services": {
