@@ -300,21 +300,33 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.disabled_by is not None:
         panel.async_remove(hass)
     runtime: RuntimeData = hass.data[DOMAIN][entry.entry_id]
+    # Ask HA to unload the entity platforms before stopping their publisher. If HA refuses, leave the complete
+    # runtime in place so the entry remains usable and HA can retry the unload.
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unloaded:
+        return False
+
+    stop_error: Exception | None = None
     try:
         async with runtime.service_lock:
             await runtime.service.stop()
-        unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-        if unloaded:
-            await runtime.hub.async_stop()
-            await runtime.retained.async_stop()
+    except Exception as err:
+        # Service.stop closes its AsyncExitStack even when draining a pending command fails. The HA platforms are
+        # already unloaded, so finish tearing down the hub and bridge rather than leave a half-loaded entry behind.
+        stop_error = err
     finally:
         try:
-            if runtime.embedded_bridge:
-                await runtime.embedded_bridge.stop()
+            await runtime.hub.async_stop()
         finally:
-            # A stopped service cannot be reused, even when draining its commands failed.
-            hass.data[DOMAIN].pop(entry.entry_id, None)
-    return unloaded
+            try:
+                await runtime.retained.async_stop()
+            finally:
+                if runtime.embedded_bridge:
+                    await runtime.embedded_bridge.stop()
+                hass.data[DOMAIN].pop(entry.entry_id, None)
+    if stop_error is not None:
+        _LOGGER.error("service stop failed during unload; the service resources were closed: %s", stop_error)
+    return True
 
 
 async def async_remove_config_entry_device(hass: HomeAssistant, entry: ConfigEntry, device_entry: DeviceEntry) -> bool:
