@@ -310,7 +310,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         async with runtime.service_lock:
             await runtime.service.stop()
-    except Exception as err:
+    except Exception as err:  # noqa: BLE001 -- teardown must continue if draining a command fails
         # Service.stop closes its AsyncExitStack even when draining a pending command fails. The HA platforms are
         # already unloaded, so finish tearing down the hub and bridge rather than leave a half-loaded entry behind.
         stop_error = err
