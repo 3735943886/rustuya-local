@@ -13,9 +13,9 @@
     "paho-mqtt>=2.0",
     "rustuya-manager>=0.2.3",
     "pyrustuyabridge>=0.4.0",
-    "rustuya-local==0.2.1rc1",
+    "rustuya-local==0.2.0rc3",
     "ildevice-homeassistant==0.2.1"
   ],
   "single_config_entry": true,
-  "version": "0.2.1rc1"
+  "version": "0.2.0rc3"
 }
