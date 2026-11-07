@@ -35,6 +35,7 @@ class FakeWizard:
         self._i = 0
         self.autoplay = autoplay
         self.started_with: str | None = None
+        self.saved_code: str | None = None          # the user code a saved login keeps (`read_saved_user_code`)
 
     async def start(self, user_code=None, scan=False):
         self.started_with = user_code
@@ -47,7 +48,7 @@ class FakeWizard:
         return self.session
 
     async def read_saved_user_code(self):
-        return None
+        return self.saved_code
 
     def advance(self) -> None:
         """Move to the next state in the script (a no-op once the last one is reached)."""

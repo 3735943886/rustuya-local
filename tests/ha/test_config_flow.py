@@ -18,7 +18,6 @@ from custom_components.rustuya.const import (
     CONF_BRIDGE_ROOT,
     CONF_DEVICES_PATH,
     CONF_EXPOSE_UNUSED,
-    CONF_IL_PREFIX,
     CONF_PACK,
     CONF_PANEL,
     DOMAIN,
@@ -85,13 +84,11 @@ async def test_the_user_menu_offers_external_and_embedded(hass):
     assert result["type"] == "menu" and set(result["menu_options"]) == {"external", "embedded"}
 
 
-BROKER = {"broker_host": "h", "broker_port": 1883, "broker_username": "", "broker_password": "", "il_prefix": "home/il"}
+BROKER = {"broker_host": "h", "broker_port": 1883, "broker_username": "", "broker_password": ""}
 
 
 @pytest.mark.parametrize("manager_installed", [True, False])
 async def test_setup_asks_only_for_the_broker_and_uses_the_defaults(hass, manager_installed):
-    from custom_components.rustuya.const import CONF_IL_SOURCE
-
     with patch("custom_components.rustuya.manager_session.available", return_value=manager_installed):
         result = await _start(hass)
         r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
@@ -102,8 +99,7 @@ async def test_setup_asks_only_for_the_broker_and_uses_the_defaults(hass, manage
             r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "finish"})
     assert r["type"] == "create_entry"
     assert r["data"] == {**BROKER, CONF_BRIDGE_MODE: "external", CONF_BRIDGE_ROOT: "rustuya",
-                         CONF_DEVICES_PATH: hass.config.path(".storage/rustuya/tuyadevices.json"),
-                         CONF_IL_PREFIX: "home/il", CONF_IL_SOURCE: "tuya"}
+                         CONF_DEVICES_PATH: hass.config.path(".storage/rustuya/tuyadevices.json")}
     assert r["options"] == {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True}
 
 
@@ -126,8 +122,7 @@ async def test_embedded_setup_asks_only_for_the_broker(hass, monkeypatch):
 
 
 async def test_an_unreachable_broker_keeps_the_form_open(hass):
-    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p",
-             "il_prefix": "il"}
+    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p"}
     result = await _start(hass)
     r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
     with patch("custom_components.rustuya.config_flow._probe_bridge", return_value="cannot_connect"):
@@ -137,8 +132,7 @@ async def test_an_unreachable_broker_keeps_the_form_open(hass):
 
 
 async def test_a_bridge_not_on_the_default_root_asks_for_its_root(hass):
-    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p",
-             "il_prefix": "il"}
+    typed = {"broker_host": "mqtt.lan", "broker_port": 1884, "broker_username": "u", "broker_password": "p"}
     result = await _start(hass)
     r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
     with patch("custom_components.rustuya.config_flow._probe_bridge", return_value="bridge_not_found") as probe:
@@ -153,28 +147,6 @@ async def test_a_bridge_not_on_the_default_root_asks_for_its_root(hass):
     assert r["type"] == "create_entry" and r["data"][CONF_BRIDGE_ROOT] == "rb"
 
 
-@pytest.mark.parametrize("mode", ["external", "embedded"])
-async def test_the_runtime_is_loaded_before_the_first_topic_check(hass, monkeypatch, mode):
-    """`topic_ok` imports rustuya_local.validation, and nothing has loaded it yet on a first setup."""
-    from custom_components.rustuya import broker
-
-    calls = []
-
-    async def import_runtime(_hass):
-        calls.append("import_runtime")
-
-    def topic_ok(_value):
-        calls.append("topic_ok")
-        return False
-
-    monkeypatch.setattr(broker, "import_runtime", import_runtime)
-    monkeypatch.setattr(broker, "topic_ok", topic_ok)
-    result = await _start(hass)
-    r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": mode})
-    await hass.config_entries.flow.async_configure(r["flow_id"], {**BROKER, "il_prefix": "il"})
-    assert calls == ["import_runtime", "topic_ok"]
-
-
 def test_the_import_executor_loads_what_the_event_loop_imports_later():
     """In a fresh interpreter, since this process has them loaded already."""
     code = """
@@ -186,16 +158,6 @@ broker._import_runtime()
 assert all(n in sys.modules for n in names)
 """
     subprocess.run([sys.executable, "-c", code], check=True, cwd=Path(__file__).resolve().parents[2], timeout=60)
-
-
-@pytest.mark.parametrize("mode", ["external", "embedded"])
-@pytest.mark.parametrize("prefix", ["il/#", "a//b", "+", " "])
-async def test_an_il_prefix_that_is_no_topic_is_refused(hass, mode, prefix):
-    result = await _start(hass)
-    r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": mode})
-    with patch("custom_components.rustuya.config_flow._probe_bridge", return_value=None) as probe:
-        r = await hass.config_entries.flow.async_configure(r["flow_id"], {**BROKER, "il_prefix": prefix})
-    assert r["type"] == "form" and r["errors"] == {"il_prefix": "invalid_prefix"} and not probe.called
 
 
 async def _to_login(hass, monkeypatch, manager):
@@ -214,7 +176,7 @@ async def test_closing_the_login_window_finishes_the_setup_without_it(hass, monk
     hass.config_entries.flow.async_abort(r["flow_id"])             # what closing the window does
     await hass.async_block_till_done()
     entry, = hass.config_entries.async_entries(DOMAIN)
-    assert entry.data[CONF_IL_PREFIX] == "home/il" and entry.data[CONF_BRIDGE_MODE] == "external"
+    assert entry.data[CONF_BRIDGE_MODE] == "external"
     assert entry.options == {CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: True}
     assert manager.closed
 
@@ -225,7 +187,7 @@ async def test_finishing_the_login_adds_no_second_entry(hass, tmp_path, monkeypa
     manager = FakeManager(wizard_script=[WizardState.REQUESTING_QR, WizardState.ERROR])
     install(monkeypatch, manager)
     flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
-    r = await flow.async_step_cloud_wizard_start({"user_code": ""})
+    r = await flow.async_step_cloud_wizard_start({"user_code": "code1"})
     r["progress_task"].cancel()
     r = await _drain_progress(flow, manager)
     r = await flow.async_step_cloud_wizard_error({"retry": False})                  # skip it after a failure
@@ -257,7 +219,7 @@ async def test_a_successful_login_registers_only_the_selected_devices_then_finis
     manager = FakeManager(sync_result=FakeDiff(missing=[FakeDevice("a", "Plug"), FakeDevice("b", "Lamp")]))
     install(monkeypatch, manager)
     flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
-    r = await flow.async_step_cloud_wizard_start({"user_code": ""})
+    r = await flow.async_step_cloud_wizard_start({"user_code": "code1"})
     assert r["type"] == "progress"
     r["progress_task"].cancel()
     r = await _drain_progress(flow, manager)
@@ -271,7 +233,7 @@ async def test_no_missing_devices_finishes_straight_away(hass, tmp_path, monkeyp
     manager = FakeManager(sync_result=FakeDiff())
     install(monkeypatch, manager)
     flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
-    r = await flow.async_step_cloud_wizard_start({"user_code": ""})
+    r = await flow.async_step_cloud_wizard_start({"user_code": "code1"})
     r["progress_task"].cancel()
     r = await _drain_progress(flow, manager)
     assert r["type"] == "create_entry" and manager.closed
@@ -281,7 +243,7 @@ async def test_a_failed_login_can_be_retried_or_skipped(hass, tmp_path, monkeypa
     manager = FakeManager(wizard_script=[WizardState.REQUESTING_QR, WizardState.ERROR])
     install(monkeypatch, manager)
     flow = await _wizard_flow(hass, manager, str(tmp_path / "tuyadevices.json"))
-    r = await flow.async_step_cloud_wizard_start({"user_code": ""})
+    r = await flow.async_step_cloud_wizard_start({"user_code": "code1"})
     r["progress_task"].cancel()
     r = await _drain_progress(flow, manager)
     assert r["step_id"] == "cloud_wizard_error"
@@ -330,7 +292,7 @@ def _entry(hass, tmp_path):
     entry = MockConfigEntry(domain=DOMAIN, data={
         CONF_BRIDGE_MODE: "external", "broker_host": "h", "broker_port": 1883,
         "broker_username": "", "broker_password": "", CONF_BRIDGE_ROOT: "rustuya",
-        CONF_DEVICES_PATH: str(tmp_path / "tuyadevices.json"), CONF_IL_PREFIX: "il", "il_source": "tuya",
+        CONF_DEVICES_PATH: str(tmp_path / "tuyadevices.json"),
     }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False})
     entry.add_to_hass(hass)
     return entry
@@ -595,7 +557,7 @@ async def test_a_login_in_configure_is_handed_to_the_entry_however_the_flow_ends
     entry = _entry(hass, tmp_path)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "cloud_wizard"})
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {"user_code": ""})
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"user_code": "code1"})
     if r["type"] == "progress_done":                                          # on to the devices
         r = await hass.config_entries.options.async_configure(r["flow_id"])
     if ending == "no_devices":
@@ -622,7 +584,7 @@ async def test_submitting_the_qr_after_the_login_finished_shows_the_devices(hass
         flows, device_step = hass.config_entries.options, "bridge_sync"
         r = await flows.async_init(entry.entry_id)
         r = await flows.async_configure(r["flow_id"], {"next_step_id": "cloud_wizard"})
-    r = await flows.async_configure(r["flow_id"], {"user_code": ""})
+    r = await flows.async_configure(r["flow_id"], {"user_code": "code1"})
     while r["type"] in ("progress", "progress_done"):
         r = await flows.async_configure(r["flow_id"])
     assert r["type"] == "form" and r["step_id"] == "cloud_wizard_scan"
@@ -645,6 +607,26 @@ async def test_a_login_that_fails_at_once_shows_the_retry_form(hass, monkeypatch
     assert r["type"] == "form" and r["step_id"] == "cloud_wizard_error"
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"retry": False})
     assert r["type"] == "create_entry"
+
+
+async def test_an_empty_user_code_without_a_saved_login_is_asked_for_again(hass, monkeypatch):
+    """Without a saved login the user code is needed: the form says so rather than start a login that can only
+    fail."""
+    manager = FakeManager()
+    r = await _to_login(hass, monkeypatch, manager)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"user_code": "  "})
+    assert r["type"] == "form" and r["step_id"] == "cloud_wizard_start"
+    assert r["errors"] == {"user_code": "user_code_required"} and manager.wizard.session.state == WizardState.IDLE
+
+
+async def test_an_empty_user_code_uses_the_saved_login(hass, monkeypatch):
+    manager = FakeManager()
+    manager.wizard.saved_code = "saved1"
+    r = await _to_login(hass, monkeypatch, manager)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"user_code": ""})
+    assert r["type"] == "progress" and manager.wizard.started_with is None
+    hass.config_entries.flow.async_abort(r["flow_id"])
+    await hass.async_block_till_done()
 
 
 async def test_the_login_directory_exists_before_the_session(hass, tmp_path, monkeypatch):

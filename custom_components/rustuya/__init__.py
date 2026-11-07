@@ -1,24 +1,28 @@
 """Rustuya as a Home Assistant integration: runs the same `rustuya_local.service.Service` the standalone
 `rustuya-local` daemon does, tied to this config entry, with an optional embedded rustuya-bridge (`pyrustuyabridge`)
-and user overrides from `<config>/rustuya_converters`. It creates no entities and does not depend on ildevice-homeassistant: it is only an IL
-*producer* — install ildevice-homeassistant (or any IL consumer) separately to turn its devices into entities.
+and user overrides from `<config>/rustuya_converters`. The service produces IL on an in-process transport, and an
+ildevice-homeassistant hub embedded on that transport turns the IL devices into entities registered under this
+integration. That hub is the `ildevice_ha` package (manifest `requirements`); the IL device integration itself need not
+be installed. The bridge still talks to the service over MQTT, so a broker stays necessary.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import os
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.device_registry import DeviceEntry
 
 from . import broker
 from .const import (
@@ -39,12 +43,13 @@ from .const import (
     DEFAULT_BRIDGE_LOG_LEVEL,
     DEFAULT_BRIDGE_STATE_FILE,
     DEFAULT_DEVICES_FILE,
-    DEFAULT_IL_PREFIX,
-    DEFAULT_IL_SOURCE,
     DEFAULT_OPTIONS,
     DOMAIN,
+    IL_PREFIX,
+    IL_SOURCE,
     LEGACY_BRIDGE_STATE_FILE,
     LEGACY_DEVICES_FILE,
+    PLATFORMS,
     STORAGE_DIR,
 )
 
@@ -65,20 +70,10 @@ class RuntimeData:
     service: Any
     embedded_bridge: Any | None
     options: dict[str, Any] | None = None       # what the service started with (a panel-only change needs no restart)
-    restarting: bool = False                    # the unload is a restart: the IL presence stays online across it
-
-
-RESUME = f"{DOMAIN}_resume"                     # hass.data: the next setup follows a restart that kept the presence
-
-
-def mark_restart(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """The coming unload is a restart onto the same broker and IL prefix / source (an options change): the service
-    stops without going offline and the next one resumes, so il consumers see every device stay available. Going
-    `unavailable` and back is a state change to them, and an automation that follows an event entity's state takes
-    it for a press."""
-    runtime: RuntimeData | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    if runtime is not None:
-        runtime.restarting = True
+    hub: Any = None                             # the ildevice hub creating this entry's entities; outlives the service
+    transport: Any = None                       # the in-process IL transport between the service and the hub
+    retained: Any = None                        # keeps what the transport retains across Home Assistant restarts
+    service_lock: asyncio.Lock = field(default_factory=asyncio.Lock)    # one restart or stop of the service at a time
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -105,8 +100,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 def _tuya_id(hass: HomeAssistant, service: Any, device_id: str) -> str:
     """`device_id` as the Tuya device id: as given when the service drives it, else a Home Assistant device's. An IL
-    consumer registers a device with the IL id (the Tuya id) among its identifiers — ildevice-homeassistant as `("ildevice", id)`, under
-    whatever platform name it runs as — so any identifier value the service drives is taken, when there is exactly one.
+    consumer registers a device with the IL id (the Tuya id) among its identifiers — the embedded hub as `("rustuya", id)`,
+    a separate ildevice-homeassistant as `("ildevice", id)` — so any identifier value the service drives is taken, when
+    there is exactly one.
     Unresolved, it is returned as given (and refused as an unknown device)."""
     from homeassistant.helpers import device_registry as dr
 
@@ -120,18 +116,39 @@ def _tuya_id(hass: HomeAssistant, service: Any, device_id: str) -> str:
     return found.pop() if len(found) == 1 else device_id
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    await broker.import_runtime(hass)
-    from rustuya_local.service import AnotherProducer, Service, Settings
-
-    from .bridge_supervisor import EmbeddedBridge
+def _make_service(hass: HomeAssistant, entry: ConfigEntry, transport: Any, devices: list[dict]) -> Any:
+    """A service for the entry as it is now, producing IL on `transport`. It has no Last Will there: nothing outlives
+    the process that holds both ends."""
+    from rustuya_local.service import Service, Settings
 
     data, options = entry.data, {**DEFAULT_OPTIONS, **entry.options}
 
-    async def connect(kind: str, will=None):
-        t = broker.transport(data, f"rustuya-{kind}-{entry.entry_id[:8]}", will)
+    async def connect_bridge():
+        t = broker.transport(data, f"rustuya-bridge-{entry.entry_id[:8]}")
         await t.connect()
         return t
+
+    async def connect_il(_will):
+        return transport
+
+    # the device file is not polled here: the config/options flow writes it and calls async_refresh_devices
+    settings = Settings(root=data[CONF_BRIDGE_ROOT], prefix=IL_PREFIX, source=IL_SOURCE, devices=devices,
+                        overrides_path=Path(hass.config.path(CONVERTERS_DIR)), pack=options[CONF_PACK],
+                        hub_options={key: options[key] for key in (CONF_ALLOW_HAZARDOUS, CONF_EXPOSE_UNUSED)})
+    return Service(settings, connect_bridge=connect_bridge, connect_il=connect_il)
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    await broker.import_runtime(hass)
+    from ildevice_ha.attach import build_hub
+    from ildevice_ha.const import CONF_AUTO_ADD
+    from ildevice_ha.const import CONF_IL_PREFIX as HUB_IL_PREFIX
+    from ildevice_ha.core.memory import InProcessTransport
+
+    from .bridge_supervisor import EmbeddedBridge
+    from .retained import RetainedStore
+
+    data = entry.data
 
     embedded_bridge = None
     if data[CONF_BRIDGE_MODE] == BRIDGE_EMBEDDED:
@@ -140,26 +157,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                          data.get(CONF_BRIDGE_LOG_LEVEL, DEFAULT_BRIDGE_LOG_LEVEL),
                                          *broker.credentials(data))
         await embedded_bridge.start()
+    runtime = None
+    forwarded = False
     try:
         devices = await hass.async_add_executor_job(_load_devices_or_none, data[CONF_DEVICES_PATH])
-        # the device file is not polled here: the config/options flow writes it and calls async_refresh_devices
-        settings = Settings(root=data[CONF_BRIDGE_ROOT], prefix=data.get(CONF_IL_PREFIX, DEFAULT_IL_PREFIX),
-                            source=data.get(CONF_IL_SOURCE, DEFAULT_IL_SOURCE), devices=devices,
-                            overrides_path=Path(hass.config.path(CONVERTERS_DIR)), pack=options[CONF_PACK],
-                            hub_options={key: options[key] for key in (CONF_ALLOW_HAZARDOUS, CONF_EXPOSE_UNUSED)})
-        service = Service(settings, connect_bridge=lambda: connect("bridge"), connect_il=lambda will: connect("il", will))
-        try:
-            # releases whatever it had connected if it fails
-            await service.start(resume=hass.data.pop(RESUME, False))
-        except AnotherProducer as e:   # retried by Home Assistant until the other one stops
-            raise ConfigEntryNotReady(str(e)) from e
+        transport = InProcessTransport()
+        # Every device the bridge holds is the user's own: add it, never offer it (ildevice's offers would go to the
+        # ildevice domain, not this one).
+        hub = build_hub(hass, {HUB_IL_PREFIX: IL_PREFIX, CONF_AUTO_ADD: True}, transport, DOMAIN, entry.entry_id)
+        retained = RetainedStore(hass, entry.entry_id, transport, IL_PREFIX)
+        await retained.async_restore()
+        runtime = RuntimeData(service=_make_service(hass, entry, transport, devices), embedded_bridge=embedded_bridge,
+                              options=dict(entry.options), hub=hub, transport=transport, retained=retained)
+        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
+        await retained.async_start()
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        forwarded = True
+        # The hub goes first: it has to see the tombstones of devices that dropped out while Home Assistant was down, or
+        # their registry entries would stay behind.
+        await hub.async_start()
+        await runtime.service.start()         # releases whatever it had connected if it fails
     except BaseException:
+        if runtime is not None:
+            hass.data[DOMAIN].pop(entry.entry_id, None)
+            if forwarded:
+                await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+            await runtime.hub.async_stop()
+            await runtime.retained.async_stop()
         if embedded_bridge:
             await embedded_bridge.stop()
         raise
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = RuntimeData(service=service, embedded_bridge=embedded_bridge,
-                                                                   options=dict(entry.options))
     from . import panel
 
     await panel.async_setup(hass, entry)
@@ -167,6 +195,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s (bridge: %s)", len(devices),
                  data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE])
     return True
+
+
+async def async_restart_service(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Start the service over with the entry's current options, keeping the hub, the entities and the transport. The
+    presence stays `online` and the retained values stay, so every device stays available: going `unavailable` and back
+    is a state change, and an automation that follows an event entity's state takes it for a press. Raises what the
+    start raises; the devices are then shown offline and `runtime.service` is a stopped service."""
+    runtime: RuntimeData = hass.data[DOMAIN][entry.entry_id]
+    async with runtime.service_lock:
+        await runtime.service.stop(offline=False)
+        runtime.options = dict(entry.options)
+        devices = await hass.async_add_executor_job(_load_devices_or_none, entry.data[CONF_DEVICES_PATH])
+        runtime.service = _make_service(hass, entry, runtime.transport, devices)
+        await runtime.service.start(resume=True)
 
 
 def _load_devices_or_none(path: str) -> list[dict]:
@@ -233,12 +275,17 @@ async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     runtime: RuntimeData | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     new = dict(entry.options)
-    if runtime is not None and runtime.options is not None and _without_panel(new) == _without_panel(runtime.options):
+    if runtime is None:
+        return
+    if runtime.options is not None and _without_panel(new) == _without_panel(runtime.options):
         runtime.options = new
         await panel.async_setup(hass, entry)            # adds it, or removes it when the option is off
         return
-    mark_restart(hass, entry)
-    await hass.config_entries.async_reload(entry.entry_id)
+    try:
+        await async_restart_service(hass, entry)
+    except Exception:
+        _LOGGER.exception("could not restart the service with the new options; reloading the integration")
+        hass.config_entries.async_schedule_reload(entry.entry_id)
 
 
 def _without_panel(options: dict[str, Any]) -> dict[str, Any]:
@@ -253,34 +300,66 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.disabled_by is not None:
         panel.async_remove(hass)
     runtime: RuntimeData = hass.data[DOMAIN][entry.entry_id]
-    restarting = getattr(runtime, "restarting", False) and entry.disabled_by is None
+    # Ask HA to unload the entity platforms before stopping their publisher. If HA refuses, leave the complete
+    # runtime in place so the entry remains usable and HA can retry the unload.
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unloaded:
+        return False
+
+    stop_error: Exception | None = None
     try:
-        await runtime.service.stop(offline=not restarting)
+        async with runtime.service_lock:
+            await runtime.service.stop()
+    except Exception as err:  # noqa: BLE001 -- teardown must continue if draining a command fails
+        # Service.stop closes its AsyncExitStack even when draining a pending command fails. The HA platforms are
+        # already unloaded, so finish tearing down the hub and bridge rather than leave a half-loaded entry behind.
+        stop_error = err
     finally:
         try:
-            if runtime.embedded_bridge:
-                await runtime.embedded_bridge.stop()
+            await runtime.hub.async_stop()
         finally:
-            # A stopped service cannot be reused, even when draining its commands failed.
-            hass.data[DOMAIN].pop(entry.entry_id, None)
-    if restarting:
-        hass.data[RESUME] = True
+            try:
+                await runtime.retained.async_stop()
+            finally:
+                if runtime.embedded_bridge:
+                    await runtime.embedded_bridge.stop()
+                hass.data[DOMAIN].pop(entry.entry_id, None)
+    if stop_error is not None:
+        _LOGGER.error("service stop failed during unload; the service resources were closed",
+                      exc_info=(type(stop_error), stop_error, stop_error.__traceback__))
+    return True
+
+
+async def async_remove_config_entry_device(hass: HomeAssistant, entry: ConfigEntry, device_entry: DeviceEntry) -> bool:
+    """A device still driven would come right back, so it is refused until it is removed from the bridge; one nothing
+    drives any more (left over in the registry) just goes."""
+    runtime: RuntimeData | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if runtime is None:
+        return False
+    service_hub = runtime.service.hub
+    live = set(runtime.hub.devices) | set(service_hub.drivers if service_hub is not None else ())
+    if any(domain == DOMAIN and value in live for domain, value in device_entry.identifiers):
+        raise HomeAssistantError(translation_domain=DOMAIN, translation_key="device_on_bridge",
+                                 translation_placeholders={"name": device_entry.name_by_user or device_entry.name or ""})
     return True
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Deleted, not just unloaded (which only says `offline`, keeping everything for the next start). Clears what this
-    entry leaves behind: its IL devices (retained descriptors and values, so ildevice-homeassistant and other IL consumers drop them),
-    with the embedded bridge also that bridge's retained topics and its state file, and the files it kept in its own
-    storage directory (the device list and the Tuya login). A path the user pointed elsewhere is left alone, as is
-    everything on an external bridge. A broker that cannot be reached only leaves the retained topics behind; the
-    removal goes on."""
+    """Deleted, not just unloaded. Clears what this entry leaves behind: its stored IL publications, what an entry from
+    before the embedded hub left on the broker (it has an IL prefix in its data), with the embedded bridge also that
+    bridge's retained topics and its state file, and the files it kept in its own storage directory (the device list and
+    the Tuya login). A path the user pointed elsewhere is left alone, as is everything on an external bridge. A broker
+    that cannot be reached only leaves the retained topics behind; the removal goes on."""
     from . import panel
+    from .retained import RetainedStore
 
     panel.async_remove(hass)
+    await RetainedStore.async_remove(hass, entry.entry_id)
     data = entry.data
     embedded = data.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED
-    await async_clear_retained(hass, data, il=True, bridge=embedded)
+    il = CONF_IL_PREFIX in data
+    if il or embedded:
+        await async_clear_retained(hass, data, il=il, bridge=embedded)
     owned = [data.get(CONF_DEVICES_PATH)]
     if data.get(CONF_DEVICES_PATH):
         owned.append(os.path.join(os.path.dirname(data[CONF_DEVICES_PATH]), CREDS_FILE))
@@ -290,14 +369,15 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_clear_retained(hass: HomeAssistant, data: dict[str, Any], *, il: bool, bridge: bool) -> None:
-    """With the service stopped, clear what `data` (an entry's data) left retained on its broker: its IL devices and
-    presence (`il`), and the whole bridge root (`bridge`, only for a bridge this entry owned). Used on delete, and when
-    the panel's Settings move the IL prefix / source or the embedded bridge's root away (the old topics would stay). A
-    broker that cannot be reached, or a producer / bridge still running there, leaves them and says so in the log."""
+    """With the service stopped, clear what `data` (an entry's data) left retained on its broker: the IL devices and
+    presence an entry from before the embedded hub published there (`il`), and the whole bridge root (`bridge`, only for
+    a bridge this entry owned). Used on delete, and when the panel's Settings move the embedded bridge's root away (the
+    old topics would stay). A broker that cannot be reached, or a producer / bridge still running there, leaves them and
+    says so in the log."""
     await broker.import_runtime(hass)
     from rustuya_local.service import AnotherProducer, purge_il, purge_retained
 
-    prefix, source = data.get(CONF_IL_PREFIX, DEFAULT_IL_PREFIX), data.get(CONF_IL_SOURCE, DEFAULT_IL_SOURCE)
+    prefix, source = data.get(CONF_IL_PREFIX, IL_PREFIX), data.get(CONF_IL_SOURCE, IL_SOURCE)
     transport = broker.transport(data, f"rustuya-clear-{secrets.token_hex(4)}")
     try:
         await transport.connect()

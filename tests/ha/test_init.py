@@ -1,6 +1,6 @@
-"""`async_setup_entry`/`async_unload_entry` for real: a real MQTT broker (mosquitto, skipped if missing), a real
-`rustuya_local.host.Runner`. No ildevice-homeassistant, no bridge, no `rustuya_manager` — this integration produces IL and does not
-depend on any of them at runtime (only its config flow does, and only for onboarding)."""
+"""`async_setup_entry`/`async_unload_entry` for real: a real MQTT broker (mosquitto, skipped if missing) for the bridge's
+side, a real `rustuya_local.host.Runner` and the embedded ildevice hub on the in-process transport. No bridge and no
+`rustuya_manager` (only the config flow needs it, and only for onboarding)."""
 
 from __future__ import annotations
 
@@ -72,6 +72,13 @@ class Watcher:
             self.close()
 
 
+def il(entry_or_runtime, hass=None) -> dict[str, str]:
+    """What the in-process transport retains: the IL topics, as text."""
+    runtime = hass.data[DOMAIN][entry_or_runtime.entry_id] if hass is not None else entry_or_runtime
+    return {t: m.payload.decode() if isinstance(m.payload, bytes) else m.payload
+            for t, m in runtime.transport.retained.items()}
+
+
 async def until(condition, timeout: float = 10.0) -> None:
     end = asyncio.get_running_loop().time() + timeout
     while not condition():
@@ -85,64 +92,31 @@ async def test_setup_publishes_and_unload_goes_offline(hass, broker, tmp_path, s
     entry = MockConfigEntry(domain=DOMAIN, data={
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
-        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
     }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
     entry.add_to_hass(hass)
     watcher = Watcher(broker, registered=("lamp1",))
     try:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
+        runtime = hass.data[DOMAIN][entry.entry_id]
 
-        await until(lambda: "il/_producer/tuya" in watcher.last)
-        assert watcher.last["il/_producer/tuya"] == "online"
-        await until(lambda: "il/lamp1/descriptor" in watcher.last)
-        assert json.loads(watcher.last["il/lamp1/descriptor"])["kind"] == "light"
+        await until(lambda: il(runtime).get("il/_producer/tuya") == "online")
+        await until(lambda: "il/lamp1/descriptor" in il(runtime))
+        assert json.loads(il(runtime)["il/lamp1/descriptor"])["kind"] == "light"
 
         # the runner asked the bridge for the device's state, exactly as the standalone daemon does
         watcher.publish("rustuya/error/lamp1", '{"errorCode":0,"errorMsg":"Connection Successful"}', retain=True)
         await until(lambda: json.loads(watcher.last.get("rustuya/command", "{}")).get("action") == "get")
 
         watcher.publish("rustuya/event/state/lamp1", '{"20":true,"22":1000,"23":0}', retain=True)
-        await until(lambda: watcher.last.get("il/lamp1/brightness") == "100")
+        await until(lambda: il(runtime).get("il/lamp1/brightness") == "100")
 
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
-        await until(lambda: watcher.last.get("il/_producer/tuya") == "offline")
+        assert il(runtime)["il/_producer/tuya"] == "offline"
+        assert not [t for t in watcher.last if t.startswith("il/")]         # nothing of it reaches the broker
     finally:
         await watcher.clear_and_close()
-
-
-async def test_setup_is_retried_while_another_producer_runs(hass, broker, tmp_path, socket_enabled):
-    from homeassistant.config_entries import ConfigEntryState
-
-    from rustuya_local.host import Hub, IlTopics, MqttTransport, Runner
-
-    other = Hub([lamp("lamp1")], il=IlTopics("il", "tuya"))            # a daemon, say, already serving il / tuya
-    will = other.presence(False)
-    t = MqttTransport("127.0.0.1", broker, client_id="other-producer", will=(will.topic, will.payload, will.qos,
-                                                                            will.retain))
-    await t.connect()
-    runner = Runner(other, t)
-    await runner.start()
-    await runner.drain()
-    devices_path = tmp_path / "tuyadevices.json"
-    devices_path.write_text(json.dumps([lamp("lamp1")]))
-    entry = MockConfigEntry(domain=DOMAIN, data={
-        CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
-        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
-        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
-    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
-    entry.add_to_hass(hass)
-    try:
-        assert not await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-        assert entry.state is ConfigEntryState.SETUP_RETRY
-        assert "another producer" in (entry.reason or "")
-    finally:
-        await runner.stop()
-        await t.publish("il/_producer/tuya", "", 1, True)
-        await t.publish("il/lamp1/descriptor", "", 1, True)
-        await t.close()
 
 
 async def test_setup_fails_cleanly_when_the_broker_is_unreachable(hass, tmp_path, socket_enabled):
@@ -151,7 +125,6 @@ async def test_setup_fails_cleanly_when_the_broker_is_unreachable(hass, tmp_path
     entry = MockConfigEntry(domain=DOMAIN, data={
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": 1, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
-        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
     }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
     entry.add_to_hass(hass)
     assert not await hass.config_entries.async_setup(entry.entry_id)
@@ -184,14 +157,13 @@ async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(ha
     entry = MockConfigEntry(domain=DOMAIN, data={
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
-        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
     }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
     entry.add_to_hass(hass)
     watcher = Watcher(broker, registered=("lamp1",))
     try:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        await until(lambda: "il/lamp1/descriptor" in watcher.last)
+        await until(lambda: "il/lamp1/descriptor" in il(entry, hass))
         assert in_loop == []
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
@@ -199,44 +171,41 @@ async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(ha
         await watcher.clear_and_close()
 
 
-async def test_deleting_the_entry_takes_its_devices_out_of_il(hass, broker, tmp_path, socket_enabled):
-    """Unloading keeps the descriptors (the producer comes back); deleting clears every retained topic this source
-    left, including a device an earlier run published that the current one no longer drives, and nothing of another
-    source on the same prefix."""
-    devices_path = tmp_path / "tuyadevices.json"
-    devices_path.write_text(json.dumps([lamp("lamp1")]))
+async def test_deleting_an_entry_from_before_the_hub_clears_what_it_left_on_the_broker(hass, broker, tmp_path,
+                                                                                       socket_enabled):
+    """It published IL on the broker, under the prefix and source in its data: deleting it clears every retained topic
+    of that source, and nothing of another source on the same prefix. A new entry has no such keys, and leaves IL alone."""
     entry = MockConfigEntry(domain=DOMAIN, data={
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
-        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
+        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(tmp_path / "t.json"),
         CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
-    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
+    }, options={CONF_PACK: False}, minor_version=2)
     entry.add_to_hass(hass)
-    watcher = Watcher(broker, registered=("lamp1",))
+    watcher = Watcher(broker)
     try:
         watcher.publish("il/stale1/descriptor", json.dumps({"il": 1, "id": "stale1", "source": "tuya", "props": {}}), retain=True)
         watcher.publish("il/stale1/power", "true", retain=True)
         watcher.publish("il/zb1/descriptor", json.dumps({"il": 1, "id": "zb1", "source": "zigbee", "props": {}}), retain=True)
         watcher.publish("il/zb1/power", "true", retain=True)
-        assert await hass.config_entries.async_setup(entry.entry_id)
+        watcher.publish("il/_producer/tuya", "offline", retain=True)
+        with patch("custom_components.rustuya.async_setup_entry", return_value=False):
+            await hass.config_entries.async_remove(entry.entry_id)
         await hass.async_block_till_done()
-        await until(lambda: "il/lamp1/descriptor" in watcher.last)
-        watcher.publish("rustuya/event/state/lamp1", '{"20":true,"22":1000,"23":0}', retain=True)
-        await until(lambda: watcher.last.get("il/lamp1/brightness") == "100")
-
-        await hass.config_entries.async_remove(entry.entry_id)
-        await hass.async_block_till_done()
-
-        for topic in ("il/lamp1/descriptor", "il/lamp1/brightness", "il/stale1/descriptor", "il/stale1/power", "il/_producer/tuya"):
-            try:
-                await until(lambda t=topic: watcher.last.get(t) == "")
-            except AssertionError:
-                raise AssertionError((topic, dict(watcher.last)))
+        for topic in ("il/stale1/descriptor", "il/stale1/power", "il/_producer/tuya"):
+            await until(lambda t=topic: watcher.last.get(t) == "")
         assert watcher.last["il/zb1/power"] == "true" and json.loads(watcher.last["il/zb1/descriptor"])["source"] == "zigbee"
-        # nothing is left retained for it: a fresh subscriber sees none of those topics
-        late = Watcher(broker)
-        await asyncio.sleep(0.5)
-        late.close()
-        assert not [t for t, p in late.last.items() if p and t.startswith(("il/lamp1", "il/stale1", "il/_producer"))]
+
+        new = MockConfigEntry(domain=DOMAIN, data={
+            CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
+            "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(tmp_path / "t.json"),
+        }, options={CONF_PACK: False}, minor_version=2)
+        new.add_to_hass(hass)
+        watcher.publish("il/stale2/descriptor", json.dumps({"il": 1, "id": "stale2", "source": "tuya", "props": {}}), retain=True)
+        with patch("custom_components.rustuya.async_setup_entry", return_value=False):
+            await hass.config_entries.async_remove(new.entry_id)
+        await hass.async_block_till_done()
+        await asyncio.sleep(0.3)
+        assert watcher.last["il/stale2/descriptor"] != ""
     finally:
         await watcher.clear_and_close()
 
@@ -248,7 +217,6 @@ async def _remove_with(hass, broker, tmp_path, mode: str, devices_path: str):
         CONF_BRIDGE_MODE: mode, "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: devices_path,
         CONF_BRIDGE_STATE_FILE: hass.config.path(".storage/rustuya/bridge_state.json"),
-        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
     }, options={CONF_PACK: False}, minor_version=2)
     entry.add_to_hass(hass)
     with patch("custom_components.rustuya.async_setup_entry", return_value=False):     # never loaded: remove only
@@ -296,7 +264,6 @@ async def test_setup_without_a_device_file_starts_with_no_devices(hass, broker, 
     entry = MockConfigEntry(domain=DOMAIN, data={
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(tmp_path / "none" / "t.json"),
-        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
     }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
     entry.add_to_hass(hass)
     try:
@@ -337,28 +304,32 @@ async def test_send_command_writes_a_raw_dp_and_refuses_a_lock(hass, broker, tmp
     entry = MockConfigEntry(domain=DOMAIN, data={
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
-        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
     }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
     entry.add_to_hass(hass)
     watcher = Watcher(broker, registered=("lamp1", "lock1"))
     try:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        await until(lambda: "il/lamp1/descriptor" in watcher.last and "il/lock1/descriptor" in watcher.last)
+        await until(lambda: "il/lamp1/descriptor" in il(entry, hass) and "il/lock1/descriptor" in il(entry, hass))
 
         await hass.services.async_call(DOMAIN, "send_command", {"device_id": "lamp1", "dp": 20, "value": False},
                                        blocking=True)
         await until(lambda: json.loads(watcher.last.get("rustuya/command", "{}")).get("action") == "set")
         assert json.loads(watcher.last["rustuya/command"]) == {"action": "set", "id": "lamp1", "dps": {"20": False}}
 
-        # a Home Assistant device, as ildevice-homeassistant registers one: the IL id (the Tuya id) among its identifiers
+        # the Home Assistant device the embedded hub registered: the IL id (the Tuya id) among its identifiers
         from homeassistant.helpers import device_registry as dr
 
-        il_ha = MockConfigEntry(domain="ildevice")
-        il_ha.add_to_hass(hass)
         registry = dr.async_get(hass)
-        ha_lamp = registry.async_get_or_create(config_entry_id=il_ha.entry_id, identifiers={("ildevice", "lamp1")})
-        ha_lock = registry.async_get_or_create(config_entry_id=il_ha.entry_id, identifiers={("ildevice", "lock1")})
+
+        def ha_device(device_id):
+            return next((d for d in dr.async_entries_for_config_entry(registry, entry.entry_id)
+                         if (DOMAIN, device_id) in d.identifiers), None)
+
+        await until(lambda: ha_device("lamp1") is not None)
+        ha_lamp = ha_device("lamp1")
+        # the test's lock has no entity the hub would register it for
+        ha_lock = registry.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, "lock1")})
         await hass.services.async_call(DOMAIN, "send_command", {"device_id": ha_lamp.id, "dp": "22", "value": 500},
                                        blocking=True)
         await until(lambda: json.loads(watcher.last["rustuya/command"]).get("dps") == {"22": 500})
@@ -374,44 +345,5 @@ async def test_send_command_writes_a_raw_dp_and_refuses_a_lock(hass, broker, tmp
 
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
-    finally:
-        await watcher.clear_and_close()
-
-
-async def test_an_options_change_restarts_without_the_devices_going_away(hass, broker, tmp_path, socket_enabled):
-    """Changing an option restarts the service, but IL consumers see no gap: the presence stays `online` and no device
-    says `available: false` (an event entity coming back from `unavailable` looks pressed to an automation that
-    follows its state). Unloading for real still goes offline."""
-    devices_path = tmp_path / "tuyadevices.json"
-    devices_path.write_text(json.dumps([lamp("lamp1")]))
-    entry = MockConfigEntry(domain=DOMAIN, data={
-        CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
-        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
-        CONF_IL_PREFIX: "il", CONF_IL_SOURCE: "tuya",
-    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
-    entry.add_to_hass(hass)
-    watcher = Watcher(broker, registered=("lamp1",))
-    try:
-        watcher.publish("rustuya/error/lamp1", '{"errorCode":0,"errorMsg":"Connection Successful"}', retain=True)
-        watcher.publish("rustuya/event/state/lamp1", '{"20":true,"22":1000,"23":0}', retain=True)
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-        await until(lambda: watcher.last.get("il/lamp1/brightness") == "100")
-        await until(lambda: watcher.last.get("il/lamp1/available") == "true")
-        runtime = hass.data[DOMAIN][entry.entry_id]
-        watcher.log.clear()
-
-        hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_EXPOSE_UNUSED: True})
-        await hass.async_block_till_done()
-        await until(lambda: hass.data[DOMAIN].get(entry.entry_id) not in (None, runtime))
-        await until(lambda: any(t == "rustuya/command" for t, _ in watcher.log))          # the new one asked the bridge
-        await asyncio.sleep(1)
-        assert ("il/_producer/tuya", "offline") not in watcher.log
-        assert ("il/lamp1/available", "false") not in watcher.log
-        assert watcher.last["il/_producer/tuya"] == "online"
-
-        assert await hass.config_entries.async_unload(entry.entry_id)
-        await hass.async_block_till_done()
-        await until(lambda: watcher.last.get("il/_producer/tuya") == "offline")
     finally:
         await watcher.clear_and_close()

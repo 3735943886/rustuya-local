@@ -9,17 +9,13 @@
       },
       "external": {
         "title": "Connect to rustuya-bridge",
-        "description": "The MQTT broker your running rustuya-bridge uses, and the IL prefix to publish under. Setup checks that the bridge answers there. The rest (topic root, IL source, device file) starts at its default; change it later in the Rustuya panel's Settings.",
+        "description": "The MQTT broker your running rustuya-bridge uses. Setup checks that the bridge answers there. The rest (topic root, device file) starts at its default; change it later in the Rustuya panel's Settings.",
         "data": {
           "broker_host": "Broker host",
           "broker_port": "Broker port",
           "broker_username": "Broker username (optional)",
           "broker_password": "Broker password (optional)",
-          "bridge_root": "Bridge topic root",
-          "il_prefix": "IL topic prefix"
-        },
-        "data_description": {
-          "il_prefix": "Where the devices are published for ildevice-homeassistant (or any IL consumer); ildevice-homeassistant reads il by default."
+          "bridge_root": "Bridge topic root"
         }
       },
       "embedded": {
@@ -29,11 +25,7 @@
           "broker_host": "Broker host",
           "broker_port": "Broker port",
           "broker_username": "Broker username (optional)",
-          "broker_password": "Broker password (optional)",
-          "il_prefix": "IL topic prefix"
-        },
-        "data_description": {
-          "il_prefix": "Where the devices are published for ildevice-homeassistant (or any IL consumer); ildevice-homeassistant reads il by default."
+          "broker_password": "Broker password (optional)"
         }
       },
       "onboard": {
@@ -84,9 +76,9 @@
     "error": {
       "bridge_not_found": "The broker answers, but no rustuya-bridge is running on that topic root. Start the bridge, or enter the topic root it runs on, and try again.",
       "cannot_connect": "Could not connect to the MQTT broker. Check the host, port and credentials.",
-      "invalid_prefix": "An MQTT topic without wildcards (+, #) or empty levels, e.g. il or home/il.",
       "publish_failed": "Could not send the command to the bridge.",
-      "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead"
+      "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead",
+      "user_code_required": "Enter the user code: there is no saved Tuya login to use yet"
     },
     "abort": {
       "already_configured": "Already set up.",
@@ -142,7 +134,8 @@
       "panel_open": "[Open the Rustuya panel]({url})."
     },
     "error": {
-      "publish_failed": "Could not send the command to the bridge."
+      "publish_failed": "Could not send the command to the bridge.",
+      "user_code_required": "Enter the user code: there is no saved Tuya login to use yet"
     }
   },
   "services": {
@@ -152,7 +145,7 @@
       "fields": {
         "device_id": {
           "name": "Device ID",
-          "description": "The Tuya device ID (as in the device list), or the Home Assistant device an IL consumer such as ildevice-homeassistant made of it."
+          "description": "The Tuya device ID (as in the device list), or its Home Assistant device."
         },
         "dp": {
           "name": "DP",
@@ -174,6 +167,9 @@
     },
     "hazardous": {
       "message": "Device {device_id} is a lock, alarm or garage door; allow their remote control in the options to send it commands."
+    },
+    "device_on_bridge": {
+      "message": "{name} is still on the bridge and would come right back. Remove it from the bridge in the Rustuya panel's Devices."
     }
   }
 }

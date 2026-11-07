@@ -9,9 +9,10 @@ rustuya-bridge / embedded pyrustuyabridge
   ↕ MQTT (topic and payload templates announced by the bridge)
 BridgeClient ↔ Runner ↔ Hub ↔ tuya-interpreter TuyaDriver
                 ↕
-          IL MQTT transport
-                ↕
-ildevice-homeassistant / other IL consumers
+          IL transport
+           ↕ MQTT                  ↕ in-process (Home Assistant integration)
+ildevice-homeassistant,      embedded ildevice hub → entities under `rustuya`
+other IL consumers
 ```
 
 ## Components
@@ -28,10 +29,13 @@ ildevice-homeassistant / other IL consumers
 | `host/mqtt.py`, `memory.py` | paho MQTT and in-process test transports |
 | `cli.py`, `config.py` | Standalone daemon and configuration validation |
 | `manager_plugin/` | Supervision by the manager, settings/file APIs and web tab |
-| `custom_components/rustuya/` | HA config entry, embedded bridge, login/registration and administrator panel |
+| `custom_components/rustuya/` | HA config entry, embedded bridge, embedded ildevice hub and its retained store, login/registration and administrator panel |
 | External `tuya-interpreter` | Single-device Tuya DP interpretation, command validation and rule composition |
 
-HA entity creation belongs to the IL consumer. The base package does not import Home Assistant.
+HA entity creation belongs to the IL consumer: in the integration, the `ildevice_ha` hub on an in-process transport shared
+with the service. It lasts as long as the config entry, across restarts of the service on an options change, and
+`retained.py` stores what the transport retains, standing in for the broker across Home Assistant restarts. The base
+package does not import Home Assistant or depend on `ildevice_ha`; only the integration's manifest requires it.
 
 ## IL topics
 

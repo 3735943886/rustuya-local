@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rustuya-local"
-version = "0.1.4"
+version = "0.2.0rc4"
 description = "Local Tuya control: rustuya-bridge -> tuya-interpreter -> IL (ildevice). HA-independent core."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -24,7 +24,7 @@ rustuya-local = "rustuya_local.cli:main"
 rustuya-local = "rustuya_local.manager_plugin:register"
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-asyncio", "ildevice-homeassistant", "httpx2"]      # ildevice-homeassistant: the IL consumer; httpx2: Starlette TestClient
+test = ["pytest", "pytest-asyncio", "ildevice-homeassistant==0.2.1", "httpx2"]      # ildevice-homeassistant: the IL consumer; httpx2: Starlette TestClient
 test-ha = ["pytest-homeassistant-custom-component"]   # Home Assistant integration tests
 fullstack = ["tuyamock"]      # device emulator for full-stack tests
 manager = ["rustuya-manager[web]>=0.2.3"]      # tests/e2e/test_manager_plugin*.py: the manager's real plugin host, its web app

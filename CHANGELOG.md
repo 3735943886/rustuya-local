@@ -4,6 +4,16 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
+- Update the embedded IL device hub to ildevice-homeassistant 0.2.1 and support its image platform.
+- Create the Home Assistant entities in the integration itself, with the ildevice hub embedded on an in-process
+  transport. The IL device integration is no longer needed, and the integration publishes no IL on the broker; the
+  bridge still needs one. **Existing entities are not taken over**: see *Upgrading from a version before 0.2* in the
+  README.
+- Remove the IL prefix and source settings from setup and the panel.
+- Keep the last values across Home Assistant restarts in the integration's own storage.
+- An options change restarts the service only, keeping the entities.
+- Allow deleting a Home Assistant device nothing drives any more; one the bridge still holds is refused with a reason.
+
 ## [0.1.4]
 
 - Fix the embedded bridge connecting without a username to a broker that requires one: it passed `mqtt_username`

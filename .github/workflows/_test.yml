@@ -3,9 +3,7 @@ name: Test (reusable)
 # Single source of truth for rustuya-local's pre-merge / pre-publish checks. Called from ci.yml
 # on push/PR and as a gate from release.yml, so a commit that fails these can't reach PyPI.
 #
-# ildevice-homeassistant is not on PyPI yet, so check out ildevice-homeassistant and explicitly
-# install that checkout together with rustuya-local's test extras.
-# Other package dependencies are installed from PyPI.
+# Install test dependencies, including the pinned ildevice-homeassistant release, from PyPI.
 
 on:
   workflow_call:
@@ -20,9 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ildevice-homeassistant (the test/fullstack sibling dep) requires Python>=3.14; rustuya-local's own
-        # requires-python floor (3.13, in pyproject.toml) stays lower since only the test extras
-        # need 3.14, not the base package.
+        # Run the full test suite on Python 3.14. rustuya-local's own requires-python floor stays at 3.13.
         python-version: ["3.14"]
 
     steps:
@@ -30,13 +26,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: rustuya-local
-
-      # Install the integration checkout as the test consumer package.
-      - name: Check out ildevice-homeassistant
-        uses: actions/checkout@v7
-        with:
-          repository: 3735943886/ildevice-homeassistant
-          path: ildevice-homeassistant
 
       # tuya-interpreter is on PyPI (installed below via uv), so this isn't for dependency
       # resolution -- it's so tests/e2e/test_full_stack_devices.py can reach its sibling
@@ -86,7 +75,7 @@ jobs:
 
       - name: Install rustuya-local + test extras
         working-directory: rustuya-local
-        run: uv pip install --system -e ../ildevice-homeassistant -e ".[test,test-ha,fullstack,manager]"
+        run: uv pip install --system -e ".[test,test-ha,fullstack,manager]"
 
       - name: ruff
         working-directory: rustuya-local

@@ -2,7 +2,7 @@
 
 `rustuya-local run` is the same service the Home Assistant integration runs, without Home Assistant: it reads
 rustuya-bridge over MQTT and publishes IL for any IL consumer. For Home Assistant, use the integration instead
-(see the [README](../README.md)); run only one IL producer per bridge.
+(see the [README](../README.md)); run only one per bridge.
 
 ## Install and run
 

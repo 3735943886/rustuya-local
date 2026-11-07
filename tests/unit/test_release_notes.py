@@ -1,5 +1,6 @@
 """A release's GitHub Release notes are its CHANGELOG.md section; a stable version without one is not published."""
 import importlib.util
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -53,6 +54,7 @@ def test_a_prerelease_falls_back_to_unreleased():
 
 
 def test_the_current_version_has_notes():
-    """Bumping the version without a CHANGELOG entry fails here, before a tag is pushed."""
+    """Stable versions need a section; pre-releases use Unreleased, like the release workflow."""
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
-    assert release_notes.notes((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), version)
+    prerelease = re.fullmatch(r"\d+\.\d+\.\d+", version) is None
+    assert release_notes.notes((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), version, prerelease=prerelease)

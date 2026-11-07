@@ -9,17 +9,13 @@
       },
       "external": {
         "title": "rustuya-bridge에 연결",
-        "description": "실행 중인 rustuya-bridge가 쓰는 MQTT 브로커와, 기기를 게시할 IL prefix를 입력하세요. 설정 중에 그 브로커에서 브리지가 응답하는지 확인합니다. 나머지(토픽 root, IL source, 기기 파일)는 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다.",
+        "description": "실행 중인 rustuya-bridge가 쓰는 MQTT 브로커를 입력하세요. 설정 중에 그 브로커에서 브리지가 응답하는지 확인합니다. 나머지(토픽 root, 기기 파일)는 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다.",
         "data": {
           "broker_host": "브로커 호스트",
           "broker_port": "브로커 포트",
           "broker_username": "브로커 사용자 이름 (선택)",
           "broker_password": "브로커 비밀번호 (선택)",
-          "bridge_root": "브리지 토픽 root",
-          "il_prefix": "IL 토픽 prefix"
-        },
-        "data_description": {
-          "il_prefix": "ildevice-homeassistant(또는 다른 IL 소비자)가 읽을 기기를 게시하는 곳입니다. ildevice-homeassistant는 기본으로 il을 읽습니다."
+          "bridge_root": "브리지 토픽 root"
         }
       },
       "embedded": {
@@ -29,11 +25,7 @@
           "broker_host": "브로커 호스트",
           "broker_port": "브로커 포트",
           "broker_username": "브로커 사용자 이름 (선택)",
-          "broker_password": "브로커 비밀번호 (선택)",
-          "il_prefix": "IL 토픽 prefix"
-        },
-        "data_description": {
-          "il_prefix": "ildevice-homeassistant(또는 다른 IL 소비자)가 읽을 기기를 게시하는 곳입니다. ildevice-homeassistant는 기본으로 il을 읽습니다."
+          "broker_password": "브로커 비밀번호 (선택)"
         }
       },
       "onboard": {
@@ -84,9 +76,9 @@
     "error": {
       "bridge_not_found": "브로커는 응답하지만 그 토픽 root에서 실행 중인 rustuya-bridge가 없습니다. 브리지를 시작하거나, 브리지가 쓰는 토픽 root를 입력한 뒤 다시 시도하세요.",
       "cannot_connect": "MQTT 브로커에 연결할 수 없습니다. 호스트, 포트, 계정 정보를 확인하세요.",
-      "invalid_prefix": "와일드카드(+, #)나 빈 단계가 없는 MQTT 토픽이어야 합니다. 예: il, home/il",
       "publish_failed": "브리지에 명령을 보내지 못했습니다.",
-      "pyrustuyabridge_missing": "pyrustuyabridge가 설치되어 있지 않습니다. 외부 브리지를 선택하세요."
+      "pyrustuyabridge_missing": "pyrustuyabridge가 설치되어 있지 않습니다. 외부 브리지를 선택하세요.",
+      "user_code_required": "사용자 코드를 입력하세요. 아직 저장된 Tuya 로그인이 없습니다."
     },
     "abort": {
       "already_configured": "이미 설정되어 있습니다.",
@@ -142,7 +134,8 @@
       "panel_open": "[Rustuya 패널 열기]({url})"
     },
     "error": {
-      "publish_failed": "브리지에 명령을 보내지 못했습니다."
+      "publish_failed": "브리지에 명령을 보내지 못했습니다.",
+      "user_code_required": "사용자 코드를 입력하세요. 아직 저장된 Tuya 로그인이 없습니다."
     }
   },
   "services": {
@@ -152,7 +145,7 @@
       "fields": {
         "device_id": {
           "name": "기기 ID",
-          "description": "Tuya 기기 ID (기기 목록의 것), 또는 ildevice-homeassistant 같은 IL consumer가 만든 Home Assistant 기기 ID."
+          "description": "Tuya 기기 ID (기기 목록의 것), 또는 그 Home Assistant 기기 ID."
         },
         "dp": {
           "name": "DP",
@@ -174,6 +167,9 @@
     },
     "hazardous": {
       "message": "기기 {device_id}은(는) 잠금장치·경보·차고문입니다. 명령을 보내려면 옵션에서 원격 제어를 허용하세요."
+    },
+    "device_on_bridge": {
+      "message": "{name}은(는) 아직 브리지에 있어 다시 나타납니다. Rustuya 패널의 Devices에서 브리지에서 제거하세요."
     }
   }
 }
