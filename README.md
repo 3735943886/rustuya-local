@@ -25,9 +25,9 @@ Tuya Cloud is only used once, to fetch your device list and local keys (QR code 
 
 ## Installation
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=3735943886&repository=rustuya-local&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Marketplace.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=3735943886&repository=rustuya-local&category=integration)
 
-1. In HACS, search for **Rustuya** and download it.
+1. In Marketplace, search for **Rustuya** and download it.
 2. Restart Home Assistant.
 3. *Add integration → Rustuya* (see below).
 
