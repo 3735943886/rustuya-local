@@ -4,7 +4,7 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
-- Update the embedded IL device hub to ildevice-homeassistant 0.2.1.
+- Update the embedded IL device hub to ildevice-homeassistant 0.2.1 and support its image platform.
 - Create the Home Assistant entities in the integration itself, with the ildevice hub embedded on an in-process
   transport. The IL device integration is no longer needed, and the integration publishes no IL on the broker; the
   bridge still needs one. **Existing entities are not taken over**: see *Upgrading from a version before 0.2* in the
