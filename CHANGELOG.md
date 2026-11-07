@@ -4,15 +4,22 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
-- Update the embedded IL device hub to ildevice-homeassistant 0.2.1 and support its image platform.
-- Create the Home Assistant entities in the integration itself, with the ildevice hub embedded on an in-process
-  transport. The IL device integration is no longer needed, and the integration publishes no IL on the broker; the
-  bridge still needs one. **Existing entities are not taken over**: see *Upgrading from a version before 0.2* in the
-  README.
-- Remove the IL prefix and source settings from setup and the panel.
-- Keep the last values across Home Assistant restarts in the integration's own storage.
-- An options change restarts the service only, keeping the entities.
-- Allow deleting a Home Assistant device nothing drives any more; one the bridge still holds is refused with a reason.
+## [0.2.0]
+
+### Breaking Changes
+
+- **Device and entity management moved from `ildevice` to `rustuya`**:
+  Home Assistant entities and devices are now created directly by the Rustuya integration using an embedded IL device hub (via an in-process transport) instead of publishing IL over MQTT to the external IL device integration.
+  - The standalone IL device (`ildevice`) integration is no longer needed.
+  - **Migration Note**: Existing entities are not automatically taken over. When upgrading from a version before 0.2, delete the existing entity entries from Home Assistant first before updating/enabling the integration. Doing so ensures new entities are created cleanly with their original entity IDs without unintended `_2` suffixes or collisions. (See *Upgrading from a version before 0.2* in the README for details.)
+  - Removed IL topic prefix and source settings from the setup flow and management panel.
+
+### Features & Improvements
+
+- Update the embedded IL device hub to `ildevice-homeassistant` 0.2.1 and add support for the image platform.
+- Retain the last known values across Home Assistant restarts in the integration's own storage.
+- Options flow changes now restart the service only, preserving entities without reloading platforms.
+- Allow deleting Home Assistant devices that are no longer driven; devices still held by the bridge are refused with a reason.
 
 ## [0.1.4]
 
