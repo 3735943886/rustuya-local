@@ -5,10 +5,8 @@
 Local control of Tuya devices in Home Assistant, with no cloud round trip for state or commands.
 
 Rustuya talks to your devices over the LAN through [rustuya-bridge](https://github.com/3735943886/rustuya-bridge),
-interprets them the way Home Assistant's own `tuya` integration does (via
-[tuya-interpreter](https://github.com/3735943886/tuya-interpreter)), and creates their Home Assistant devices and
-entities itself, with the [IL device](https://github.com/3735943886/ildevice-homeassistant) hub built in. You do not
-need to install the IL device integration.
+interprets them, and creates their Home Assistant devices and entities itself, with the [IL device](https://github.com/3735943886/ildevice-homeassistant)
+hub built in.
 
 ```
 Tuya devices ──LAN──► rustuya-bridge ──MQTT──► Rustuya ──► Home Assistant entities
