@@ -149,6 +149,30 @@ async def test_a_device_gone_while_home_assistant_was_down_leaves_the_registry(h
     await hass.async_block_till_done()
 
 
+@pytest.mark.parametrize("retained_lost", [False, True], ids=["broker-kept", "broker-emptied"])
+async def test_a_restart_keeps_the_device_and_entity_ids(hass, setup, retained_lost):
+    """Automations refer to the registry's device id (a random one) and the entity id: a restart, with the broker's
+    retained bridge topics kept or gone (a restarted broker without persistence), must give the same ones back."""
+    entry, watcher, _ = await setup()
+    device_id, entity_id = _device(hass, "lamp1").id, _light(hass, "lamp1")
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    if retained_lost:
+        watcher.publish("rustuya/event/state/lamp1", "", retain=True)
+        watcher.publish("rustuya/error/lamp1", "", retain=True)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    if retained_lost:                                               # the device reports once it is back
+        watcher.publish("rustuya/error/lamp1", CONNECTED, retain=True)
+        watcher.publish("rustuya/event/state/lamp1", LAMP_ON, retain=True)
+    await until(lambda: hass.states.get(entity_id) is not None and hass.states.get(entity_id).state == "on")
+    assert _device(hass, "lamp1").id == device_id
+    assert _light(hass, "lamp1") == entity_id
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
 async def test_an_options_change_restarts_the_service_and_keeps_the_entities(hass, setup):
     """No device goes `unavailable` and back (an event entity coming back looks pressed to an automation that follows
     its state), and the hub stays."""

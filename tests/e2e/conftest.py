@@ -1,9 +1,5 @@
-import shutil
-import socket
-import subprocess
-import time
-
 import pytest
+from brokers import running_broker
 
 try:
     import pytest_socket  # noqa: F401
@@ -35,15 +31,9 @@ else:
         yield
 
 
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 @pytest.fixture(scope="session")
 def broker():
-    """A real mosquitto on a free port (skipped when the binary is not installed)."""
+    """A real broker on a free port (see brokers.py; skipped when not installed)."""
     # session-scoped, so its first (and only) use can land in a test where pytest hasn't set up
     # the function-scoped `_real_sockets`/`socket_enabled` fixture yet -- higher-scoped fixtures
     # are set up before lower-scoped ones within the same test, autouse or not. Enable directly
@@ -54,21 +44,5 @@ def broker():
         pass
     else:
         pytest_socket.enable_socket()
-    exe = shutil.which("mosquitto")
-    if exe is None:
-        pytest.skip("mosquitto is not installed")
-    port = _free_port()
-    # `-p` runs the default local-only configuration: this machine's clients, anonymous, nothing persisted
-    proc = subprocess.Popen([exe, "-p", str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for _ in range(50):
-        try:
-            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
-            break
-        except OSError:
-            time.sleep(0.1)
-    else:
-        proc.kill()
-        pytest.fail("mosquitto did not start")
-    yield port
-    proc.terminate()
-    proc.wait(5)
+    with running_broker() as port:
+        yield port
