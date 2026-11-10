@@ -32,18 +32,19 @@ Tuya Cloud is only used once, to fetch your device list and local keys (QR code 
 
 ## Setup
 
-Setup first asks how to reach rustuya-bridge:
+Setup first asks how Rustuya should run. MQTT is the small message hub that devices and programs use to talk to each
+other (the broker). If you don't know what it is, pick the first option.
 
 | choice | when |
 |---|---|
-| **An external rustuya-bridge** | You already run rustuya-bridge (or rustuya-manager). Setup checks that the bridge answers on the broker; if it is not on the default topic root `rustuya`, it asks for that root. |
-| **Run rustuya-bridge inside Home Assistant** | Nothing else is running. Rustuya starts and owns the bridge itself. It still needs the MQTT broker. |
-| **No MQTT broker: run everything inside Home Assistant** | You have no broker and don't want one. Rustuya runs the bridge and a small broker of its own ([pymqttd](https://github.com/3735943886/pymqttd)) between them. |
+| **Beginner: everything inside Home Assistant** (recommended) | You don't know MQTT and don't want to set up a broker. Rustuya runs rustuya-bridge and a small broker of its own ([pymqttd](https://github.com/3735943886/pymqttd)) between them, reachable only from this machine. |
+| **Expert: my own MQTT broker; Home Assistant runs the bridge** | You already run a broker (for example the Mosquitto add-on). Rustuya starts and owns rustuya-bridge itself. |
+| **Expert: my own MQTT broker and my own rustuya-bridge** | You already run both. Setup checks that your running bridge answers on the broker; if it is not on the default topic root `rustuya`, it asks for that root. |
 
-For the first two, enter the broker (host, port, optional username and password).
+For the two expert choices, enter the broker (host, port, optional username and password).
 
-The built-in broker is a fallback for a setup without one, not a replacement: if you have a broker, or plan to, use one
-of the first two. It runs as a separate process, listens only on `127.0.0.1` with credentials made up at each start,
+The built-in broker is for a setup without one. If you have a broker, or plan to share one with other devices, use one
+of the expert choices. It runs as a separate process, listens only on `127.0.0.1` with credentials made up at each start,
 and is stopped with Home Assistant, so nothing else on your network can use it. What it retains lives in memory: after a
 Home Assistant restart the devices show their last values, unavailable, until the bridge has reconnected to them.
 

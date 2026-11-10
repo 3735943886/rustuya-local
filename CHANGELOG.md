@@ -4,9 +4,10 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
-- Add a setup choice for users without an MQTT broker: *No MQTT broker: run everything inside Home Assistant* runs the
+- Add a setup choice for users without an MQTT broker: *Beginner: everything inside Home Assistant* (recommended) runs the
   embedded bridge on a broker of the integration's own ([pymqttd](https://github.com/3735943886/pymqttd), rumqttd in a
-  child process), on `127.0.0.1` with per-start credentials. A broker of your own stays the usual way.
+  child process), on `127.0.0.1` with per-start credentials. It is first in the setup menu, with the two expert choices
+  (your own MQTT broker) after it.
 - Fix a scene, or any single action that sets a light's colour and brightness together, changing only the brightness
   and leaving the light on the previous colour or white (#3): require tuya-interpreter 0.1.1, which computes each
   write on the values it has just sent as well as those the device reported.

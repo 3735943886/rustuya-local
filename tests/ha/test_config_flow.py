@@ -79,9 +79,9 @@ async def _drain_progress(flow, manager, max_steps=10):
     raise AssertionError("progress never finished")
 
 
-async def test_the_user_menu_offers_the_built_in_broker_last(hass):
+async def test_the_user_menu_offers_the_beginner_mode_first(hass):
     result = await _start(hass)
-    assert result["type"] == "menu" and result["menu_options"] == ["external", "embedded", "builtin"]
+    assert result["type"] == "menu" and result["menu_options"] == ["builtin", "embedded", "external"]
 
 
 BROKER = {"broker_host": "h", "broker_port": 1883, "broker_username": "", "broker_password": ""}
