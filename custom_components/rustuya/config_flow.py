@@ -2,8 +2,9 @@
 through rustuya-manager's `Manager` — the Tuya Cloud QR login wizard and registering devices on the bridge
 (`architecture_device_management_via_manager`: this flow drives `Manager`, never rolls its own bridge protocol).
 
-Setup asks only for the bridge mode and the broker, then offers the (optional) cloud login. A user with no MQTT broker
-picks the last mode, the embedded bridge on a broker this integration runs (`builtin_broker.py`), and is asked nothing; closing the
+Setup asks only for the bridge mode and the broker, then offers the (optional) cloud login. A beginner with no MQTT
+broker picks the first mode, everything inside Home Assistant on a broker this integration runs (`builtin_broker.py`),
+and is asked nothing; the two expert modes are for users who already know MQTT. Closing the
 window anywhere in the login finishes the setup without it (`async_remove`). Everything else starts at its default —
 the bridge topic root, the IL source, the device file, the embedded bridge's state file and log level — and is changed
 later in the panel's Settings card. The one exception: an external bridge the check does not find on the default root
@@ -218,8 +219,8 @@ class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN)
     # ---- bridge mode ---------------------------------------------------------------
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        # the built-in broker last: a fallback for a user who has none, not the usual way
-        return self.async_show_menu(step_id="user", menu_options=["external", "embedded", "builtin"])
+        # beginners first: the built-in broker needs no MQTT knowledge; the two expert modes come after it
+        return self.async_show_menu(step_id="user", menu_options=["builtin", "embedded", "external"])
 
     def _defaults(self, mode: str) -> dict[str, Any]:
         """What setup no longer asks: each at its default, changed later in the panel's Settings card."""

@@ -2,15 +2,16 @@
   "config": {
     "step": {
       "user": {
+        "description": "MQTT는 기기와 프로그램들이 서로 메시지를 주고받을 때 쓰는 작은 통신 중계 서버(브로커)입니다. 잘 모르겠다면 첫 번째 방식을 고르세요. MQTT 지식이 없어도 됩니다.",
         "menu_options": {
-          "external": "외부 rustuya-bridge (이미 실행 중)",
-          "embedded": "Home Assistant 안에서 rustuya-bridge 실행",
-          "builtin": "MQTT 브로커 없음: 모두 Home Assistant 안에서 실행"
+          "builtin": "초보자: 모두 Home Assistant 안에서 (추천)",
+          "embedded": "전문가: 내 MQTT 브로커 사용, 브리지는 Home Assistant가 실행",
+          "external": "전문가: 내 MQTT 브로커와 내 rustuya-bridge 사용"
         }
       },
       "external": {
         "title": "rustuya-bridge에 연결",
-        "description": "실행 중인 rustuya-bridge가 쓰는 MQTT 브로커를 입력하세요. 설정 중에 그 브로커에서 브리지가 응답하는지 확인합니다. 나머지(토픽 root, 기기 파일)는 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다.",
+        "description": "MQTT 브로커와 rustuya-bridge를 모두 직접 운영하고 있을 때 고르세요. 실행 중인 rustuya-bridge가 쓰는 MQTT 브로커를 입력하세요. 설정 중에 그 브로커에서 브리지가 응답하는지 확인합니다. 나머지(토픽 root, 기기 파일)는 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다.",
         "data": {
           "broker_host": "브로커 호스트",
           "broker_port": "브로커 포트",
@@ -21,7 +22,7 @@
       },
       "embedded": {
         "title": "여기서 rustuya-bridge 실행",
-        "description": "실제 MQTT 브로커에는 그대로 연결하되, 브리지를 따로 실행하는 대신 이 통합구성요소가 직접 띄우고 관리합니다. 토픽 root, 상태 파일, 로그 레벨은 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다.",
+        "description": "MQTT 브로커(예: Mosquitto)를 이미 운영 중이고 주소를 알고 있을 때 고르세요. 브리지를 따로 실행하는 대신 Home Assistant가 rustuya-bridge를 직접 띄우고 관리합니다. 아래에 브로커 정보를 입력하세요. 토픽 root, 상태 파일, 로그 레벨은 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다.",
         "data": {
           "broker_host": "브로커 호스트",
           "broker_port": "브로커 포트",
@@ -31,7 +32,7 @@
       },
       "builtin": {
         "title": "모두 여기서 실행",
-        "description": "MQTT 브로커가 없는 환경을 위한 방식입니다. Home Assistant가 rustuya-bridge와, 둘 사이에서만 쓰는 작은 MQTT 브로커를 직접 실행합니다. 이 브로커는 이 기기 안에서만 접근할 수 있어 네트워크의 다른 장치는 쓸 수 없습니다. 이미 브로커가 있거나 쓸 계획이라면 다른 두 방식 중 하나를 고르세요. 토픽 root, 상태 파일, 로그 레벨은 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다."
+        "description": "MQTT가 무엇인지 몰라도 되는 방식입니다. 브로커를 따로 설치하거나 설정할 필요가 없습니다. Home Assistant가 rustuya-bridge와 작은 MQTT 브로커를 함께 실행하며, 이 브로커는 이 기기 안에서만 접근할 수 있어 네트워크의 다른 기기는 쓸 수 없습니다. 이미 브로커를 운영 중이거나 다른 기기와 공유할 계획이라면 전문가 방식 중 하나를 고르세요. 토픽 root, 상태 파일, 로그 레벨은 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다."
       },
       "onboard": {
         "title": "기기",

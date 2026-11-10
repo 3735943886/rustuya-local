@@ -2,15 +2,16 @@
   "config": {
     "step": {
       "user": {
+        "description": "MQTT is the small message hub that devices and programs use to talk to each other (the broker). Not sure what it is? Choose the first option; it needs no MQTT knowledge.",
         "menu_options": {
-          "external": "An external rustuya-bridge (already running)",
-          "embedded": "Run rustuya-bridge inside Home Assistant",
-          "builtin": "No MQTT broker: run everything inside Home Assistant"
+          "builtin": "Beginner: everything inside Home Assistant (recommended)",
+          "embedded": "Expert: my own MQTT broker; Home Assistant runs the bridge",
+          "external": "Expert: my own MQTT broker and my own rustuya-bridge"
         }
       },
       "external": {
         "title": "Connect to rustuya-bridge",
-        "description": "The MQTT broker your running rustuya-bridge uses. Setup checks that the bridge answers there. The rest (topic root, device file) starts at its default; change it later in the Rustuya panel's Settings.",
+        "description": "Choose this if you already run both an MQTT broker and rustuya-bridge. Enter the broker your running rustuya-bridge uses; setup checks that the bridge answers there. The rest (topic root, device file) starts at its default; change it later in the Rustuya panel's Settings.",
         "data": {
           "broker_host": "Broker host",
           "broker_port": "Broker port",
@@ -21,7 +22,7 @@
       },
       "embedded": {
         "title": "Run rustuya-bridge here",
-        "description": "This still connects to a real MQTT broker; it just launches and owns the bridge process itself instead of you running one separately. Its topic root, state file and log level start at their defaults; change them later in the Rustuya panel's Settings.",
+        "description": "Choose this if you already run an MQTT broker (for example Mosquitto) and know its address. Home Assistant launches and manages the rustuya-bridge process itself instead of you running one separately. Enter the broker below. Its topic root, state file and log level start at their defaults; change them later in the Rustuya panel's Settings.",
         "data": {
           "broker_host": "Broker host",
           "broker_port": "Broker port",
@@ -31,7 +32,7 @@
       },
       "builtin": {
         "title": "Run everything here",
-        "description": "For a setup without an MQTT broker. Home Assistant runs rustuya-bridge and a small MQTT broker of its own between them, reachable only from this machine. Nothing else on your network can use that broker; if you have one or plan to, pick one of the other two instead. The topic root, state file and log level start at their defaults; change them later in the Rustuya panel's Settings."
+        "description": "Choose this if you don't know what MQTT is. You don't install or configure a broker: Home Assistant runs rustuya-bridge and a small MQTT broker between them, reachable only from this machine, so nothing else on your network can use it. If you already run a broker, or plan to share one with other devices, choose one of the expert options instead. The topic root, state file and log level start at their defaults; change them later in the Rustuya panel's Settings."
       },
       "onboard": {
         "title": "Devices",
