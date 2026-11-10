@@ -129,7 +129,7 @@ class _ManagerSteps:
 
     _manager: Any = None
     _scan_shown = False
-    _scan_submitted = False     # the QR form was submitted: the next progress step waits for the wizard to see the scan
+    _scan_check_until = 0.0     # loop time: until then a submitted QR form waits for the wizard to see the scan
     _sync_shown = False
 
     async def _async_manager(self) -> Any:
@@ -142,7 +142,8 @@ class _ManagerSteps:
 
     def _new_login(self) -> None:
         """A new login: the steps after it take a submit only once they have shown their form again."""
-        self._scan_shown = self._scan_submitted = self._sync_shown = False
+        self._scan_shown = self._sync_shown = False
+        self._scan_check_until = 0.0
 
     async def _async_login_form(self, step_id: str, user_input: dict[str, Any] | None) -> FlowResult:
         """The login's user-code form (the saved code filled in), or once submitted the login started. Without a code
@@ -167,11 +168,14 @@ class _ManagerSteps:
         for it as progress, for `SCAN_CHECK_TIMEOUT` at most, and then shows the QR again. It must not go straight back
         to the QR step: Home Assistant calls the step a `progress_done` names at once, with the same input, so the two
         steps would hand the submit to each other without ever yielding to the event loop, and since the wizard's
-        state changes on that loop, for good."""
-        if session.qr_url and not self._scan_submitted:
+        state changes on that loop, for good. The wait is a deadline rather than a flag the first call uses up, so
+        whatever calls this step meanwhile (the frontend fetching the flow, an earlier progress task ending) gets the
+        same progress."""
+        remaining = self._scan_check_until - self.hass.loop.time()
+        if session.qr_url and remaining <= 0:
             return self.async_show_progress_done(next_step_id="cloud_wizard_scan")
-        checking, self._scan_submitted = self._scan_submitted, False
-        wait = self._async_wait_wizard_state(SCAN_CHECK_TIMEOUT if checking else None)
+        checking = bool(session.qr_url)
+        wait = self._async_wait_wizard_state(remaining if checking else None)
         return self.async_show_progress(step_id="cloud_wizard_progress",
                                         progress_action="cloud_wizard_checking" if checking else "cloud_wizard_working",
                                         description_placeholders={"message": session.message},
@@ -182,7 +186,11 @@ class _ManagerSteps:
         step; go back through `cloud_wizard_progress` on submit (`scanned` carries no real data) to reuse its
         state check instead of duplicating it here."""
         if user_input is not None and self._scan_shown:       # a submit of the QR form, not a forwarded input
-            self._scan_shown, self._scan_submitted = False, True
+            self._scan_shown = False
+            self._scan_check_until = self.hass.loop.time() + SCAN_CHECK_TIMEOUT
+            return await self.async_step_cloud_wizard_progress()
+        if not self._manager.wizard.session.qr_url:
+            # the login moved on (scanned, or failed) between the step being named and this call: no QR to show
             return await self.async_step_cloud_wizard_progress()
         self._scan_shown = True
         return self.async_show_form(step_id="cloud_wizard_scan",

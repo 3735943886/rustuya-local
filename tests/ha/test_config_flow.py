@@ -637,7 +637,10 @@ async def _to_qr(hass, tmp_path, monkeypatch, manager, flow_kind):
         r = await flows.async_init(_entry(hass, tmp_path).entry_id)
         r = await flows.async_configure(r["flow_id"], {"next_step_id": "cloud_wizard"})
     r = await flows.async_configure(r["flow_id"], {"user_code": "code1"})
-    while r["type"] in ("progress", "progress_done"):
+    for _ in range(500):
+        if r["type"] not in ("progress", "progress_done"):
+            break
+        await asyncio.sleep(0.01)           # a real wizard reports from its thread: the loop has to turn for it
         r = await flows.async_configure(r["flow_id"])
     assert r["type"] == "form" and r["step_id"] == "cloud_wizard_scan"
     entered = 0
@@ -761,3 +764,80 @@ def test_every_translation_has_the_strings_keys_and_placeholders():
         translated = dict(leaves(json.loads(file.read_text())))
         assert translated.keys() == strings.keys(), file.name
         assert {p: v for p, v in translated.items() if v != strings[p]} == {}, file.name
+
+
+@pytest.mark.parametrize("flow_kind", ["config", "options"])
+async def test_the_qr_submit_with_the_real_wizard_keeps_the_event_loop_running(hass, tmp_path, monkeypatch, flow_kind):
+    """The same submit against rustuya-manager's own `WizardManager`, its login blocking in a thread as the real one
+    does and reporting back through `call_soon_threadsafe`: the event loop keeps turning while the login waits for the
+    scan, so the scan is seen and the flow reaches the devices. Only Tuya's side is a stub."""
+    import faulthandler
+    import threading
+    import time
+
+    from homeassistant.core import callback
+
+    wizard_module = pytest.importorskip("rustuya_manager.wizard")
+    scanned = threading.Event()
+
+    class StubTuya:
+        def __init__(self, info_file=None, logger=None) -> None:
+            pass
+
+        def login_auto(self, user_code, creds, qr_callback):
+            qr_callback("tuyaSmart--qrLogin?token=stub")
+            if not scanned.wait(30):
+                return False
+            qr_callback(None)
+            return True
+
+        def fetch_devices(self):
+            return [{"id": "a", "name": "Plug"}]
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(wizard_module, "TuyaWizard", StubTuya)
+    monkeypatch.setattr(wizard_module, "postprocess_devices", lambda *a: None)
+    manager = FakeManager(sync_result=FakeDiff(missing=[FakeDevice("a", "Plug")]))
+    manager.wizard = wizard_module.WizardManager(creds_path=str(tmp_path / "tuyacreds.json"))
+    worst = 0.0
+
+    async def heartbeat() -> None:
+        nonlocal worst
+        while True:
+            before = time.monotonic()
+            await asyncio.sleep(0.01)
+            worst = max(worst, time.monotonic() - before - 0.01)
+
+    progressed: asyncio.Queue = asyncio.Queue()
+
+    @callback
+    def on_progressed(event) -> None:           # on the loop, in order: an event is in the queue once it was fired
+        progressed.put_nowait(event)
+
+    hass.bus.async_listen("data_entry_flow_progressed", on_progressed)
+    faulthandler.dump_traceback_later(60, exit=True)        # a frozen loop ends the run instead of hanging it
+    beat = asyncio.create_task(heartbeat())
+    try:
+        flows, r = await _to_qr(hass, tmp_path, monkeypatch, manager, flow_kind)
+        assert manager.wizard.session.state == WizardState.AWAITING_SCAN
+        while not progressed.empty():
+            progressed.get_nowait()
+        r = await flows.async_configure(r["flow_id"], {})           # submitted; Tuya has not seen a scan yet
+        assert r["type"] == "progress" and r["progress_action"] == "cloud_wizard_checking"
+        await asyncio.sleep(0.3)                                    # the login thread is still waiting
+        assert manager.wizard.session.state == WizardState.AWAITING_SCAN
+        scanned.set()
+        while r["type"] in ("progress", "progress_done"):           # as the frontend does: fetch on each event
+            await asyncio.wait_for(progressed.get(), 10)
+            r = await flows.async_configure(r["flow_id"])
+        assert r["type"] == "form" and r["step_id"] == ("sync_devices" if flow_kind == "config" else "bridge_sync")
+        assert manager.wizard.session.state == WizardState.DONE
+        assert worst < 1.0, f"the event loop was held for {worst:.1f} s"
+        flows.async_abort(r["flow_id"])
+        await hass.async_block_till_done()
+    finally:
+        scanned.set()
+        beat.cancel()
+        faulthandler.cancel_dump_traceback_later()
