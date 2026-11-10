@@ -2,7 +2,8 @@
 through rustuya-manager's `Manager` — the Tuya Cloud QR login wizard and registering devices on the bridge
 (`architecture_device_management_via_manager`: this flow drives `Manager`, never rolls its own bridge protocol).
 
-Setup asks only for the bridge mode and the broker, then offers the (optional) cloud login; closing the
+Setup asks only for the bridge mode and the broker, then offers the (optional) cloud login. A user with no MQTT broker
+picks the last mode, the embedded bridge on a broker this integration runs (`builtin_broker.py`), and is asked nothing; closing the
 window anywhere in the login finishes the setup without it (`async_remove`). Everything else starts at its default —
 the bridge topic root, the IL source, the device file, the embedded bridge's state file and log level — and is changed
 later in the panel's Settings card. The one exception: an external bridge the check does not find on the default root
@@ -31,6 +32,7 @@ from .const import (
     CONF_BRIDGE_MODE,
     CONF_BRIDGE_ROOT,
     CONF_BRIDGE_STATE_FILE,
+    CONF_BROKER_BUILTIN,
     CONF_BROKER_HOST,
     CONF_BROKER_PASSWORD,
     CONF_BROKER_PORT,
@@ -216,7 +218,8 @@ class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN)
     # ---- bridge mode ---------------------------------------------------------------
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        return self.async_show_menu(step_id="user", menu_options=["external", "embedded"])
+        # the built-in broker last: a fallback for a user who has none, not the usual way
+        return self.async_show_menu(step_id="user", menu_options=["external", "embedded", "builtin"])
 
     def _defaults(self, mode: str) -> dict[str, Any]:
         """What setup no longer asks: each at its default, changed later in the panel's Settings card."""
@@ -252,6 +255,19 @@ class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN)
                 self._data.update({**self._defaults(BRIDGE_EMBEDDED), **user_input})
                 return await self.async_step_onboard()
         return self.async_show_form(step_id="embedded", data_schema=_broker_schema(user_input), errors=errors)
+
+    async def async_step_builtin(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """The embedded bridge on the built-in broker: nothing to ask, only what it means to confirm."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if not await broker.importable(self.hass, "pyrustuyabridge"):
+                errors["base"] = "pyrustuyabridge_missing"
+            elif not await broker.importable(self.hass, "pymqttd"):
+                errors["base"] = "pymqttd_missing"
+            else:
+                self._data.update({**self._defaults(BRIDGE_EMBEDDED), CONF_BROKER_BUILTIN: True})
+                return await self.async_step_onboard()
+        return self.async_show_form(step_id="builtin", data_schema=vol.Schema({}), errors=errors)
 
     # ---- onboarding: the Tuya Cloud login through Manager, or not now ---------------
 

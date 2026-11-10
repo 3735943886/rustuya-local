@@ -18,7 +18,8 @@ Tuya Cloud is only used once, to fetch your device list and local keys (QR code 
 
 - Home Assistant **2025.3** or newer.
 - An MQTT broker (for example the **Mosquitto broker** add-on), which rustuya-bridge needs. Rustuya connects to it
-  itself; Home Assistant's **MQTT** integration is not required.
+  itself; Home Assistant's **MQTT** integration is not required. Without one, Rustuya can run a small broker of its own
+  (see *Setup*).
 - rustuya-bridge, either one you already run, or the one Rustuya can run inside Home Assistant (amd64 and aarch64).
 
 ## Installation
@@ -37,8 +38,14 @@ Setup first asks how to reach rustuya-bridge:
 |---|---|
 | **An external rustuya-bridge** | You already run rustuya-bridge (or rustuya-manager). Setup checks that the bridge answers on the broker; if it is not on the default topic root `rustuya`, it asks for that root. |
 | **Run rustuya-bridge inside Home Assistant** | Nothing else is running. Rustuya starts and owns the bridge itself. It still needs the MQTT broker. |
+| **No MQTT broker: run everything inside Home Assistant** | You have no broker and don't want one. Rustuya runs the bridge and a small broker of its own ([pymqttd](https://github.com/3735943886/pymqttd)) between them. |
 
-Then enter the broker (host, port, optional username and password).
+For the first two, enter the broker (host, port, optional username and password).
+
+The built-in broker is a fallback for a setup without one, not a replacement: if you have a broker, or plan to, use one
+of the first two. It runs as a separate process, listens only on `127.0.0.1` with credentials made up at each start,
+and is stopped with Home Assistant, so nothing else on your network can use it. What it retains lives in memory: after a
+Home Assistant restart the devices show their last values, unavailable, until the bridge has reconnected to them.
 
 
 ## The Rustuya panel

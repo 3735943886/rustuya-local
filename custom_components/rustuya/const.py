@@ -14,6 +14,8 @@ CONF_BROKER_PORT = "broker_port"
 CONF_BROKER_USERNAME = "broker_username"
 CONF_BROKER_PASSWORD = "broker_password"
 CONF_BRIDGE_ROOT = "bridge_root"
+CONF_BROKER_BUILTIN = "broker_builtin"          # no broker of the user's: run one (builtin_broker.py); embedded only,
+                                                 # and then the four broker fields above are not stored
 
 CONF_BRIDGE_STATE_FILE = "bridge_state_file"    # embedded only
 CONF_BRIDGE_LOG_LEVEL = "bridge_log_level"      # embedded only

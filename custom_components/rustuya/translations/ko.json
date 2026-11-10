@@ -4,7 +4,8 @@
       "user": {
         "menu_options": {
           "external": "외부 rustuya-bridge (이미 실행 중)",
-          "embedded": "Home Assistant 안에서 rustuya-bridge 실행"
+          "embedded": "Home Assistant 안에서 rustuya-bridge 실행",
+          "builtin": "MQTT 브로커 없음: 모두 Home Assistant 안에서 실행"
         }
       },
       "external": {
@@ -27,6 +28,10 @@
           "broker_username": "브로커 사용자 이름 (선택)",
           "broker_password": "브로커 비밀번호 (선택)"
         }
+      },
+      "builtin": {
+        "title": "모두 여기서 실행",
+        "description": "MQTT 브로커가 없는 환경을 위한 방식입니다. Home Assistant가 rustuya-bridge와, 둘 사이에서만 쓰는 작은 MQTT 브로커를 직접 실행합니다. 이 브로커는 이 기기 안에서만 접근할 수 있어 네트워크의 다른 장치는 쓸 수 없습니다. 이미 브로커가 있거나 쓸 계획이라면 다른 두 방식 중 하나를 고르세요. 토픽 root, 상태 파일, 로그 레벨은 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다."
       },
       "onboard": {
         "title": "기기",
@@ -77,6 +82,7 @@
       "bridge_not_found": "브로커는 응답하지만 그 토픽 root에서 실행 중인 rustuya-bridge가 없습니다. 브리지를 시작하거나, 브리지가 쓰는 토픽 root를 입력한 뒤 다시 시도하세요.",
       "cannot_connect": "MQTT 브로커에 연결할 수 없습니다. 호스트, 포트, 계정 정보를 확인하세요.",
       "publish_failed": "브리지에 명령을 보내지 못했습니다.",
+      "pymqttd_missing": "내장 MQTT 브로커(pymqttd)가 설치되어 있지 않습니다. Home Assistant를 재시작해 통합구성요소의 요구 패키지가 설치되게 하거나, 직접 운영하는 브로커를 쓰는 방식을 고르세요.",
       "pyrustuyabridge_missing": "pyrustuyabridge가 설치되어 있지 않습니다. 외부 브리지를 선택하세요.",
       "user_code_required": "사용자 코드를 입력하세요. 아직 저장된 Tuya 로그인이 없습니다."
     },

@@ -45,6 +45,6 @@ async def test_a_cleared_config_is_a_bridge_that_went_away(hass, broker, socket_
 
 
 async def test_an_unreachable_broker_is_cannot_connect(hass, socket_enabled, fast):
-    from conftest import _free_port
+    from brokers import free_port
 
-    assert await config_flow._probe_bridge(hass, _data(_free_port())) == "cannot_connect"
+    assert await config_flow._probe_bridge(hass, _data(free_port())) == "cannot_connect"

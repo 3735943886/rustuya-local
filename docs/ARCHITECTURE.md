@@ -30,6 +30,7 @@ other IL consumers
 | `cli.py`, `config.py` | Standalone daemon and configuration validation |
 | `manager_plugin/` | Supervision by the manager, settings/file APIs and web tab |
 | `custom_components/rustuya/` | HA config entry, embedded bridge, embedded ildevice hub and its retained store, login/registration and administrator panel |
+| `custom_components/rustuya/builtin_broker.py` | The fallback broker for a user without one: pymqttd as a child process, one per HA process, restarted on the same port if it exits |
 | External `tuya-interpreter` | Single-device Tuya DP interpretation, command validation and rule composition |
 
 HA entity creation belongs to the IL consumer: in the integration, the `ildevice_ha` hub on an in-process transport shared
