@@ -3,6 +3,7 @@ those are exercised in test_init.py against real infrastructure instead)."""
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 import sys
 from pathlib import Path
@@ -619,6 +620,76 @@ async def test_submitting_the_qr_after_the_login_finished_shows_the_devices(hass
     r = await flows.async_configure(r["flow_id"], {})
     assert r["type"] == "form" and r["step_id"] == device_step
     assert manager.added == []
+
+
+async def _to_qr(hass, tmp_path, monkeypatch, manager, flow_kind):
+    """The flow at its QR form, the login still waiting for the scan. The QR step raises once it has been entered
+    more often than any real path does: submitting the form used to bounce between it and the progress step for as
+    long as the login was waiting, without ever yielding to the event loop."""
+    from custom_components.rustuya import config_flow
+
+    install(monkeypatch, manager)
+    if flow_kind == "config":
+        r = await _to_login(hass, monkeypatch, manager)
+        flows = hass.config_entries.flow
+    else:
+        flows = hass.config_entries.options
+        r = await flows.async_init(_entry(hass, tmp_path).entry_id)
+        r = await flows.async_configure(r["flow_id"], {"next_step_id": "cloud_wizard"})
+    r = await flows.async_configure(r["flow_id"], {"user_code": "code1"})
+    while r["type"] in ("progress", "progress_done"):
+        r = await flows.async_configure(r["flow_id"])
+    assert r["type"] == "form" and r["step_id"] == "cloud_wizard_scan"
+    entered = 0
+    real = config_flow._ManagerSteps.async_step_cloud_wizard_scan
+
+    async def counted(self, user_input=None):
+        nonlocal entered
+        entered += 1
+        assert entered < 10, "the QR step and the progress step are bouncing the submit between them"
+        return await real(self, user_input)
+
+    monkeypatch.setattr(config_flow._ManagerSteps, "async_step_cloud_wizard_scan", counted)
+    return flows, r
+
+
+@pytest.mark.parametrize("flow_kind", ["config", "options"])
+async def test_submitting_the_qr_before_the_login_finished_waits_for_it(hass, tmp_path, monkeypatch, flow_kind):
+    """The usual order: scan, press submit, and only then does the wizard's poll see the login. The submit shows
+    progress and waits for the wizard, then goes on to the devices."""
+    manager = FakeManager(sync_result=FakeDiff(missing=[FakeDevice("a", "Plug")]),
+                          wizard_script=[WizardState.AWAITING_SCAN, WizardState.DONE])
+    flows, r = await _to_qr(hass, tmp_path, monkeypatch, manager, flow_kind)
+    r = await flows.async_configure(r["flow_id"], {})
+    assert r["type"] == "progress" and r["progress_action"] == "cloud_wizard_checking"
+    manager.wizard.advance()                                        # the poll sees the scan: the login finishes
+    await hass.async_block_till_done()
+    while r["type"] in ("progress", "progress_done"):
+        r = await flows.async_configure(r["flow_id"])
+    assert r["type"] == "form" and r["step_id"] == ("sync_devices" if flow_kind == "config" else "bridge_sync")
+    flows.async_abort(r["flow_id"])
+    await hass.async_block_till_done()
+
+
+@pytest.mark.parametrize("flow_kind", ["config", "options"])
+async def test_submitting_the_qr_without_scanning_shows_it_again(hass, tmp_path, monkeypatch, flow_kind):
+    """A submit with nothing scanned: after a short wait the QR is back, rather than progress until the login times
+    out."""
+    from custom_components.rustuya import config_flow
+
+    monkeypatch.setattr(config_flow, "SCAN_CHECK_TIMEOUT", 0.05)
+    manager = FakeManager(wizard_script=[WizardState.AWAITING_SCAN, WizardState.DONE])
+    flows, r = await _to_qr(hass, tmp_path, monkeypatch, manager, flow_kind)
+    r = await flows.async_configure(r["flow_id"], {})
+    assert r["type"] == "progress"
+    await asyncio.sleep(0.2)                                        # past the wait, nothing scanned
+    await hass.async_block_till_done()
+    while r["type"] in ("progress", "progress_done"):
+        r = await flows.async_configure(r["flow_id"])
+    assert r["type"] == "form" and r["step_id"] == "cloud_wizard_scan"
+    assert manager.wizard.session.state == WizardState.AWAITING_SCAN
+    flows.async_abort(r["flow_id"])
+    await hass.async_block_till_done()
 
 
 async def test_a_login_that_fails_at_once_shows_the_retry_form(hass, monkeypatch):

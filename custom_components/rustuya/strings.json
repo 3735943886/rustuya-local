@@ -77,7 +77,8 @@
       }
     },
     "progress": {
-      "cloud_wizard_working": "{message}"
+      "cloud_wizard_working": "{message}",
+      "cloud_wizard_checking": "Checking the login with Tuya…"
     },
     "error": {
       "bridge_not_found": "The broker answers, but no rustuya-bridge is running on that topic root. Start the bridge, or enter the topic root it runs on, and try again.",
@@ -131,7 +132,8 @@
       }
     },
     "progress": {
-      "cloud_wizard_working": "{message}"
+      "cloud_wizard_working": "{message}",
+      "cloud_wizard_checking": "Checking the login with Tuya…"
     },
     "abort": {
       "wizard_failed": "Fetching from Tuya Cloud failed: {error}",

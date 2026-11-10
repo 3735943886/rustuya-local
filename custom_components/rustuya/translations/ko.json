@@ -77,7 +77,8 @@
       }
     },
     "progress": {
-      "cloud_wizard_working": "{message}"
+      "cloud_wizard_working": "{message}",
+      "cloud_wizard_checking": "Tuya 로그인을 확인하는 중…"
     },
     "error": {
       "bridge_not_found": "브로커는 응답하지만 그 토픽 root에서 실행 중인 rustuya-bridge가 없습니다. 브리지를 시작하거나, 브리지가 쓰는 토픽 root를 입력한 뒤 다시 시도하세요.",
@@ -131,7 +132,8 @@
       }
     },
     "progress": {
-      "cloud_wizard_working": "{message}"
+      "cloud_wizard_working": "{message}",
+      "cloud_wizard_checking": "Tuya 로그인을 확인하는 중…"
     },
     "abort": {
       "wizard_failed": "Tuya Cloud에서 가져오지 못했습니다: {error}",
