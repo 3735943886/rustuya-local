@@ -97,7 +97,7 @@ jobs:
       - name: Install minimum runtime dependencies and core test tools
         run: >-
           uv pip install --system -e . pytest pytest-asyncio
-          tuya-interpreter==0.1.0 pyrustuyabridge==0.4.0 paho-mqtt==2.0.0
+          tuya-interpreter==0.1.1 pyrustuyabridge==0.4.0 paho-mqtt==2.0.0
       - name: Run core unit tests
         run: pytest -q tests/unit
 
