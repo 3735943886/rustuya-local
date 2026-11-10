@@ -79,9 +79,9 @@ async def _drain_progress(flow, manager, max_steps=10):
     raise AssertionError("progress never finished")
 
 
-async def test_the_user_menu_offers_external_and_embedded(hass):
+async def test_the_user_menu_offers_the_built_in_broker_last(hass):
     result = await _start(hass)
-    assert result["type"] == "menu" and set(result["menu_options"]) == {"external", "embedded"}
+    assert result["type"] == "menu" and result["menu_options"] == ["external", "embedded", "builtin"]
 
 
 BROKER = {"broker_host": "h", "broker_port": 1883, "broker_username": "", "broker_password": ""}
@@ -119,6 +119,33 @@ async def test_embedded_setup_asks_only_for_the_broker(hass, monkeypatch):
     assert r["type"] == "create_entry" and r["data"][CONF_BRIDGE_MODE] == "embedded"
     assert r["data"][CONF_BRIDGE_STATE_FILE] == hass.config.path(".storage/rustuya/bridge_state.json")
     assert r["data"][CONF_BRIDGE_LOG_LEVEL] == "warn"
+
+
+async def test_the_built_in_broker_asks_nothing_and_stores_no_broker(hass, monkeypatch):
+    from custom_components.rustuya import broker
+    from custom_components.rustuya.const import CONF_BROKER_BUILTIN
+
+    monkeypatch.setattr(broker, "importable", AsyncMock(return_value=True))
+    with patch("custom_components.rustuya.manager_session.available", return_value=False):
+        result = await _start(hass)
+        r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "builtin"})
+        assert r["type"] == "form" and r["step_id"] == "builtin" and not r["data_schema"].schema
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], {})
+    assert r["type"] == "create_entry"
+    assert r["data"][CONF_BRIDGE_MODE] == "embedded" and r["data"][CONF_BROKER_BUILTIN] is True
+    assert not set(BROKER) & set(r["data"])
+
+
+@pytest.mark.parametrize(("missing", "error"), [("pyrustuyabridge", "pyrustuyabridge_missing"),
+                                                 ("pymqttd", "pymqttd_missing")])
+async def test_the_built_in_broker_without_its_packages_shows_an_error(hass, monkeypatch, missing, error):
+    from custom_components.rustuya import broker
+
+    monkeypatch.setattr(broker, "importable", AsyncMock(side_effect=lambda _hass, name: name != missing))
+    result = await _start(hass)
+    r = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "builtin"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {})
+    assert r["type"] == "form" and r["errors"] == {"base": error}
 
 
 async def test_an_unreachable_broker_keeps_the_form_open(hass):

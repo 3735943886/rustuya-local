@@ -676,7 +676,7 @@ async def ws_subscribe_links(hass: HomeAssistant, connection: websocket_api.Acti
     if found is None:
         connection.send_error(msg["id"], "not_found", "the Rustuya panel is off")
         return
-    data = found[0].data
+    data = await broker.resolve(hass, found[0].data)
     transport = broker.transport(data, f"rustuya-panel-{secrets.token_hex(4)}")
     watcher = LinkWatcher(transport, data[CONF_BRIDGE_ROOT])
     try:

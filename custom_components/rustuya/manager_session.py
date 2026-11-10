@@ -106,6 +106,7 @@ async def open_for_entry(hass: Any, data: dict[str, Any], *, run_bridge: bool = 
 
     await hass.async_add_executor_job(ensure_directories)
     await broker.import_runtime(hass)               # `open_manager` imports rustuya_manager
+    data = await broker.resolve(hass, data)
     username, password = broker.credentials(data)
     return await open_manager(broker=broker.url(data), root=data[CONF_BRIDGE_ROOT],
                               devices_path=data[CONF_DEVICES_PATH], username=username, password=password, **bridge)

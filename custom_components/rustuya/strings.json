@@ -4,7 +4,8 @@
       "user": {
         "menu_options": {
           "external": "An external rustuya-bridge (already running)",
-          "embedded": "Run rustuya-bridge inside Home Assistant"
+          "embedded": "Run rustuya-bridge inside Home Assistant",
+          "builtin": "No MQTT broker: run everything inside Home Assistant"
         }
       },
       "external": {
@@ -27,6 +28,10 @@
           "broker_username": "Broker username (optional)",
           "broker_password": "Broker password (optional)"
         }
+      },
+      "builtin": {
+        "title": "Run everything here",
+        "description": "For a setup without an MQTT broker. Home Assistant runs rustuya-bridge and a small MQTT broker of its own between them, reachable only from this machine. Nothing else on your network can use that broker; if you have one or plan to, pick one of the other two instead. The topic root, state file and log level start at their defaults; change them later in the Rustuya panel's Settings."
       },
       "onboard": {
         "title": "Devices",
@@ -77,6 +82,7 @@
       "bridge_not_found": "The broker answers, but no rustuya-bridge is running on that topic root. Start the bridge, or enter the topic root it runs on, and try again.",
       "cannot_connect": "Could not connect to the MQTT broker. Check the host, port and credentials.",
       "publish_failed": "Could not send the command to the bridge.",
+      "pymqttd_missing": "The built-in MQTT broker (pymqttd) is not installed. Restart Home Assistant so it installs the integration's requirements, or pick a mode with your own broker.",
       "pyrustuyabridge_missing": "pyrustuyabridge is not installed; pick an external bridge instead",
       "user_code_required": "Enter the user code: there is no saved Tuya login to use yet"
     },

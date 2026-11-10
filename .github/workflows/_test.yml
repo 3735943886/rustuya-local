@@ -85,6 +85,14 @@ jobs:
         working-directory: rustuya-local
         run: pytest -q
 
+      # The bridge-facing suites again on pymqttd, the broker the integration runs for a user without one
+      # (tests/e2e/brokers.py): what passes on mosquitto has to pass there too.
+      - name: pytest (on pymqttd)
+        working-directory: rustuya-local
+        env:
+          RUSTUYA_TEST_BROKER: pymqttd
+        run: pytest -q tests/e2e tests/ha
+
   minimum:
     name: minimum runtime dependencies (py3.13)
     runs-on: ubuntu-latest

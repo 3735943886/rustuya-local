@@ -1,5 +1,6 @@
 """The broker an entry's data points at: its URL, its credentials and an MQTT connection to it, and the rule its topic
-names (the bridge root, the IL prefix and source) follow."""
+names (the bridge root, the IL prefix and source) follow. An entry on the built-in broker (`CONF_BROKER_BUILTIN`) stores
+no broker fields: `resolve` fills them in from the running one, and the functions here take what it returns."""
 
 from __future__ import annotations
 
@@ -9,11 +10,23 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    CONF_BROKER_BUILTIN,
     CONF_BROKER_HOST,
     CONF_BROKER_PASSWORD,
     CONF_BROKER_PORT,
     CONF_BROKER_USERNAME,
 )
+
+
+async def resolve(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
+    """`data` with the broker it uses filled in: the built-in one started if need be (`import_runtime` first)."""
+    if not data.get(CONF_BROKER_BUILTIN):
+        return dict(data)
+    from . import builtin_broker
+
+    endpoint = await builtin_broker.async_ensure(hass)
+    return {**data, CONF_BROKER_HOST: endpoint.host, CONF_BROKER_PORT: endpoint.port,
+            CONF_BROKER_USERNAME: endpoint.username, CONF_BROKER_PASSWORD: endpoint.password}
 
 
 def url(data: dict[str, Any]) -> str:
@@ -25,7 +38,7 @@ def credentials(data: dict[str, Any]) -> tuple[str | None, str | None]:
     return data.get(CONF_BROKER_USERNAME) or None, data.get(CONF_BROKER_PASSWORD) or None
 
 
-OPTIONAL = ("rustuya_manager", "pyrustuyabridge")
+OPTIONAL = ("rustuya_manager", "pyrustuyabridge", "pymqttd")
 _found: dict[str, bool] = {}
 
 

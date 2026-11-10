@@ -3,7 +3,8 @@
 and user overrides from `<config>/rustuya_converters`. The service produces IL on an in-process transport, and an
 ildevice-homeassistant hub embedded on that transport turns the IL devices into entities registered under this
 integration. That hub is the `ildevice_ha` package (manifest `requirements`); the IL device integration itself need not
-be installed. The bridge still talks to the service over MQTT, so a broker stays necessary.
+be installed. The bridge still talks to the service over MQTT: on the user's broker, or, for a user who has none, on one
+this integration runs (`builtin_broker.py`).
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from .const import (
     CONF_BRIDGE_MODE,
     CONF_BRIDGE_ROOT,
     CONF_BRIDGE_STATE_FILE,
+    CONF_BROKER_BUILTIN,
     CONF_DEVICES_PATH,
     CONF_EXPOSE_UNUSED,
     CONF_IL_PREFIX,
@@ -116,12 +118,13 @@ def _tuya_id(hass: HomeAssistant, service: Any, device_id: str) -> str:
     return found.pop() if len(found) == 1 else device_id
 
 
-def _make_service(hass: HomeAssistant, entry: ConfigEntry, transport: Any, devices: list[dict]) -> Any:
-    """A service for the entry as it is now, producing IL on `transport`. It has no Last Will there: nothing outlives
-    the process that holds both ends."""
+def _make_service(hass: HomeAssistant, entry: ConfigEntry, data: dict[str, Any], transport: Any,
+                  devices: list[dict]) -> Any:
+    """A service for the entry as it is now (`data`: its data, `broker.resolve`d), producing IL on `transport`. It has no
+    Last Will there: nothing outlives the process that holds both ends."""
     from rustuya_local.service import Service, Settings
 
-    data, options = entry.data, {**DEFAULT_OPTIONS, **entry.options}
+    options = {**DEFAULT_OPTIONS, **entry.options}
 
     async def connect_bridge():
         t = broker.transport(data, f"rustuya-bridge-{entry.entry_id[:8]}")
@@ -148,7 +151,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .bridge_supervisor import EmbeddedBridge
     from .retained import RetainedStore
 
-    data = entry.data
+    data = await broker.resolve(hass, entry.data)
 
     embedded_bridge = None
     if data[CONF_BRIDGE_MODE] == BRIDGE_EMBEDDED:
@@ -167,7 +170,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hub = build_hub(hass, {HUB_IL_PREFIX: IL_PREFIX, CONF_AUTO_ADD: True}, transport, DOMAIN, entry.entry_id)
         retained = RetainedStore(hass, entry.entry_id, transport, IL_PREFIX)
         await retained.async_restore()
-        runtime = RuntimeData(service=_make_service(hass, entry, transport, devices), embedded_bridge=embedded_bridge,
+        runtime = RuntimeData(service=_make_service(hass, entry, data, transport, devices),
+                              embedded_bridge=embedded_bridge,
                               options=dict(entry.options), hub=hub, transport=transport, retained=retained)
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
         await retained.async_start()
@@ -192,8 +196,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await panel.async_setup(hass, entry)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
-    _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s (bridge: %s)", len(devices),
-                 data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE])
+    _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s (bridge: %s%s)", len(devices),
+                 data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE], ", built-in broker" if data.get(CONF_BROKER_BUILTIN) else "")
     return True
 
 
@@ -207,7 +211,8 @@ async def async_restart_service(hass: HomeAssistant, entry: ConfigEntry) -> None
         await runtime.service.stop(offline=False)
         runtime.options = dict(entry.options)
         devices = await hass.async_add_executor_job(_load_devices_or_none, entry.data[CONF_DEVICES_PATH])
-        runtime.service = _make_service(hass, entry, runtime.transport, devices)
+        data = await broker.resolve(hass, entry.data)
+        runtime.service = _make_service(hass, entry, data, runtime.transport, devices)
         await runtime.service.start(resume=True)
 
 
@@ -349,7 +354,8 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     before the embedded hub left on the broker (it has an IL prefix in its data), with the embedded bridge also that
     bridge's retained topics and its state file, and the files it kept in its own storage directory (the device list and
     the Tuya login). A path the user pointed elsewhere is left alone, as is everything on an external bridge. A broker
-    that cannot be reached only leaves the retained topics behind; the removal goes on."""
+    that cannot be reached only leaves the retained topics behind; the removal goes on. The built-in broker is stopped
+    instead: what it retains goes with it."""
     from . import panel
     from .retained import RetainedStore
 
@@ -358,7 +364,11 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     data = entry.data
     embedded = data.get(CONF_BRIDGE_MODE) == BRIDGE_EMBEDDED
     il = CONF_IL_PREFIX in data
-    if il or embedded:
+    if data.get(CONF_BROKER_BUILTIN):
+        from . import builtin_broker
+
+        await builtin_broker.async_stop(hass)
+    elif il or embedded:
         await async_clear_retained(hass, data, il=il, bridge=embedded)
     owned = [data.get(CONF_DEVICES_PATH)]
     if data.get(CONF_DEVICES_PATH):
@@ -378,8 +388,10 @@ async def async_clear_retained(hass: HomeAssistant, data: dict[str, Any], *, il:
     from rustuya_local.service import AnotherProducer, purge_il, purge_retained
 
     prefix, source = data.get(CONF_IL_PREFIX, IL_PREFIX), data.get(CONF_IL_SOURCE, IL_SOURCE)
-    transport = broker.transport(data, f"rustuya-clear-{secrets.token_hex(4)}")
+    transport = None
     try:
+        data = await broker.resolve(hass, data)
+        transport = broker.transport(data, f"rustuya-clear-{secrets.token_hex(4)}")
         await transport.connect()
         if il:
             try:
@@ -394,8 +406,9 @@ async def async_clear_retained(hass: HomeAssistant, data: dict[str, Any], *, il:
     except Exception as e:  # noqa: BLE001 -- broker down, refused credentials: nothing to clear it with
         _LOGGER.warning("could not clear the retained topics of %s/%s from the broker: %s", prefix, source, e)
     finally:
-        with contextlib.suppress(Exception):
-            await transport.close()
+        if transport is not None:
+            with contextlib.suppress(Exception):
+                await transport.close()
 
 
 def _remove_owned(storage: str, paths: list[str]) -> None:
