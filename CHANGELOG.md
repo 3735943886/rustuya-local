@@ -4,6 +4,8 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-11-10
+
 - Add a setup choice for users without an MQTT broker: *Beginner: everything inside Home Assistant* (recommended) runs the
   embedded bridge on a broker of the integration's own ([pymqttd](https://github.com/3735943886/pymqttd), rumqttd in a
   child process), on `127.0.0.1` with per-start credentials. It is first in the setup menu, with the two expert choices
