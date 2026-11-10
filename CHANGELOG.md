@@ -4,6 +4,10 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
+- Fix a scene, or any single action that sets a light's colour and brightness together, changing only the brightness
+  and leaving the light on the previous colour or white (#3): require tuya-interpreter 0.1.1, which computes each
+  write on the values it has just sent as well as those the device reported.
+
 ## [0.2.0]
 
 ### Breaking Changes
