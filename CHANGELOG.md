@@ -8,6 +8,8 @@ Release notes are read by the release workflow before publishing.
   embedded bridge on a broker of the integration's own ([pymqttd](https://github.com/3735943886/pymqttd), rumqttd in a
   child process), on `127.0.0.1` with per-start credentials. It is first in the setup menu, with the two expert choices
   (your own MQTT broker) after it.
+- Fix Home Assistant freezing when the Tuya login's QR form was submitted before the login had finished: the submit
+  now shows progress while the login is checked, and the QR again if nothing was scanned.
 - Fix a scene, or any single action that sets a light's colour and brightness together, changing only the brightness
   and leaving the light on the previous colour or white (#3): require tuya-interpreter 0.1.1, which computes each
   write on the values it has just sent as well as those the device reported.

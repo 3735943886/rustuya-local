@@ -52,6 +52,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 PROBE_TIMEOUT = 5.0      # seconds each for the broker to accept us and the bridge's retained config to arrive
+SCAN_CHECK_TIMEOUT = 10.0    # seconds a submitted QR form waits for the wizard to see the scan before it is shown again
 
 
 def _qr_schema(qr_url: str) -> vol.Schema:
@@ -128,6 +129,7 @@ class _ManagerSteps:
 
     _manager: Any = None
     _scan_shown = False
+    _scan_submitted = False     # the QR form was submitted: the next progress step waits for the wizard to see the scan
     _sync_shown = False
 
     async def _async_manager(self) -> Any:
@@ -140,7 +142,7 @@ class _ManagerSteps:
 
     def _new_login(self) -> None:
         """A new login: the steps after it take a submit only once they have shown their form again."""
-        self._scan_shown = self._sync_shown = False
+        self._scan_shown = self._scan_submitted = self._sync_shown = False
 
     async def _async_login_form(self, step_id: str, user_input: dict[str, Any] | None) -> FlowResult:
         """The login's user-code form (the saved code filled in), or once submitted the login started. Without a code
@@ -159,31 +161,42 @@ class _ManagerSteps:
                                     data_schema=vol.Schema({vol.Optional("user_code", default=saved_code or ""): str}))
 
     def _login_running(self, session: Any) -> FlowResult:
-        """A login neither done nor failed: its QR to scan once there is one, its progress until then."""
-        if session.qr_url:
+        """A login neither done nor failed: its QR to scan once there is one, its progress until then.
+
+        A submit of the QR form while the wizard has not seen the scan yet (its poll is seconds behind the phone) waits
+        for it as progress, for `SCAN_CHECK_TIMEOUT` at most, and then shows the QR again. It must not go straight back
+        to the QR step: Home Assistant calls the step a `progress_done` names at once, with the same input, so the two
+        steps would hand the submit to each other without ever yielding to the event loop, and since the wizard's
+        state changes on that loop, for good."""
+        if session.qr_url and not self._scan_submitted:
             return self.async_show_progress_done(next_step_id="cloud_wizard_scan")
-        return self.async_show_progress(step_id="cloud_wizard_progress", progress_action="cloud_wizard_working",
+        checking, self._scan_submitted = self._scan_submitted, False
+        wait = self._async_wait_wizard_state(SCAN_CHECK_TIMEOUT if checking else None)
+        return self.async_show_progress(step_id="cloud_wizard_progress",
+                                        progress_action="cloud_wizard_checking" if checking else "cloud_wizard_working",
                                         description_placeholders={"message": session.message},
-                                        progress_task=self.hass.async_create_task(self._async_wait_wizard_state()))
+                                        progress_task=self.hass.async_create_task(wait))
 
     async def async_step_cloud_wizard_scan(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """`async_show_progress` only takes plain description text -- no selector, so a QR needs an actual form
         step; go back through `cloud_wizard_progress` on submit (`scanned` carries no real data) to reuse its
         state check instead of duplicating it here."""
         if user_input is not None and self._scan_shown:       # a submit of the QR form, not a forwarded input
+            self._scan_shown, self._scan_submitted = False, True
             return await self.async_step_cloud_wizard_progress()
         self._scan_shown = True
         return self.async_show_form(step_id="cloud_wizard_scan",
                                     data_schema=_qr_schema(self._manager.wizard.session.qr_url))
 
-    async def _async_wait_wizard_state(self) -> None:
-        """Wake HA progress when the manager reports a wizard state change."""
+    async def _async_wait_wizard_state(self, timeout: float | None = None) -> None:
+        """Wake HA progress when the manager reports a wizard state change, or after `timeout` seconds without one."""
         from rustuya_manager.wizard import WizardState
 
         wizard = self._manager.wizard
         state = wizard.session.state
         if state not in (WizardState.DONE, WizardState.ERROR):
-            await wizard.wait_state_change(state)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(wizard.wait_state_change(state), timeout)
 
     def _sync_form(self, step_id: str, diff: Any, error: str | None = None) -> FlowResult:
         self._sync_shown = True
