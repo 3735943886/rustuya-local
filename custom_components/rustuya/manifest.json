@@ -14,9 +14,9 @@
     "rustuya-manager>=0.2.3",
     "pyrustuyabridge>=0.4.0",
     "pymqttd==0.1.0.dev0",
-    "rustuya-local==0.2.1rc2",
+    "rustuya-local==0.2.1rc3",
     "ildevice-homeassistant==0.2.1"
   ],
   "single_config_entry": true,
-  "version": "0.2.1rc2"
+  "version": "0.2.1rc3"
 }
