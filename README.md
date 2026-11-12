@@ -27,8 +27,7 @@ Tuya Cloud is only used once, to fetch your device list and local keys (QR code 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Marketplace.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=3735943886&repository=rustuya-local&category=integration)
 
 1. In Marketplace, search for **Rustuya** and download it.
-2. Restart Home Assistant.
-3. *Add integration → Rustuya* (see below).
+2. *Add integration → Rustuya* (see below).
 
 ## Setup
 
@@ -43,9 +42,11 @@ other (the broker). If you don't know what it is, pick the first option.
 
 For the two expert choices, enter the broker (host, port, optional username and password).
 
-The built-in broker is for a setup without one. If you have a broker, or plan to share one with other devices, use one
-of the expert choices. It runs as a separate process, listens only on `127.0.0.1` with credentials made up at each start,
-and is stopped with Home Assistant, so nothing else on your network can use it. What it retains lives in memory: after a
+The built-in broker is for a setup without one. If you already have a broker, using it alongside your own is possible
+and will not conflict, but it is not recommended: it only duplicates the broker you have. Choose it on purpose, for
+example to keep Rustuya's traffic isolated from your other devices. Otherwise use one of the expert choices, and share
+your own broker if other devices need it. The built-in broker runs as a separate process, listens only on `127.0.0.1`
+with credentials made up at each start, and is stopped with Home Assistant, so nothing else on your network can use it. What it retains lives in memory: after a
 Home Assistant restart the devices show their last values, unavailable, until the bridge has reconnected to them.
 
 
