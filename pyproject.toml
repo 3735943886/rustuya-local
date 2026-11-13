@@ -24,7 +24,7 @@ rustuya-local = "rustuya_local.cli:main"
 rustuya-local = "rustuya_local.manager_plugin:register"
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-asyncio", "ildevice-homeassistant==0.2.1", "httpx2", "pymqttd==0.1.0.dev0"]      # ildevice-homeassistant: the IL consumer; httpx2: Starlette TestClient; pymqttd: the built-in broker
+test = ["pytest", "pytest-asyncio", "ildevice-homeassistant==0.2.1", "httpx2", "pymqttd==0.1.0"]      # ildevice-homeassistant: the IL consumer; httpx2: Starlette TestClient; pymqttd: the built-in broker
 test-ha = ["pytest-homeassistant-custom-component"]   # Home Assistant integration tests
 fullstack = ["tuyamock"]      # device emulator for full-stack tests
 manager = ["rustuya-manager[web]>=0.2.3"]      # tests/e2e/test_manager_plugin*.py: the manager's real plugin host, its web app

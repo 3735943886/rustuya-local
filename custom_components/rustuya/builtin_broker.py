@@ -43,7 +43,7 @@ class Endpoint:
 
 @dataclass
 class _State:
-    password: str = field(default_factory=lambda: secrets.token_urlsafe(24))
+    password: str = field(default_factory=lambda: secrets.token_hex(24))    # never a leading "-": pymqttd's CLI would take it for a flag
     port: int = 0                           # once started, the one it keeps
     broker: Any = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
