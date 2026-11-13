@@ -1,4 +1,4 @@
-// The Rustuya sidebar panel (panel.py): the bridge's devices against the cloud list (a simpler cut of rustuya-manager's
+// The rustuya sidebar panel (panel.py): the bridge's devices against the cloud list (a simpler cut of rustuya-manager's
 // device view: the same categories, order, filters and gateway/sub-device tree), then the files of
 // <config>/rustuya_converters and the override pack (the rustuya-manager plugin tab's file API).
 //
@@ -187,10 +187,10 @@ const I18N = {
     opt_pack_hint: "Check for official rule updates at start and daily.",
     save_restart: "Save and restart", options_title: "Options", options_intro: "Saving restarts the integration.",
     options_unreadable: "Cannot read the options: {error}", nothing_changed: "Nothing changed",
-    saving_restarting: "Saving; Rustuya is restarting…", not_saved: "Not saved: {error}",
+    saving_restarting: "Saving; rustuya is restarting…", not_saved: "Not saved: {error}",
     settings_title: "Settings",
     settings_intro: "Set up with their defaults. Saving restarts the integration.",
-    settings_unreadable: "Cannot read the settings: {error}", confirm_settings: "Save {names} and restart Rustuya?",
+    settings_unreadable: "Cannot read the settings: {error}", confirm_settings: "Save {names} and restart rustuya?",
     sync_now: "Update builtin rules", hide_title: "Remove this panel from the sidebar; the integration's Configure adds it back",
     hide: "Hide panel", pack_title: "Builtin rules",
     pack_intro: "Official rules included with tuya-interpreter. Fetch the latest rules without updating the integration.",
@@ -201,7 +201,7 @@ const I18N = {
     confirm_replace_pack: "{name} comes from the override pack. Replaced, it is yours: the pack no longer updates or removes it.",
     confirm_replace: "{name} already exists. Replace it?",
     copied: "Copied {names}", not_copied: "Not copied: {names}",
-    confirm_hide_unsaved: "Unsaved changes in {names} will be lost. Remove the Rustuya panel from the sidebar anyway?",
+    confirm_hide_unsaved: "Unsaved changes in {names} will be lost. Remove the rustuya panel from the sidebar anyway?",
     and: " and ", not_hidden: "Not hidden: {error}", files_unreadable: "Cannot list the files: {error}",
     no_files: "No files yet. Built-in fixes apply without any.",
     pack_checking: "Checking for updates…", pack_current: "Builtin rules are up to date.",
@@ -256,10 +256,10 @@ const I18N = {
     opt_pack_hint: "시작할 때와 매일 공식 규칙 업데이트를 확인합니다.",
     save_restart: "저장하고 재시작", options_title: "옵션", options_intro: "저장하면 통합구성요소가 재시작됩니다.",
     options_unreadable: "옵션을 읽을 수 없습니다: {error}", nothing_changed: "바뀐 것이 없습니다",
-    saving_restarting: "저장하는 중. Rustuya를 재시작합니다…", not_saved: "저장하지 못했습니다: {error}",
+    saving_restarting: "저장하는 중. rustuya를 재시작합니다…", not_saved: "저장하지 못했습니다: {error}",
     settings_title: "설정",
     settings_intro: "설정 과정에서 기본값으로 정해진 값들입니다. 저장하면 통합구성요소가 재시작됩니다.",
-    settings_unreadable: "설정을 읽을 수 없습니다: {error}", confirm_settings: "{names}을(를) 저장하고 Rustuya를 재시작할까요?",
+    settings_unreadable: "설정을 읽을 수 없습니다: {error}", confirm_settings: "{names}을(를) 저장하고 rustuya를 재시작할까요?",
     sync_now: "Builtin 규칙 업데이트", hide_title: "사이드바에서 이 패널을 없앱니다. 통합구성요소의 구성(Configure)에서 다시 추가할 수 있습니다",
     hide: "패널 숨기기", pack_title: "Builtin 규칙",
     pack_intro: "tuya-interpreter에 포함된 공식 규칙입니다. 통합구성요소 업데이트 없이 최신 규칙을 가져옵니다.",
@@ -270,7 +270,7 @@ const I18N = {
     confirm_replace_pack: "{name}은(는) 오버라이드 팩의 파일입니다. 바꾸면 내 파일이 되어 팩이 더 이상 갱신하거나 지우지 않습니다.",
     confirm_replace: "{name}이(가) 이미 있습니다. 바꿀까요?",
     copied: "{names} 복사함", not_copied: "복사하지 못함: {names}",
-    confirm_hide_unsaved: "{names}의 저장하지 않은 변경이 사라집니다. 그래도 사이드바에서 Rustuya 패널을 없앨까요?",
+    confirm_hide_unsaved: "{names}의 저장하지 않은 변경이 사라집니다. 그래도 사이드바에서 rustuya 패널을 없앨까요?",
     and: ", ", not_hidden: "숨기지 못했습니다: {error}", files_unreadable: "파일 목록을 읽을 수 없습니다: {error}",
     no_files: "아직 파일이 없습니다. 기본 수정은 파일 없이도 적용됩니다.",
     pack_checking: "업데이트 확인 중…", pack_current: "최신 Builtin 규칙을 사용 중입니다.",

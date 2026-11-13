@@ -11,7 +11,7 @@
       },
       "external": {
         "title": "rustuya-bridge에 연결",
-        "description": "MQTT 브로커와 rustuya-bridge를 모두 직접 운영하고 있을 때 고르세요. 실행 중인 rustuya-bridge가 쓰는 MQTT 브로커를 입력하세요. 설정 중에 그 브로커에서 브리지가 응답하는지 확인합니다. 나머지(토픽 root, 기기 파일)는 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다.",
+        "description": "MQTT 브로커와 rustuya-bridge를 모두 직접 운영하고 있을 때 고르세요. 실행 중인 rustuya-bridge가 쓰는 MQTT 브로커를 입력하세요. 설정 중에 그 브로커에서 브리지가 응답하는지 확인합니다. 나머지(토픽 root, 기기 파일)는 기본값으로 시작하고, 나중에 rustuya 패널의 Settings에서 바꿀 수 있습니다.",
         "data": {
           "broker_host": "브로커 호스트",
           "broker_port": "브로커 포트",
@@ -22,7 +22,7 @@
       },
       "embedded": {
         "title": "여기서 rustuya-bridge 실행",
-        "description": "MQTT 브로커(예: Mosquitto)를 이미 운영 중이고 주소를 알고 있을 때 고르세요. 브리지를 따로 실행하는 대신 Home Assistant가 rustuya-bridge를 직접 띄우고 관리합니다. 아래에 브로커 정보를 입력하세요. 토픽 root, 상태 파일, 로그 레벨은 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다.",
+        "description": "MQTT 브로커(예: Mosquitto)를 이미 운영 중이고 주소를 알고 있을 때 고르세요. 브리지를 따로 실행하는 대신 Home Assistant가 rustuya-bridge를 직접 띄우고 관리합니다. 아래에 브로커 정보를 입력하세요. 토픽 root, 상태 파일, 로그 레벨은 기본값으로 시작하고, 나중에 rustuya 패널의 Settings에서 바꿀 수 있습니다.",
         "data": {
           "broker_host": "브로커 호스트",
           "broker_port": "브로커 포트",
@@ -32,11 +32,11 @@
       },
       "builtin": {
         "title": "모두 여기서 실행",
-        "description": "MQTT가 무엇인지 몰라도 되는 방식입니다. 브로커를 따로 설치하거나 설정할 필요가 없습니다. Home Assistant가 rustuya-bridge와 작은 MQTT 브로커를 함께 실행하며, 이 브로커는 이 기기 안에서만 접근할 수 있어 네트워크의 다른 기기는 쓸 수 없습니다. 이미 브로커를 운영 중이거나 다른 기기와 공유할 계획이라면 전문가 방식 중 하나를 고르세요. 토픽 root, 상태 파일, 로그 레벨은 기본값으로 시작하고, 나중에 Rustuya 패널의 Settings에서 바꿀 수 있습니다."
+        "description": "MQTT가 무엇인지 몰라도 되는 방식입니다. 브로커를 따로 설치하거나 설정할 필요가 없습니다. Home Assistant가 rustuya-bridge와 작은 MQTT 브로커를 함께 실행하며, 이 브로커는 이 기기 안에서만 접근할 수 있어 네트워크의 다른 기기는 쓸 수 없습니다. 이미 브로커를 운영 중이거나 다른 기기와 공유할 계획이라면 전문가 방식 중 하나를 고르세요. 토픽 root, 상태 파일, 로그 레벨은 기본값으로 시작하고, 나중에 rustuya 패널의 Settings에서 바꿀 수 있습니다."
       },
       "onboard": {
         "title": "기기",
-        "description": "지금 Tuya Cloud에서 기기 목록을 가져와 브리지에 등록합니다(저장된 로그인이 있으면 그대로 쓰고, 없으면 QR 코드로 로그인). 나중에 통합구성요소의 구성(Configure)에서 해도 되고, rustuya-manager가 이미 관리하는 기기 파일을 Rustuya 패널의 Settings에서 지정해도 됩니다.",
+        "description": "지금 Tuya Cloud에서 기기 목록을 가져와 브리지에 등록합니다(저장된 로그인이 있으면 그대로 쓰고, 없으면 QR 코드로 로그인). 나중에 통합구성요소의 구성(Configure)에서 해도 되고, rustuya-manager가 이미 관리하는 기기 파일을 rustuya 패널의 Settings에서 지정해도 됩니다.",
         "menu_options": {
           "cloud_wizard_start": "지금 Tuya Cloud에서 기기 가져오기",
           "finish": "완료 (나중에 하기)"
@@ -44,7 +44,7 @@
       },
       "cloud_wizard_start": {
         "title": "Tuya Cloud에서 기기 가져오기",
-        "description": "저장된 Tuya 로그인이 있으면 그대로 씁니다. 없거나 만료됐으면 스캔할 QR 코드가 이어서 나옵니다. 사용자 코드는 그 첫 로그인에만 필요하며, Smart Life → 나 → 설정 → 계정 및 보안에서 확인할 수 있습니다. 가져오지 않고 설정을 마치려면 이 창을 닫으세요. Rustuya는 추가되고, 가져오기는 나중에 구성(Configure)에서 할 수 있습니다.",
+        "description": "저장된 Tuya 로그인이 있으면 그대로 씁니다. 없거나 만료됐으면 스캔할 QR 코드가 이어서 나옵니다. 사용자 코드는 그 첫 로그인에만 필요하며, Smart Life → 나 → 설정 → 계정 및 보안에서 확인할 수 있습니다. 가져오지 않고 설정을 마치려면 이 창을 닫으세요. rustuya는 추가되고, 가져오기는 나중에 구성(Configure)에서 할 수 있습니다.",
         "data": {
           "user_code": "사용자 코드 (새 로그인일 때만)"
         }
@@ -91,15 +91,15 @@
     "abort": {
       "already_configured": "이미 설정되어 있습니다.",
       "manager_busy": "다른 Tuya Cloud 가져오기 또는 기기 동기화 창이 아직 열려 있습니다. 그 창을 닫고 다시 시도하세요.",
-      "single_instance_allowed": "Rustuya는 이미 설정되어 있습니다. 하나만 실행할 수 있습니다."
+      "single_instance_allowed": "rustuya는 이미 설정되어 있습니다. 하나만 실행할 수 있습니다."
     }
   },
   "options": {
     "step": {
       "init": {
         "menu_options": {
-          "panel_show": "사이드바에 Rustuya 패널 추가",
-          "panel_open": "Rustuya 패널 열기",
+          "panel_show": "사이드바에 rustuya 패널 추가",
+          "panel_open": "rustuya 패널 열기",
           "cloud_wizard": "Tuya Cloud에서 기기 가져오기",
           "bridge_sync": "브리지와 기기 동기화"
         }
@@ -139,8 +139,8 @@
       "wizard_failed": "Tuya Cloud에서 가져오지 못했습니다: {error}",
       "no_devices": "클라우드 목록에도 브리지에도 기기가 없습니다.",
       "manager_busy": "다른 Tuya Cloud 가져오기 또는 기기 동기화 창이 아직 열려 있습니다. 그 창을 닫고 다시 시도하세요.",
-      "panel_shown": "사이드바에 Rustuya 패널이 추가되었습니다: [열기]({url}). 패널의 Options에서 잠금장치·경보·차고문 원격 제어, 분류되지 않는 데이터 포인트, Builtin 규칙 자동 업데이트를 설정합니다.",
-      "panel_open": "[Rustuya 패널 열기]({url})"
+      "panel_shown": "사이드바에 rustuya 패널이 추가되었습니다: [열기]({url}). 패널의 Options에서 잠금장치·경보·차고문 원격 제어, 분류되지 않는 데이터 포인트, Builtin 규칙 자동 업데이트를 설정합니다.",
+      "panel_open": "[rustuya 패널 열기]({url})"
     },
     "error": {
       "publish_failed": "브리지에 명령을 보내지 못했습니다.",
@@ -169,7 +169,7 @@
   },
   "exceptions": {
     "not_running": {
-      "message": "Rustuya가 실행 중이 아닙니다."
+      "message": "rustuya가 실행 중이 아닙니다."
     },
     "unknown_device": {
       "message": "기기 {device_id}이(가) 브리지에 없습니다 (또는 기기 목록에 없음)."
@@ -178,7 +178,7 @@
       "message": "기기 {device_id}은(는) 잠금장치·경보·차고문입니다. 명령을 보내려면 옵션에서 원격 제어를 허용하세요."
     },
     "device_on_bridge": {
-      "message": "{name}은(는) 아직 브리지에 있어 다시 나타납니다. Rustuya 패널의 Devices에서 브리지에서 제거하세요."
+      "message": "{name}은(는) 아직 브리지에 있어 다시 나타납니다. rustuya 패널의 Devices에서 브리지에서 제거하세요."
     }
   }
 }

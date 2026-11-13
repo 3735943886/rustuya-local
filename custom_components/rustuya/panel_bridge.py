@@ -16,7 +16,7 @@ class PanelBridge:
 
     async def ready(self) -> None:
         if self.client is None:
-            raise RuntimeError("Rustuya service is not ready")
+            raise RuntimeError("rustuya service is not ready")
         await self.sync()
 
     async def sync(self):

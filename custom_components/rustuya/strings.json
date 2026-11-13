@@ -11,7 +11,7 @@
       },
       "external": {
         "title": "Connect to rustuya-bridge",
-        "description": "Choose this if you already run both an MQTT broker and rustuya-bridge. Enter the broker your running rustuya-bridge uses; setup checks that the bridge answers there. The rest (topic root, device file) starts at its default; change it later in the Rustuya panel's Settings.",
+        "description": "Choose this if you already run both an MQTT broker and rustuya-bridge. Enter the broker your running rustuya-bridge uses; setup checks that the bridge answers there. The rest (topic root, device file) starts at its default; change it later in the rustuya panel's Settings.",
         "data": {
           "broker_host": "Broker host",
           "broker_port": "Broker port",
@@ -22,7 +22,7 @@
       },
       "embedded": {
         "title": "Run rustuya-bridge here",
-        "description": "Choose this if you already run an MQTT broker (for example Mosquitto) and know its address. Home Assistant launches and manages the rustuya-bridge process itself instead of you running one separately. Enter the broker below. Its topic root, state file and log level start at their defaults; change them later in the Rustuya panel's Settings.",
+        "description": "Choose this if you already run an MQTT broker (for example Mosquitto) and know its address. Home Assistant launches and manages the rustuya-bridge process itself instead of you running one separately. Enter the broker below. Its topic root, state file and log level start at their defaults; change them later in the rustuya panel's Settings.",
         "data": {
           "broker_host": "Broker host",
           "broker_port": "Broker port",
@@ -32,11 +32,11 @@
       },
       "builtin": {
         "title": "Run everything here",
-        "description": "Choose this if you don't know what MQTT is. You don't install or configure a broker: Home Assistant runs rustuya-bridge and a small MQTT broker between them, reachable only from this machine, so nothing else on your network can use it. If you already run a broker, or plan to share one with other devices, choose one of the expert options instead. The topic root, state file and log level start at their defaults; change them later in the Rustuya panel's Settings."
+        "description": "Choose this if you don't know what MQTT is. You don't install or configure a broker: Home Assistant runs rustuya-bridge and a small MQTT broker between them, reachable only from this machine, so nothing else on your network can use it. If you already run a broker, or plan to share one with other devices, choose one of the expert options instead. The topic root, state file and log level start at their defaults; change them later in the rustuya panel's Settings."
       },
       "onboard": {
         "title": "Devices",
-        "description": "Fetch your device list from Tuya Cloud now and register devices on the bridge (a saved login is used as is; otherwise you log in with a QR code). You can also do it later from the integration's Configure, or point at a device file rustuya-manager already keeps from the Rustuya panel's Settings.",
+        "description": "Fetch your device list from Tuya Cloud now and register devices on the bridge (a saved login is used as is; otherwise you log in with a QR code). You can also do it later from the integration's Configure, or point at a device file rustuya-manager already keeps from the rustuya panel's Settings.",
         "menu_options": {
           "cloud_wizard_start": "Fetch devices from Tuya Cloud now",
           "finish": "Finish; do it later"
@@ -44,7 +44,7 @@
       },
       "cloud_wizard_start": {
         "title": "Fetch devices from Tuya Cloud",
-        "description": "A saved Tuya login is used as is. Without one (or when it has expired), a QR code to scan follows: the user code is only needed for that first login, from Smart Life → Me → Settings → Account and Security. To set up without fetching, close this window: Rustuya is added, and the fetch is in its Configure later.",
+        "description": "A saved Tuya login is used as is. Without one (or when it has expired), a QR code to scan follows: the user code is only needed for that first login, from Smart Life → Me → Settings → Account and Security. To set up without fetching, close this window: rustuya is added, and the fetch is in its Configure later.",
         "data": {
           "user_code": "User code (only for a new login)"
         }
@@ -91,15 +91,15 @@
     "abort": {
       "already_configured": "Already set up.",
       "manager_busy": "Another Tuya Cloud fetch or device sync window is still open. Close it and try again.",
-      "single_instance_allowed": "Rustuya is already set up; it runs as a single instance."
+      "single_instance_allowed": "rustuya is already set up; it runs as a single instance."
     }
   },
   "options": {
     "step": {
       "init": {
         "menu_options": {
-          "panel_show": "Add the Rustuya panel to the sidebar",
-          "panel_open": "Open the Rustuya panel",
+          "panel_show": "Add the rustuya panel to the sidebar",
+          "panel_open": "Open the rustuya panel",
           "cloud_wizard": "Fetch devices from Tuya Cloud",
           "bridge_sync": "Sync devices with the bridge"
         }
@@ -139,8 +139,8 @@
       "wizard_failed": "Fetching from Tuya Cloud failed: {error}",
       "no_devices": "There are no devices in the cloud list or on the bridge.",
       "manager_busy": "Another Tuya Cloud fetch or device sync window is still open. Close it and try again.",
-      "panel_shown": "The Rustuya panel was added to the sidebar: [open it]({url}). Its Options hold remote control of locks, alarms and garage doors, unused data points and automatic builtin rule updates.",
-      "panel_open": "[Open the Rustuya panel]({url})."
+      "panel_shown": "The rustuya panel was added to the sidebar: [open it]({url}). Its Options hold remote control of locks, alarms and garage doors, unused data points and automatic builtin rule updates.",
+      "panel_open": "[Open the rustuya panel]({url})."
     },
     "error": {
       "publish_failed": "Could not send the command to the bridge.",
@@ -169,7 +169,7 @@
   },
   "exceptions": {
     "not_running": {
-      "message": "Rustuya is not running."
+      "message": "rustuya is not running."
     },
     "unknown_device": {
       "message": "Device {device_id} is not on the bridge (or not in the device list)."
@@ -178,7 +178,7 @@
       "message": "Device {device_id} is a lock, alarm or garage door; allow their remote control in the options to send it commands."
     },
     "device_on_bridge": {
-      "message": "{name} is still on the bridge and would come right back. Remove it from the bridge in the Rustuya panel's Devices."
+      "message": "{name} is still on the bridge and would come right back. Remove it from the bridge in the rustuya panel's Devices."
     }
   }
 }

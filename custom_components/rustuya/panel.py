@@ -123,7 +123,7 @@ def _entry_view(handler: Callable[..., Awaitable[web.Response]]) -> Callable[...
             found = next(((entry, None) for entry in request.app["hass"].config_entries.async_entries(DOMAIN)
                           if entry.disabled_by is None and entry.options.get(CONF_PANEL, False)), None)
         if found is None:
-            return self.json_message("the Rustuya panel is off", HTTPStatus.NOT_FOUND)
+            return self.json_message("the rustuya panel is off", HTTPStatus.NOT_FOUND)
         try:
             return await handler(self, request, *found, **match)
         except RestartFailed as e:
@@ -674,7 +674,7 @@ async def ws_subscribe_links(hass: HomeAssistant, connection: websocket_api.Acti
 
     found = _runtime(hass)
     if found is None:
-        connection.send_error(msg["id"], "not_found", "the Rustuya panel is off")
+        connection.send_error(msg["id"], "not_found", "the rustuya panel is off")
         return
     data = await broker.resolve(hass, found[0].data)
     transport = broker.transport(data, f"rustuya-panel-{secrets.token_hex(4)}")

@@ -1,15 +1,15 @@
-# Rustuya
+# rustuya
 
 [![GitHub release](https://img.shields.io/github/v/release/3735943886/rustuya-local)](https://github.com/3735943886/rustuya-local/releases)
 
 Local control of Tuya devices in Home Assistant, with no cloud round trip for state or commands.
 
-Rustuya talks to your devices over the LAN through [rustuya-bridge](https://github.com/3735943886/rustuya-bridge),
+rustuya talks to your devices over the LAN through [rustuya-bridge](https://github.com/3735943886/rustuya-bridge),
 interprets them, and creates their Home Assistant devices and entities itself, with the [IL device](https://github.com/3735943886/ildevice-homeassistant)
 hub built in.
 
 ```
-Tuya devices ──LAN──► rustuya-bridge ──MQTT──► Rustuya ──► Home Assistant entities
+Tuya devices ──LAN──► rustuya-bridge ──MQTT──► rustuya ──► Home Assistant entities
 ```
 
 Tuya Cloud is only used once, to fetch your device list and local keys (QR code login from the Smart Life / Tuya Smart app).
@@ -17,42 +17,42 @@ Tuya Cloud is only used once, to fetch your device list and local keys (QR code 
 ## Requirements
 
 - Home Assistant **2025.3** or newer.
-- An MQTT broker (for example the **Mosquitto broker** add-on), which rustuya-bridge needs. Rustuya connects to it
-  itself; Home Assistant's **MQTT** integration is not required. Without one, Rustuya can run a small broker of its own
+- An MQTT broker (for example the **Mosquitto broker** add-on), which rustuya-bridge needs. rustuya connects to it
+  itself; Home Assistant's **MQTT** integration is not required. Without one, rustuya can run a small broker of its own
   (see *Setup*).
-- rustuya-bridge, either one you already run, or the one Rustuya can run inside Home Assistant (amd64 and aarch64).
+- rustuya-bridge, either one you already run, or the one rustuya can run inside Home Assistant (amd64 and aarch64).
 
 ## Installation
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Marketplace.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=3735943886&repository=rustuya-local&category=integration)
 
-1. In Marketplace, search for **Rustuya** and download it.
-2. *Add integration → Rustuya* (see below).
+1. In Marketplace, search for **rustuya** and download it.
+2. *Add integration → rustuya* (see below).
 
 ## Setup
 
-Setup first asks how Rustuya should run. MQTT is the small message hub that devices and programs use to talk to each
+Setup first asks how rustuya should run. MQTT is the small message hub that devices and programs use to talk to each
 other (the broker). If you don't know what it is, pick the first option.
 
 | choice | when |
 |---|---|
-| **Beginner: everything inside Home Assistant** (recommended) | You don't know MQTT and don't want to set up a broker. Rustuya runs rustuya-bridge and a small broker of its own ([pymqttd](https://github.com/3735943886/pymqttd)) between them, reachable only from this machine. |
-| **Expert: my own MQTT broker; Home Assistant runs the bridge** | You already run a broker (for example the Mosquitto add-on). Rustuya starts and owns rustuya-bridge itself. |
+| **Beginner: everything inside Home Assistant** (recommended) | You don't know MQTT and don't want to set up a broker. rustuya runs rustuya-bridge and a small broker of its own ([pymqttd](https://github.com/3735943886/pymqttd)) between them, reachable only from this machine. |
+| **Expert: my own MQTT broker; Home Assistant runs the bridge** | You already run a broker (for example the Mosquitto add-on). rustuya starts and owns rustuya-bridge itself. |
 | **Expert: my own MQTT broker and my own rustuya-bridge** | You already run both. Setup checks that your running bridge answers on the broker; if it is not on the default topic root `rustuya`, it asks for that root. |
 
 For the two expert choices, enter the broker (host, port, optional username and password).
 
 The built-in broker is for a setup without one. If you already have a broker, using it alongside your own is possible
 and will not conflict, but it is not recommended: it only duplicates the broker you have. Choose it on purpose, for
-example to keep Rustuya's traffic isolated from your other devices. Otherwise use one of the expert choices, and share
+example to keep rustuya's traffic isolated from your other devices. Otherwise use one of the expert choices, and share
 your own broker if other devices need it. The built-in broker runs as a separate process, listens only on `127.0.0.1`
 with credentials made up at each start, and is stopped with Home Assistant, so nothing else on your network can use it. What it retains lives in memory: after a
 Home Assistant restart the devices show their last values, unavailable, until the bridge has reconnected to them.
 
 
-## The Rustuya panel
+## The rustuya panel
 
-*Configure → Add the Rustuya panel to the sidebar* adds an administrator panel. It shows:
+*Configure → Add the rustuya panel to the sidebar* adds an administrator panel. It shows:
 
 - **Devices**: the Tuya Cloud list compared with what the bridge holds. You can filter by *missing*, *bridge only*,
   *mismatch*, *online* and *offline*, see sub-devices under their gateway, add, update or remove devices, and
@@ -129,7 +129,7 @@ Locks, alarms and garage doors are refused unless their remote control is allowe
 For a device you no longer have:
 
 1. Remove it from the bridge: in the panel's *Devices*, or under *Configure → Sync devices with the bridge* by
-   selecting it in *Remove from the bridge*. Rustuya then deletes it from Home Assistant,
+   selecting it in *Remove from the bridge*. rustuya then deletes it from Home Assistant,
    and the bridge clears its own retained topics. Removing a gateway removes its sub-devices too.
 2. Once it is gone from the Smart Life / Tuya Smart app (delete it there if it is still listed), fetch the device list
    again (*Configure → Fetch devices from Tuya Cloud*), so it no longer shows as *missing*.
@@ -140,11 +140,11 @@ trying to reach it until you remove it from the bridge.
 
 ## Upgrading from a version before 0.2
 
-Rustuya used to publish IL over MQTT for the IL device integration. It now creates the entities itself and publishes
+rustuya used to publish IL over MQTT for the IL device integration. It now creates the entities itself and publishes
 nothing on the broker, and it does not take over the old entities. To move, keeping the same entity IDs (areas, custom
 names and other registry changes are lost):
 
-1. Before updating, disable the Rustuya entry.
+1. Before updating, disable the rustuya entry.
 2. Clear what it left on the broker, so IL device deletes those devices. This clears every retained topic under the
    prefix: if another IL producer shares it, restart that producer afterwards, or clear only the topics of your devices.
 
@@ -152,7 +152,7 @@ names and other registry changes are lost):
    mosquitto_sub -h <broker> -t 'il/#' --retained-only --remove-retained -W 3
    ```
 
-3. Update Rustuya, restart Home Assistant and enable the entry. Remove IL device if nothing else uses it.
+3. Update rustuya, restart Home Assistant and enable the entry. Remove IL device if nothing else uses it.
 
 Done in another order, the old entities keep their IDs and the new ones get a `_2` suffix.
 
@@ -160,12 +160,12 @@ Done in another order, the old entities keep their IDs and the new ones get a `_
 
 Deleting the integration removes its devices from Home Assistant and deletes the device list and Tuya login it kept under `.storage/rustuya/`. With the embedded bridge it also clears that bridge's
 retained topics and state file. A device file you pointed elsewhere and everything on an external bridge are left alone.
-Then remove Rustuya in HACS and restart.
+Then remove rustuya in HACS and restart.
 
 ## Troubleshooting
 
 - **No devices appear**: check the device is registered on the bridge (the panel's *Devices*) and in the device list.
-- **Commands or values look doubled**: run only one Rustuya per bridge. The integration cannot see a standalone daemon or
+- **Commands or values look doubled**: run only one rustuya per bridge. The integration cannot see a standalone daemon or
   rustuya-manager plugin on the same bridge, since it no longer shares IL with them over MQTT.
 - **Debug logs**:
 

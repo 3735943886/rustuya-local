@@ -1,4 +1,4 @@
-"""Rustuya as a Home Assistant integration: runs the same `rustuya_local.service.Service` the standalone
+"""rustuya as a Home Assistant integration: runs the same `rustuya_local.service.Service` the standalone
 `rustuya-local` daemon does, tied to this config entry, with an optional embedded rustuya-bridge (`pyrustuyabridge`)
 and user overrides from `<config>/rustuya_converters`. The service produces IL on an in-process transport, and an
 ildevice-homeassistant hub embedded on that transport turns the IL devices into entities registered under this
