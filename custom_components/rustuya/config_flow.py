@@ -356,7 +356,7 @@ class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN)
 
     async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         self._in_login = False
-        return self.async_create_entry(title="Rustuya", data=self._data, options=dict(DEFAULT_OPTIONS))
+        return self.async_create_entry(title="rustuya", data=self._data, options=dict(DEFAULT_OPTIONS))
 
     async def async_step_import(self, data: dict[str, Any]) -> FlowResult:
         """The setup a closed login window left: the broker and the rest were all given, only the login is skipped."""

@@ -1,6 +1,6 @@
 {
   "domain": "rustuya",
-  "name": "Rustuya",
+  "name": "rustuya",
   "after_dependencies": ["frontend", "http", "panel_custom", "websocket_api"],
   "codeowners": ["@3735943886"],
   "config_flow": true,

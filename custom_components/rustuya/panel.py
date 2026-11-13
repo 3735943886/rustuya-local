@@ -76,7 +76,7 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
         await panel_custom.async_register_panel(
             hass, frontend_url_path=PANEL_URL, webcomponent_name="rustuya-panel",
             module_url=f"{STATIC_URL}/rustuya-panel.js?v={version}-{digest}",
-            sidebar_title="Rustuya", sidebar_icon="rustuya:logo", require_admin=True)
+            sidebar_title="rustuya", sidebar_icon="rustuya:logo", require_admin=True)
             # no `config_panel_domain`: it makes the integration's Configure open this panel instead of the options
             # flow, which is where the panel is turned back off
 
