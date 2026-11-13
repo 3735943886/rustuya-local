@@ -964,7 +964,7 @@ class RustuyaPanel extends HTMLElement {
 
     this.shadowRoot.replaceChildren(
       el("style", {}, STYLE),
-      el("div", { class: "toolbar" }, this._menu, el("span", {}, "Rustuya"), el("span", { class: "spacer" })),
+      el("div", { class: "toolbar" }, this._menu, el("span", {}, "rustuya"), el("span", { class: "spacer" })),
       el("div", { class: "content" },
         this._bridge.root,
         el("div", { class: "card" },

@@ -97,7 +97,7 @@ async def test_the_panel_follows_the_option(hass, loaded):
 
     await loaded({CONF_PANEL: True})
     p = hass.data[frontend.DATA_PANELS][panel.PANEL_URL]
-    assert p.require_admin and p.sidebar_title == "Rustuya"
+    assert p.require_admin and p.sidebar_title == "rustuya"
     assert p.sidebar_icon == "rustuya:logo"
     icons = Path(panel.__file__).parent / "www" / "rustuya-icons.js"
     icon_hash = hashlib.sha256(icons.read_bytes()).hexdigest()[:10]
