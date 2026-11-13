@@ -4,6 +4,14 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-11-13
+
+- Fix setup failing now and then (about one Home Assistant start in 64) with the built-in MQTT broker: its per-start
+  password could begin with `-`, which the broker took for an option ("unexpected argument '-A' found"). The password
+  no longer can, and the integration requires pymqttd 0.1.0, which accepts any password.
+- Spell the integration's name in lowercase, *rustuya*: in the integration list, the sidebar, the panel, and the title
+  of a newly added entry. An existing entry keeps its title.
+
 ## [0.2.1] — 2026-11-10
 
 - Add a setup choice for users without an MQTT broker: *Beginner: everything inside Home Assistant* (recommended) runs the
