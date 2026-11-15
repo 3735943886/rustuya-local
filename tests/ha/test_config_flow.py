@@ -175,6 +175,18 @@ async def test_a_bridge_not_on_the_default_root_asks_for_its_root(hass):
     assert r["type"] == "create_entry" and r["data"][CONF_BRIDGE_ROOT] == "rb"
 
 
+def test_a_runtime_that_fails_to_import_does_not_stop_the_integration_loading():
+    """The config flow and the options import `broker`: a runtime import failing with it must leave them loadable, the
+    import to be tried again (and its error shown) at setup."""
+    code = """
+import sys
+sys.modules["rustuya_local.validation"] = None     # importing it raises ImportError
+from custom_components.rustuya import broker
+assert not broker._found
+"""
+    subprocess.run([sys.executable, "-c", code], check=True, cwd=Path(__file__).resolve().parents[2], timeout=60)
+
+
 def test_the_integration_module_loads_what_the_event_loop_imports_later():
     """In a fresh interpreter, since this process has them loaded already. Home Assistant loads the integration in its
     import executor; setup then finds the runtime loaded instead of queueing on that executor again."""
@@ -417,7 +429,7 @@ async def test_finishing_the_sync_hands_the_new_device_file_to_the_service(hass,
             seen.append(records)
 
     entry_id = next(iter(hass.config_entries.async_entries(DOMAIN))).entry_id
-    hass.data.setdefault(DOMAIN, {})[entry_id] = RuntimeData(service=_Service(), embedded_bridge=None)
+    hass.data.setdefault(DOMAIN, {})[entry_id] = RuntimeData(service=_Service(), embedded_bridge=None, started=True)
     r = await hass.config_entries.options.async_configure(r["flow_id"], {})
     assert r["type"] == "create_entry"
     assert [[d["id"] for d in records] for records in seen] == [["new1"]]   # the file as it is now

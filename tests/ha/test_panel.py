@@ -55,8 +55,8 @@ class FakeRuntime:
     hub: Any = field(default_factory=AsyncMock)
     retained: Any = field(default_factory=AsyncMock)
     service_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    forwarded: bool = True
     started: bool = True
+    start_pending: bool = False
 
 
 @pytest.fixture
@@ -639,6 +639,7 @@ async def test_unload_platform_failure_keeps_the_runtime_running(hass, loaded, m
     entry, service = await loaded({CONF_PANEL: True})
     runtime = hass.data[DOMAIN][entry.entry_id]
     service.stop = AsyncMock()
+    monkeypatch.setattr(integration, "_entry_platforms", lambda hass, entry: ["switch"])    # set up, and HA refuses
     monkeypatch.setattr(hass.config_entries, "async_unload_platforms", AsyncMock(return_value=False))
 
     assert await integration.async_unload_entry(hass, entry) is False

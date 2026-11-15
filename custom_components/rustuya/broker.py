@@ -5,6 +5,7 @@ no broker fields: `resolve` fills them in from the running one, and the function
 from __future__ import annotations
 
 import importlib
+import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -16,6 +17,8 @@ from .const import (
     CONF_BROKER_PORT,
     CONF_BROKER_USERNAME,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def resolve(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
@@ -66,12 +69,17 @@ def _import_runtime() -> dict[str, bool]:
 
 
 # With this module, so in the import executor job that loads the integration: an import in setup would queue again behind
-# every other integration's while Home Assistant starts.
-_found.update(_import_runtime())
+# every other integration's while Home Assistant starts. One that fails here must not stop the integration (and its
+# config flow) from loading: `import_runtime` tries again where the runtime is needed, and the error shows there.
+try:
+    _found.update(_import_runtime())
+except Exception:
+    _LOGGER.debug("could not import the runtime with the integration; retried at setup", exc_info=True)
 
 
 async def import_runtime(hass: HomeAssistant) -> None:
-    """Once loaded, the imports the integration does where it uses these modules are only `sys.modules` lookups."""
+    """Once loaded, the imports the integration does where it uses these modules are only `sys.modules` lookups. Loaded
+    with this module normally; if that failed, imported here (raising what the import raises)."""
     if not _found:
         _found.update(await hass.async_add_import_executor_job(_import_runtime))
 

@@ -234,35 +234,18 @@ async def test_deleting_the_entry_removes_its_store_and_registry_entries(hass, s
     assert _device(hass, "lamp1") is None
 
 
-async def test_a_failed_service_start_is_retried_by_a_reload(hass, tmp_path, socket_enabled):
-    """The service starts after setup (once Home Assistant has started), so its failure no longer fails the setup: it
-    is logged and the entry reloaded after `RETRY_DELAY`. An unload in between leaves nothing behind."""
-    from datetime import timedelta
-
+async def test_a_failed_service_start_is_left_to_home_assistants_retry(hass, tmp_path, socket_enabled):
+    """Home Assistant running (a reload, a settings restart), the service starts in setup: a failure fails the setup as
+    not ready, which Home Assistant retries with backoff, and leaves nothing behind."""
     from homeassistant.config_entries import ConfigEntryState
-    from homeassistant.util import dt as dt_util
-    from pytest_homeassistant_custom_component.common import async_fire_time_changed
-
-    from custom_components.rustuya import RETRY_DELAY
 
     entry = MockConfigEntry(domain=DOMAIN, data={
         CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": 1, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(tmp_path / "t.json"),
     }, options={CONF_PACK: False})
     entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.LOADED
-    first = hass.data[DOMAIN][entry.entry_id]
-    assert first.forwarded and not first.started
-
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=RETRY_DELAY + 1))
-    await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.LOADED
-    second = hass.data[DOMAIN][entry.entry_id]
-    assert second is not first and not second.started            # reloaded, and failing again
-
-    assert await hass.config_entries.async_unload(entry.entry_id)
-    await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.NOT_LOADED
+    assert entry.state is ConfigEntryState.SETUP_RETRY
     assert entry.entry_id not in hass.data.get(DOMAIN, {})
+    assert await hass.config_entries.async_unload(entry.entry_id)        # cancels the retry
