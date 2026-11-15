@@ -175,15 +175,16 @@ async def test_a_bridge_not_on_the_default_root_asks_for_its_root(hass):
     assert r["type"] == "create_entry" and r["data"][CONF_BRIDGE_ROOT] == "rb"
 
 
-def test_the_import_executor_loads_what_the_event_loop_imports_later():
-    """In a fresh interpreter, since this process has them loaded already."""
+def test_the_integration_module_loads_what_the_event_loop_imports_later():
+    """In a fresh interpreter, since this process has them loaded already. Home Assistant loads the integration in its
+    import executor; setup then finds the runtime loaded instead of queueing on that executor again."""
     code = """
 import sys
-from custom_components.rustuya import broker
 names = ("rustuya_local.validation", "rustuya_local.manager_plugin.api")
-assert not [n for n in names if n in sys.modules], "loaded before the executor ran"
-broker._import_runtime()
+assert not [n for n in names if n in sys.modules], "loaded before the integration"
+from custom_components.rustuya import broker
 assert all(n in sys.modules for n in names)
+assert broker._found
 """
     subprocess.run([sys.executable, "-c", code], check=True, cwd=Path(__file__).resolve().parents[2], timeout=60)
 

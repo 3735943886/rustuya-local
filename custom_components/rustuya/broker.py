@@ -65,6 +65,11 @@ def _import_runtime() -> dict[str, bool]:
     return found
 
 
+# With this module, so in the import executor job that loads the integration: an import in setup would queue again behind
+# every other integration's while Home Assistant starts.
+_found.update(_import_runtime())
+
+
 async def import_runtime(hass: HomeAssistant) -> None:
     """Once loaded, the imports the integration does where it uses these modules are only `sys.modules` lookups."""
     if not _found:

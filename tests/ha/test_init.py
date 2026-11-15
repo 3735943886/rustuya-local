@@ -119,7 +119,9 @@ async def test_setup_publishes_and_unload_goes_offline(hass, broker, tmp_path, s
         await watcher.clear_and_close()
 
 
-async def test_setup_fails_cleanly_when_the_broker_is_unreachable(hass, tmp_path, socket_enabled):
+async def test_an_unreachable_broker_leaves_the_service_stopped_and_unloads_cleanly(hass, tmp_path, socket_enabled):
+    from homeassistant.config_entries import ConfigEntryState
+
     devices_path = tmp_path / "tuyadevices.json"
     devices_path.write_text(json.dumps([lamp("lamp1")]))
     entry = MockConfigEntry(domain=DOMAIN, data={
@@ -127,8 +129,114 @@ async def test_setup_fails_cleanly_when_the_broker_is_unreachable(hass, tmp_path
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(devices_path),
     }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
     entry.add_to_hass(hass)
-    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    assert not hass.data[DOMAIN][entry.entry_id].started
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+def _external(broker: int, tmp_path) -> MockConfigEntry:
+    return MockConfigEntry(domain=DOMAIN, data={
+        CONF_BRIDGE_MODE: "external", "broker_host": "127.0.0.1", "broker_port": broker, "broker_username": "",
+        "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: str(tmp_path / "none" / "t.json"),
+    }, options={CONF_ALLOW_HAZARDOUS: False, CONF_EXPOSE_UNUSED: False, CONF_PACK: False})
+
+
+async def _clear_presence(broker: int) -> None:
+    watcher = Watcher(broker)
+    try:
+        watcher.publish("il/_producer/tuya", "", retain=True)
+    finally:
+        watcher.close()
+
+
+async def test_while_home_assistant_starts_the_platforms_and_service_wait_for_the_start(hass, broker, tmp_path,
+                                                                                         socket_enabled):
+    from homeassistant.config_entries import ConfigEntryState
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+    from homeassistant.core import CoreState
+
+    hass.set_state(CoreState.starting)
+    entry = _external(broker, tmp_path)
+    entry.add_to_hass(hass)
+    try:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.state is ConfigEntryState.LOADED
+        runtime = hass.data[DOMAIN][entry.entry_id]
+        assert not runtime.forwarded and not runtime.started
+
+        hass.set_state(CoreState.running)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+        await hass.async_block_till_done()
+        await until(lambda: runtime.started)
+        assert runtime.forwarded
+    finally:
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await _clear_presence(broker)
+
+
+async def test_unload_before_the_start_leaves_nothing_running(hass, broker, tmp_path, socket_enabled):
+    from homeassistant.config_entries import ConfigEntryState
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+    from homeassistant.core import CoreState
+
+    hass.set_state(CoreState.starting)
+    entry = _external(broker, tmp_path)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.NOT_LOADED
+
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    assert not runtime.forwarded and not runtime.started
+
+
+async def test_an_options_change_before_the_start_starts_the_service_once(hass, broker, tmp_path, socket_enabled):
+    """An options change before the service has started replaces the service without starting it; the deferred start
+    then starts that one, once."""
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+    from homeassistant.core import CoreState
+
+    from rustuya_local.service import Service
+
+    starts = []
+    real_start = Service.start
+
+    async def counting(self, resume=False):
+        starts.append((self, resume))
+        await real_start(self, resume)
+
+    hass.set_state(CoreState.starting)
+    entry = _external(broker, tmp_path)
+    entry.add_to_hass(hass)
+    try:
+        with patch.object(Service, "start", counting):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+            runtime = hass.data[DOMAIN][entry.entry_id]
+            before = runtime.service
+            hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_EXPOSE_UNUSED: True})
+            await hass.async_block_till_done()
+            assert runtime.service is not before and starts == []
+
+            hass.set_state(CoreState.running)
+            hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+            await hass.async_block_till_done()
+            await until(lambda: runtime.started)
+            assert starts == [(runtime.service, False)]
+    finally:
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await _clear_presence(broker)
 
 
 async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(hass, broker, tmp_path, socket_enabled,
