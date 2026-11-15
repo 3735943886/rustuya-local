@@ -384,3 +384,67 @@ async def test_panel_command_cleans_up_pending_acknowledgement(chain, outcome):
     with pytest.raises(expected):
         await command
     assert not client._command_waiters
+
+
+async def test_why_a_device_is_not_connected_is_logged_once_per_reason(chain, caplog):
+    bridge, _il, runner, bridge_client = chain
+    caplog.set_level("INFO", logger="rustuya_local.bridge_client")
+    down = '{"errorCode":905,"errorMsg":"Timeout","reason":"no_route"}'
+    for payload in ('{"errorCode":0}', down, down, '{"errorCode":901,"errorMsg":"Offline"}', '{"errorCode":0}'):
+        await bridge.publish("rustuya/error/a", payload, 0, False)
+        await settle(runner, bridge_client, bridge)
+    lines = [r.getMessage() for r in caplog.records if r.name == "rustuya_local.bridge_client" and "device a" in r.message]
+    assert lines == ["device a is not connected: Timeout (reason=no_route) (code 905)",       # a retry's repeat: not again
+                     "device a is not connected: Offline (code 901)",
+                     "device a is connected again"]                                            # the first `connected`: nothing
+
+
+async def test_a_not_connected_line_names_the_device_and_what_to_check(chain, caplog):
+    bridge, _il, runner, bridge_client = chain
+    caplog.set_level("WARNING", logger="rustuya_local.bridge_client")
+    await bridge.publish("rustuya/error/a", json.dumps({"errorCode": 905, "errorMsg": "Network Error: Device Unreachable",
+                                                        "reason": "refused", "id": "a", "name": "Lamp"}), 0, False)
+    await bridge.publish("rustuya/error/b", json.dumps({"errorCode": 914, "errorMsg": "Check device key or version",
+                                                        "detail": "HMAC-SHA256 mismatch", "id": "b"}), 0, False)
+    await settle(runner, bridge_client, bridge)
+    lines = [r.getMessage() for r in caplog.records if r.name == "rustuya_local.bridge_client"]
+    assert lines == [
+        ("device a (Lamp) is not connected: Network Error: Device Unreachable (reason=refused) (code 905); another local "
+         "client (LocalTuya, Tuya Local, …) may be holding the device's only connection"),
+        ("device b is not connected: Check device key or version (detail=HMAC-SHA256 mismatch) (code 914); check the "
+         "device's local key and protocol version")]
+
+
+async def test_connected_without_state_is_logged(chain, caplog, monkeypatch):
+    import asyncio
+
+    from rustuya_local import bridge_client as bc
+    monkeypatch.setattr(bc, "STATE_WAIT", 0.05)
+    bridge, il, runner, bridge_client = chain
+    bridge_client.sync_devices([lamp("quiet"), lamp("talks"), lamp("gw")])
+    await settle(runner, bridge_client, bridge, il)
+    await reply(bridge, json.dumps({"action": "status", "status": "ok", "offset": 0, "has_more": False,
+                                    "devices": {"quiet": {"id": "quiet"}, "talks": {"id": "talks"}, "gw": {"id": "gw"},
+                                                "child": {"id": "child", "cid": "c1", "parent_id": "gw"}}}))
+    await settle(runner, bridge_client, bridge, il)
+    caplog.set_level("WARNING", logger="rustuya_local.bridge_client")
+    await bridge.publish("rustuya/error/gw", '{"errorCode":0}', 0, False)          # a gateway: no state of its own
+    await bridge.publish("rustuya/error/quiet", '{"errorCode":0}', 0, False)
+    await bridge.publish("rustuya/error/talks", '{"errorCode":0}', 0, False)
+    await bridge.publish("rustuya/event/state/talks", '{"1":true}', 0, False)
+    await settle(runner, bridge_client, bridge)
+    await asyncio.sleep(0.15)
+    lines = [r.getMessage() for r in caplog.records
+             if r.name == "rustuya_local.bridge_client" and r.levelname == "WARNING"]
+    assert lines == [("device quiet is connected but sent no state in 0s, so it stays unavailable: check its protocol "
+                      "version")]
+
+
+async def test_an_unreadable_event_is_logged_once(chain, caplog):
+    bridge, _il, runner, bridge_client = chain
+    caplog.set_level("WARNING", logger="rustuya_local.bridge_client")
+    for _ in range(2):
+        await bridge.publish("rustuya/event/state/a", "not json", 0, False)
+        await settle(runner, bridge_client, bridge)
+    lines = [r.getMessage() for r in caplog.records if r.name == "rustuya_local.bridge_client"]
+    assert len(lines) == 1 and lines[0].startswith("could not read the dps in an event from device a")

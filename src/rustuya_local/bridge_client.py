@@ -42,6 +42,7 @@ DEFAULT_EVENT = "{root}/event/{type}/{id}"
 DEFAULT_MESSAGE = "{root}/{level}/{id}"
 DEFAULT_COMMAND = "{root}/command"
 DEFAULT_PAYLOAD = "{value}"
+STATE_WAIT = 30.0                # a device connected this long without sending its state is logged
 STATUS_CYCLE_TIMEOUT = 10.0      # a request whose pages stop coming is given up after this, so a lost reply cannot stall
 
 
@@ -88,6 +89,24 @@ def _json_object(text: str) -> dict | None:
     except ValueError:
         return None
     return value if isinstance(value, dict) else None
+
+
+# What to check, by the bridge's `errorCode`, or by the `reason` it gives a 905 (rustuya-bridge 0.4.6+)
+_CODE_HINTS = {914: "check the device's local key and protocol version"}
+_REASON_HINTS = {
+    "not_located": "no IP or protocol version is set and none was heard on the LAN: set them, or let this host "
+                   "receive LAN broadcasts (UDP 6666/6667; a container needs host networking)",
+    "refused": "another local client (LocalTuya, Tuya Local, …) may be holding the device's only connection",
+    "closed": "another local client (LocalTuya, Tuya Local, …) may be holding the device's only connection",
+    "unreachable": "check that this host can reach the device's IP (subnet, VLAN, firewall)",
+    "dial_timeout": "check the device's IP, and that this host can reach it (subnet, VLAN, firewall)",
+    "handshake_timeout": "check the device's protocol version",
+    "protocol": "check the device's protocol version",
+}
+
+
+def _link_hint(parsed: dict) -> str | None:
+    return _CODE_HINTS.get(parsed.get("errorCode")) or _REASON_HINTS.get(parsed.get("reason"))
 
 
 def _link_device(vars_: dict[str, str], parsed: dict) -> str | None:
@@ -185,12 +204,18 @@ class BridgeClient(_BridgeFollower):
         # the latest thing heard per device, replayed when a device becomes driven after it was already heard
         self._last_conn: dict[str, Connected | Disconnected] = {}
         self._last_state: dict[str, dict] = {}
+        self._link_logged: dict[str, str | None] = {}       # per device: the error last logged (None: connected)
+        self._state_timers: dict[str, asyncio.TimerHandle] = {}     # connected, its state not heard yet
+        self._undecodable: set[str] = set()                 # devices whose event payload could not be read, logged
 
     def stop(self) -> None:
         for waiter in self._command_waiters.values():
             if not waiter.done():
                 waiter.set_exception(RuntimeError("bridge client stopped"))
         self._registry_ready.clear()
+        for timer in self._state_timers.values():
+            timer.cancel()
+        self._state_timers.clear()
         if self._status_timer is not None:
             self._status_timer.cancel()
             self._status_timer = None
@@ -339,7 +364,45 @@ class BridgeClient(_BridgeFollower):
             seed.append(Message("state", state))
         return seed
 
+    def _log_link(self, device_id: str, parsed: dict) -> None:
+        """Why a device is not connected, as the bridge says it: a warning each time the reason changes (a bridge that
+        keeps retrying sends the same one again), and a line when it connects again."""
+        code = parsed.get("errorCode")
+        error = None if code == 0 else f"{error_text(parsed) or 'no reason given'} (code {code})"
+        previous = self._link_logged.get(device_id, ...)
+        if error == previous:
+            return
+        self._link_logged[device_id] = error
+        who = f"{device_id} ({name})" if isinstance(name := parsed.get("name"), str) and name else device_id
+        if error is not None:
+            hint = _link_hint(parsed)
+            _LOGGER.warning("device %s is not connected: %s%s", who, error, f"; {hint}" if hint else "")
+        elif previous is not ...:
+            _LOGGER.info("device %s is connected again", who)
+
+    def _await_state(self, device_id: str, code: Any, retained: bool) -> None:
+        """A device the bridge reports connected but whose state never comes stays unavailable with nothing else to
+        say why (a wrong protocol version can connect and then fail to decode): log it. A retained `connected` with
+        the device's state already heard needs none, as nothing new is asked of it."""
+        timer = self._state_timers.pop(device_id, None)
+        if timer is not None:
+            timer.cancel()
+        if code == 0 and not (retained and device_id in self._last_state):
+            self._state_timers[device_id] = asyncio.get_running_loop().call_later(
+                STATE_WAIT, self._no_state, device_id)
+
+    def _no_state(self, device_id: str) -> None:
+        self._state_timers.pop(device_id, None)
+        if any(isinstance(d, dict) and d.get("parent_id") == device_id for d in (self._registry or {}).values()):
+            return                               # a gateway: its sub-devices report, it may have no state of its own
+        _LOGGER.warning("device %s is connected but sent no state in %.0fs, so it stays unavailable: check its protocol "
+                        "version", device_id, STATE_WAIT)
+
     def _forget(self, device_id: str) -> None:
+        if (timer := self._state_timers.pop(device_id, None)) is not None:
+            timer.cancel()
+        self._undecodable.discard(device_id)
+        self._link_logged.pop(device_id, None)
         self._last_conn.pop(device_id, None)
         self._last_state.pop(device_id, None)
 
@@ -360,9 +423,16 @@ class BridgeClient(_BridgeFollower):
             return
         dps = pb.parse_seed_dps(payload, vars_.get("dp"), self._templates.payload)
         if not isinstance(dps, dict):
-            _LOGGER.debug("could not extract dps from event payload for %s: %r", device_id, payload)
+            if device_id in self._undecodable:
+                _LOGGER.debug("could not extract dps from event payload for %s: %r", device_id, payload)
+            else:
+                self._undecodable.add(device_id)
+                _LOGGER.warning("could not read the dps in an event from device %s (logged once): %r", device_id,
+                                payload)
             return
         if vars_["type"] == "state":             # kept even before `sync_devices`: retained ones may come first
+            if (timer := self._state_timers.pop(device_id, None)) is not None:
+                timer.cancel()
             # merged: with a `{dp}` in the event topic every retained message carries one dp
             self._last_state[device_id] = {**self._last_state.get(device_id, {}), **dps}
         self.runner.on_bridge_message(device_id, Message(vars_["type"], dps), retained=retained)
@@ -376,6 +446,8 @@ class BridgeClient(_BridgeFollower):
         if (device_id := _link_device(vars_, parsed)) is not None:
             conn = Connected() if parsed.get("errorCode") == 0 else Disconnected()
             self._last_conn[device_id] = conn
+            self._log_link(device_id, parsed)
+            self._await_state(device_id, parsed.get("errorCode"), retained)
             self.runner.on_bridge_message(device_id, conn, retained=retained)       # a retained one asks for no `get`
             return
         if not retained:
@@ -467,7 +539,8 @@ class BridgeClient(_BridgeFollower):
 
 # ---- link state, for a status view ------------------------------------------------------------------------------
 
-_ERROR_ENVELOPE = frozenset({"errorCode", "errorMsg", "payloadStr", "errorPayloadObj", "payloadRaw"})
+_ERROR_ENVELOPE = frozenset({"errorCode", "errorMsg", "payloadStr", "errorPayloadObj", "payloadRaw", "id", "name",
+                             "cid"})
 
 
 def error_text(parsed: dict) -> str:
