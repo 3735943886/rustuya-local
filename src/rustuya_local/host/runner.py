@@ -191,10 +191,10 @@ class Runner:
             try:
                 self.set_device(record)
             except Exception:
-                _LOGGER.exception("still cannot drive device %s", device_id)
+                _LOGGER.exception("device %s still cannot be driven", device_id)
                 self._failed[device_id] = record
             else:
-                _LOGGER.info("device %s is driven now", device_id)
+                _LOGGER.info("device %s is now driven", device_id)
 
     # ---- plumbing ----------------------------------------------------------------------
 
@@ -249,7 +249,7 @@ class Runner:
     def _on_presence(self, msg: Message) -> None:
         if msg.retain or _text(msg.payload) != "offline" or self._presence_unsub is None:
             return                                 # a replay on subscribe is older than this one's own `online`
-        _LOGGER.info("%s went offline while this producer runs (another one stopped): online again", msg.topic)
+        _LOGGER.info("%s was set offline while this producer is running; online was published again", msg.topic)
         self.run([self.hub.presence(True)])
 
     def _on_probe(self, msg: Message) -> None:

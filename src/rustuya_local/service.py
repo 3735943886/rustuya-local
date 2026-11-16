@@ -227,7 +227,7 @@ class Service:
                 stack.push_async_callback(cancel_task, task)
                 stack.callback(setattr, self, "_pack_running", False)
             self._stack = stack.pop_all()
-        _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s", len(s.devices), s.root)
+        _LOGGER.info("%d device(s) in the device file; IL follows those registered on %s", len(s.devices), s.root)
 
     async def _refuse_if_another_producer(self, presence_topic: str, resume: bool = False) -> None:
         running = await producer_running(self.il, presence_topic)
@@ -238,8 +238,8 @@ class Service:
         if running is None and resume:
             _LOGGER.debug("%s still online from before the restart", presence_topic)
         elif running is None:
-            _LOGGER.warning("%s says online but no producer answers (a stale Last Will, or one on tuya2ildevice before "
-                            "0.3.5): starting; if an older producer does run, stop it", presence_topic)
+            _LOGGER.warning("%s reports online but no producer answered; starting. Any other producer for it must be "
+                            "stopped", presence_topic)
 
     async def _pack_loop(self, directory: Path) -> None:
         import time
@@ -399,7 +399,7 @@ async def purge_il(il: Transport, prefix: str, source: str, *, settle: float = 0
         await il.publish(topic, "", 1, True)
     await il.publish(presence, "", 1, True)
     await _flush(il, f"{presence}/flush", timeout)
-    _LOGGER.info("took %d device(s) of %s out of IL", len(ids), presence)
+    _LOGGER.info("removed %d device(s) of %s from IL", len(ids), presence)
     return sorted(ids)
 
 

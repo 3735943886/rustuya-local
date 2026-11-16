@@ -5,9 +5,9 @@ Release notes are read by the release workflow before publishing.
 ## [Unreleased]
 
 - Log why a device is unavailable, once per reason: a warning naming the device, the bridge's error (with the `reason`
-  rustuya-bridge 0.4.6 adds to an unreachable device) and what to check; a warning when a device is connected but its
-  state never arrives (usually a wrong protocol version); and a warning, once per device, when an event's dps cannot be
-  read. Before, all of these were silent or debug-only, so a device could stay unavailable with nothing in the log.
+  rustuya-bridge 0.4.6 adds to an unreachable device); a warning when a device is connected but its state never
+  arrives; and a warning, once per device, when an event's dps cannot be read. Before, all of these were silent or
+  debug-only, so a device could stay unavailable with nothing in the log.
 - The bridge's error text, in the log and on the panel's device cards, leaves out the `id` and `name` the bridge adds.
 - Require pyrustuyabridge 0.4.6, whose embedded bridge gives an unreachable device's `reason` and keeps a device that
   rejects the local key reported as such (914) instead of unreachable (905).

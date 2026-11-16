@@ -172,7 +172,7 @@ Then remove rustuya in HACS and restart.
     `refused` or `closed` (often another local client, such as LocalTuya or Tuya Local, holding the device's only
     connection), `unreachable` or `dial_timeout` (IP, subnet, VLAN, firewall), `not_located` (no IP set and none heard
     on the LAN; in a container, use host networking).
-  - *connected but sent no state*: the connection is up but the device's state never arrives; usually a wrong protocol
+  - *connected but has sent no state*: the connection is up but the device's state never arrives; usually a wrong protocol
     version.
 - **Commands or values look doubled**: run only one rustuya per bridge. The integration cannot see a standalone daemon or
   rustuya-manager plugin on the same bridge, since it no longer shares IL with them over MQTT.

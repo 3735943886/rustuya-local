@@ -91,7 +91,7 @@ async def _watch(hass: HomeAssistant, state: _State) -> None:
         if state.broker is not broker:              # `async_ensure` started it again meanwhile
             continue
         delay = RESTART_DELAYS[min(failures, len(RESTART_DELAYS) - 1)]
-        _LOGGER.error("the built-in MQTT broker exited (status %s); starting it again in %d s", status, delay)
+        _LOGGER.error("the built-in MQTT broker exited (status %s); restarting it in %d s", status, delay)
         await asyncio.sleep(delay)
         async with state.lock:
             if state.stopped or state.broker is not broker:
@@ -101,7 +101,7 @@ async def _watch(hass: HomeAssistant, state: _State) -> None:
                 failures = 0
             except Exception:
                 failures += 1
-                _LOGGER.exception("could not start the built-in MQTT broker again")
+                _LOGGER.exception("could not restart the built-in MQTT broker")
 
 
 def _on_close(hass: HomeAssistant):

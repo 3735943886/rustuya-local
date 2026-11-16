@@ -396,10 +396,10 @@ async def test_why_a_device_is_not_connected_is_logged_once_per_reason(chain, ca
     lines = [r.getMessage() for r in caplog.records if r.name == "rustuya_local.bridge_client" and "device a" in r.message]
     assert lines == ["device a is not connected: Timeout (reason=no_route) (code 905)",       # a retry's repeat: not again
                      "device a is not connected: Offline (code 901)",
-                     "device a is connected again"]                                            # the first `connected`: nothing
+                     "device a has reconnected"]                                            # the first `connected`: nothing
 
 
-async def test_a_not_connected_line_names_the_device_and_what_to_check(chain, caplog):
+async def test_a_not_connected_line_names_the_device_and_the_bridges_error(chain, caplog):
     bridge, _il, runner, bridge_client = chain
     caplog.set_level("WARNING", logger="rustuya_local.bridge_client")
     await bridge.publish("rustuya/error/a", json.dumps({"errorCode": 905, "errorMsg": "Network Error: Device Unreachable",
@@ -409,10 +409,8 @@ async def test_a_not_connected_line_names_the_device_and_what_to_check(chain, ca
     await settle(runner, bridge_client, bridge)
     lines = [r.getMessage() for r in caplog.records if r.name == "rustuya_local.bridge_client"]
     assert lines == [
-        ("device a (Lamp) is not connected: Network Error: Device Unreachable (reason=refused) (code 905); another local "
-         "client (LocalTuya, Tuya Local, …) may be holding the device's only connection"),
-        ("device b is not connected: Check device key or version (detail=HMAC-SHA256 mismatch) (code 914); check the "
-         "device's local key and protocol version")]
+        "device a (Lamp) is not connected: Network Error: Device Unreachable (reason=refused) (code 905)",
+        "device b is not connected: Check device key or version (detail=HMAC-SHA256 mismatch) (code 914)"]
 
 
 async def test_connected_without_state_is_logged(chain, caplog, monkeypatch):
@@ -436,8 +434,7 @@ async def test_connected_without_state_is_logged(chain, caplog, monkeypatch):
     await asyncio.sleep(0.15)
     lines = [r.getMessage() for r in caplog.records
              if r.name == "rustuya_local.bridge_client" and r.levelname == "WARNING"]
-    assert lines == [("device quiet is connected but sent no state in 0s, so it stays unavailable: check its protocol "
-                      "version")]
+    assert lines == ["device quiet is connected but has sent no state within 0s; it remains unavailable"]
 
 
 async def test_an_unreadable_event_is_logged_once(chain, caplog):

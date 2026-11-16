@@ -118,14 +118,14 @@ class OverrideWatcher:
         try:
             self.runner.reload(loaded.overrides, rules=loaded.rules)
         except OverrideError as e:
-            _LOGGER.warning("overrides in %s not applied: %s", self.path, e)
+            _LOGGER.warning("overrides in %s were not applied: %s", self.path, e)
 
     async def save_settings(self, device_id: str, block: dict) -> None:
         """Keep `block` as the device's entry in `SETTINGS_FILE` (an empty block removes it), written atomically, then
         load the overrides again and reload the Hub at once (not at the next look). Never raises: a failure is
         logged. With a single `.json` file for the overrides there is nowhere to write, and nothing is."""
         if self.path.is_file() or (self.path.suffix == ".json" and not self.path.is_dir()):
-            _LOGGER.warning("overrides are the one file %s: the settings of %s are not saved", self.path, device_id)
+            _LOGGER.warning("overrides are a single file (%s); the settings of %s were not saved", self.path, device_id)
             return
         async with self._lock:
             try:
@@ -172,4 +172,4 @@ class OverrideWatcher:
                     self._apply(loaded)
                     self._stamp = stamp
                 except Exception:
-                    _LOGGER.exception("could not reload overrides in %s; will retry", self.path)
+                    _LOGGER.exception("could not reload overrides in %s; it will be retried", self.path)

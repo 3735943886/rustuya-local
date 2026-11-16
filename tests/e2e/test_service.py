@@ -178,7 +178,7 @@ async def test_a_second_producer_is_refused_and_a_stale_presence_is_not(tmp_path
     await t.il.publish("il/_producer/tuya", "online", 1, True)          # left by one whose Last Will never came
     first = _service(t, tmp_path)
     await first.start()
-    assert "no producer answers" in caplog.text
+    assert "no producer answered" in caplog.text
 
     second = _service(t, tmp_path)
     with pytest.raises(AnotherProducer):

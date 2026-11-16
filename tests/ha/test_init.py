@@ -376,12 +376,12 @@ async def test_send_command_writes_a_raw_dp_and_refuses_a_lock(hass, broker, tmp
     ({"file": 3, "held": 0, "reporting": 0, "not_connected": 0, "no_state": 0, "not_heard": 0},
      "WARNING", "none of the 3 device(s) in the device file is on the bridge"),
     ({"file": 3, "held": 3, "reporting": 3, "not_connected": 0, "no_state": 0, "not_heard": 0},
-     "INFO", "3 of 3 device(s) reporting"),
+     "INFO", "3 of 3 device(s) are reporting"),
     # a device not heard of is no failure: it may only speak when it has something to report
     ({"file": 3, "held": 3, "reporting": 2, "not_connected": 0, "no_state": 0, "not_heard": 1},
-     "INFO", "2 of 3 device(s) reporting"),
+     "INFO", "2 of 3 device(s) are reporting"),
     ({"file": 3, "held": 3, "reporting": 0, "not_connected": 2, "no_state": 1, "not_heard": 0},
-     "WARNING", "3 of 3 device(s) not connected"),
+     "WARNING", "3 of 3 device(s) are not connected"),
     ({"file": 3, "held": 3, "reporting": 0, "not_connected": 0, "no_state": 0, "not_heard": 3},
      "WARNING", "none of the 3 device(s) has reported"),
 ])

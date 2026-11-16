@@ -120,7 +120,7 @@ class MqttTransport:
         if self._closing:
             return
         if reason_code != 0:
-            _LOGGER.error("MQTT connect to %s:%s refused: %s", self.host, self.port, reason_code)
+            _LOGGER.error("MQTT connection to %s:%s was refused: %s", self.host, self.port, reason_code)
             return
         for topic, qos in {(t, q) for t, q, _ in self._subs}:
             client.subscribe(topic, qos)

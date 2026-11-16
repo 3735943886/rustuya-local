@@ -154,7 +154,7 @@ async def close_manager(manager: Any) -> None:
         # bounded: a close that hangs would otherwise hold the lock, and every later flow would give up as busy
         await asyncio.wait_for(manager.__aexit__(None, None, None), WAIT)
     except TimeoutError:
-        _LOGGER.warning("the rustuya-manager session did not close within %.0f s; released anyway", WAIT)
+        _LOGGER.warning("the rustuya-manager session did not close within %.0f s; it was released regardless", WAIT)
     finally:
         lock = _HOLDERS.pop(manager, None)          # released once per session, by the session that took it
         if lock is not None:

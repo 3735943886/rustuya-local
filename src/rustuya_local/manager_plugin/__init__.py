@@ -154,10 +154,10 @@ class Plugin:
 
 def register(ctx: Any) -> None:
     if getattr(ctx, "api_version", 0) < MIN_API:
-        _LOGGER.warning("%s needs rustuya-manager plugin api_version >= %d; not loaded", NAME, MIN_API)
+        _LOGGER.warning("%s requires rustuya-manager plugin api_version >= %d; it was not loaded", NAME, MIN_API)
         return
     if ctx in _REGISTERED:
-        _LOGGER.warning("%s is installed twice (pip and the plugin directory); running it once", NAME)
+        _LOGGER.warning("%s is installed twice (pip and the plugin directory); it is loaded once", NAME)
         return
     _REGISTERED.add(ctx)
     plugin = Plugin(ctx)

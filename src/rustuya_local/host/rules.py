@@ -49,7 +49,7 @@ def upgrade_overrides(mapping, where=''):
                     if 'settle' in motion:
                         cover.setdefault('settle', motion['settle'])
                     if dropped := sorted(set(motion) - {'settle'}):
-                        _LOGGER.warning('%soverride %s: converters.cover_motion %s dropped: use its cover settings',
+                        _LOGGER.warning('%soverride %s: converters.cover_motion %s ignored; use the cover settings instead',
                                         where, key, ', '.join(dropped))
             if not converters:
                 del block['converters']

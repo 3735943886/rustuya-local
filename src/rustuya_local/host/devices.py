@@ -89,7 +89,7 @@ class DeviceWatcher:
         try:
             records = load_devices(self.path)
         except (OSError, ValueError):
-            _LOGGER.warning("could not read %s; keeping the devices as they are", self.path)
+            _LOGGER.warning("could not read %s; the current devices are retained", self.path)
             return _DeviceUpdate(None, None)        # look again next time
         return _DeviceUpdate(stamp, records)
 
@@ -107,4 +107,4 @@ class DeviceWatcher:
             try:
                 self._apply(await run_in_thread(self._read_changes))
             except Exception:
-                _LOGGER.exception("could not sync devices from %s; will retry", self.path)
+                _LOGGER.exception("could not synchronize devices from %s; it will be retried", self.path)

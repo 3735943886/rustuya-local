@@ -49,8 +49,8 @@ STATUS_CYCLE_TIMEOUT = 10.0      # a request whose pages stop coming is given up
 @functools.cache
 def _warn_old_pyrustuyabridge() -> None:
     """Once per process."""
-    _LOGGER.warning("pyrustuyabridge %s has no render_command (0.4.0.dev2+): bridge commands keep the old form, "
-                    "which misses a {dp} command topic template's single-DP form", getattr(pb, "__version__", "?"))
+    _LOGGER.warning("pyrustuyabridge %s lacks render_command (added in 0.4.0.dev2); bridge commands use the earlier "
+                    "form, which does not support the single-DP form of a {dp} command topic template", getattr(pb, "__version__", "?"))
 
 
 @dataclass(frozen=True)
@@ -91,24 +91,6 @@ def _json_object(text: str) -> dict | None:
     return value if isinstance(value, dict) else None
 
 
-# What to check, by the bridge's `errorCode`, or by the `reason` it gives a 905 (rustuya-bridge 0.4.6+)
-_CODE_HINTS = {914: "check the device's local key and protocol version"}
-_REASON_HINTS = {
-    "not_located": "no IP or protocol version is set and none was heard on the LAN: set them, or let this host "
-                   "receive LAN broadcasts (UDP 6666/6667; a container needs host networking)",
-    "refused": "another local client (LocalTuya, Tuya Local, …) may be holding the device's only connection",
-    "closed": "another local client (LocalTuya, Tuya Local, …) may be holding the device's only connection",
-    "unreachable": "check that this host can reach the device's IP (subnet, VLAN, firewall)",
-    "dial_timeout": "check the device's IP, and that this host can reach it (subnet, VLAN, firewall)",
-    "handshake_timeout": "check the device's protocol version",
-    "protocol": "check the device's protocol version",
-}
-
-
-def _link_hint(parsed: dict) -> str | None:
-    return _CODE_HINTS.get(parsed.get("errorCode")) or _REASON_HINTS.get(parsed.get("reason"))
-
-
 def _link_device(vars_: dict[str, str], parsed: dict) -> str | None:
     """The device whose connection a frame on the bridge's message topic reports (its `errorCode`); None for any other
     frame (a reply to a command, the bridge's own)."""
@@ -137,7 +119,7 @@ class _BridgeFollower:
             await asyncio.wait_for(self._ready.wait(), timeout)
         except TimeoutError:
             if self._warn_without_config:
-                _LOGGER.warning("no bridge config on %s/bridge/config within %.0fs; using the default topic layout",
+                _LOGGER.warning("no bridge config received on %s/bridge/config within %.0fs; using the default topic layout",
                                 self.root, timeout)
             await self._apply_templates({})
 
@@ -281,7 +263,7 @@ class BridgeClient(_BridgeFollower):
         if self._templates is None:
             if strict:
                 raise RuntimeError("bridge subscriptions are not ready")
-            _LOGGER.warning("dropping a bridge command for %s: no bridge config received yet", device_id)
+            _LOGGER.warning("dropped a bridge command for %s: no bridge config has been received", device_id)
             return
         request = {"action": action, "id": device_id, **extra}
         render_command = getattr(pb, "render_command", None)
@@ -296,7 +278,7 @@ class BridgeClient(_BridgeFollower):
         if rendered is None:
             if strict:
                 raise RuntimeError(f"command topic cannot carry {action}")
-            _LOGGER.warning("dropping a bridge %s for %s: the command topic %r cannot carry it", action, device_id,
+            _LOGGER.warning("dropped a bridge %s for %s: the command topic %r cannot carry it", action, device_id,
                             self._templates.command)
             return
         topic, payload = rendered
@@ -401,10 +383,9 @@ class BridgeClient(_BridgeFollower):
         self._link_logged[device_id] = error
         who = f"{device_id} ({name})" if isinstance(name := parsed.get("name"), str) and name else device_id
         if error is not None:
-            hint = _link_hint(parsed)
-            _LOGGER.warning("device %s is not connected: %s%s", who, error, f"; {hint}" if hint else "")
+            _LOGGER.warning("device %s is not connected: %s", who, error)
         elif previous is not ...:
-            _LOGGER.info("device %s is connected again", who)
+            _LOGGER.info("device %s has reconnected", who)
 
     def _await_state(self, device_id: str, code: Any, retained: bool) -> None:
         """A device the bridge reports connected but whose state never comes stays unavailable with nothing else to
@@ -421,8 +402,8 @@ class BridgeClient(_BridgeFollower):
         self._state_timers.pop(device_id, None)
         if any(isinstance(d, dict) and d.get("parent_id") == device_id for d in (self._registry or {}).values()):
             return                               # a gateway: its sub-devices report, it may have no state of its own
-        _LOGGER.warning("device %s is connected but sent no state in %.0fs, so it stays unavailable: check its protocol "
-                        "version", device_id, STATE_WAIT)
+        _LOGGER.warning("device %s is connected but has sent no state within %.0fs; it remains unavailable", device_id,
+                        STATE_WAIT)
 
     def _forget(self, device_id: str) -> None:
         if (timer := self._state_timers.pop(device_id, None)) is not None:

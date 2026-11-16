@@ -213,7 +213,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await panel.async_setup(hass, entry)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     entry.async_on_unload(async_call_later(hass, LINK_REPORT_DELAY, lambda _now: _report_links(runtime)))
-    _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s (bridge: %s%s)", len(devices),
+    _LOGGER.info("%d device(s) in the device file; IL follows those registered on %s (bridge: %s%s)", len(devices),
                  data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE], ", built-in broker" if data.get(CONF_BROKER_BUILTIN) else "")
     return True
 
@@ -235,11 +235,11 @@ def _report_links(runtime: RuntimeData) -> None:
         if n["file"]:
             _LOGGER.warning("none of the %d device(s) in the device file is on the bridge", n["file"])
     elif failed:
-        _LOGGER.warning("%d of %d device(s) not connected; see the `rustuya_local` warnings", failed, held)
+        _LOGGER.warning("%d of %d device(s) are not connected; see the `rustuya_local` warnings", failed, held)
     elif not n["reporting"]:
         _LOGGER.warning("none of the %d device(s) has reported; see the `rustuya_local` warnings", held)
     else:
-        _LOGGER.info("%d of %d device(s) reporting", n["reporting"], held)
+        _LOGGER.info("%d of %d device(s) are reporting", n["reporting"], held)
 
 
 def _entry_platforms(hass: HomeAssistant, entry: ConfigEntry) -> set[str]:
@@ -276,7 +276,7 @@ def _load_devices_or_none(path: str) -> list[dict]:
     from rustuya_local.host import load_devices
 
     if not os.path.exists(path):
-        _LOGGER.info("no device file at %s yet; fetch the devices from Tuya Cloud in the integration's Configure", path)
+        _LOGGER.info("no device file exists at %s; fetch the devices from Tuya Cloud in the integration's Configure dialog", path)
         return []
     return load_devices(path)
 
@@ -450,7 +450,7 @@ async def async_clear_retained(hass: HomeAssistant, data: dict[str, Any], *, il:
             try:
                 await purge_il(transport, prefix, source)
             except AnotherProducer as e:
-                _LOGGER.warning("left the IL devices of %s/%s in place: %s", prefix, source, e)
+                _LOGGER.warning("the IL devices of %s/%s were left in place: %s", prefix, source, e)
         if bridge:
             try:
                 await purge_retained(transport, data[CONF_BRIDGE_ROOT])

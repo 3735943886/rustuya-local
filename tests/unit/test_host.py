@@ -271,7 +271,7 @@ async def test_override_watcher_retries_after_a_transient_read_error(tmp_path, m
     try:
         (tmp_path / '10_user.json').write_text(json.dumps({'overrides': {'p': {'device': {'label': 'recovered'}}}}))
         await asyncio.wait_for(updated.wait(), 2)
-        assert 'will retry' in caplog.text
+        assert 'will be retried' in caplog.text
     finally:
         await watcher.stop()
 
