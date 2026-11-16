@@ -448,3 +448,19 @@ async def test_an_unreadable_event_is_logged_once(chain, caplog):
         await settle(runner, bridge_client, bridge)
     lines = [r.getMessage() for r in caplog.records if r.name == "rustuya_local.bridge_client"]
     assert len(lines) == 1 and lines[0].startswith("could not read the dps in an event from device a")
+
+
+async def test_the_link_summary_counts_the_held_devices_by_what_was_heard(chain):
+    bridge, il, runner, bridge_client = chain
+    bridge_client.sync_devices([lamp("a"), lamp("b"), lamp("c"), lamp("d"), lamp("e")])
+    assert bridge_client.link_summary() == {"file": 5, "held": None, "reporting": 0, "not_connected": 0, "no_state": 0,
+                                            "not_heard": 0}                 # the bridge has not answered `status`
+
+    await reply(bridge, status_reply(["a", "b", "c", "d"]))
+    await bridge.publish("rustuya/error/a", '{"errorCode":0,"errorMsg":"Connection Successful"}', 0, True)
+    await bridge.publish("rustuya/event/state/a", '{"20":true,"22":1000,"23":0}', 0, True)
+    await bridge.publish("rustuya/error/b", '{"errorCode":905,"errorMsg":"Device Unreachable"}', 0, True)
+    await bridge.publish("rustuya/error/c", '{"errorCode":0,"errorMsg":"Connection Successful"}', 0, True)
+    await settle(runner, bridge_client, bridge, il)
+    assert bridge_client.link_summary() == {"file": 5, "held": 4, "reporting": 1, "not_connected": 1, "no_state": 1,
+                                            "not_heard": 1}

@@ -20,7 +20,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.core import CoreState, HomeAssistant, ServiceCall, callback
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import (
     ConfigEntryNotReady,
     HomeAssistantError,
@@ -29,7 +29,7 @@ from homeassistant.exceptions import (
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.entity_platform import async_get_platforms
-from homeassistant.helpers.start import async_at_started
+from homeassistant.helpers.event import async_call_later
 
 from . import broker
 from .const import (
@@ -63,6 +63,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+LINK_REPORT_DELAY = 60           # after the start: the bridge has answered and each device has had time to report
+
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 SERVICE_SEND_COMMAND = "send_command"
@@ -82,14 +84,6 @@ class RuntimeData:
     transport: Any = None                       # the in-process IL transport between the service and the hub
     retained: Any = None                        # keeps what the transport retains across Home Assistant restarts
     service_lock: asyncio.Lock = field(default_factory=asyncio.Lock)    # one restart or stop of the service at a time
-    started: bool = False                       # the service has been started
-    deferred: bool = False                      # set up while Home Assistant started: the start follows its start
-    start_task: asyncio.Task | None = None      # that start, once Home Assistant has started (`_deferred_start`)
-
-    @property
-    def start_pending(self) -> bool:
-        """The deferred start is still to run: whatever replaces the service before then is started by it."""
-        return self.deferred and (self.start_task is None or not self.start_task.done())
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -156,17 +150,13 @@ def _make_service(hass: HomeAssistant, entry: ConfigEntry, data: dict[str, Any],
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up the entry. While Home Assistant starts, the platforms, the hub and the service follow once it has started
-    (`_deferred_start`), and setup returns without them; otherwise (a reload, a settings restart, a new entry) they start
-    here, and a failure to start raises `ConfigEntryNotReady`, which Home Assistant retries with backoff and shows.
+    """Set up the entry: the entity platforms and the hub, then the service. A failure to start raises
+    `ConfigEntryNotReady`, which Home Assistant retries with backoff and shows.
 
     While Home Assistant starts, every integration queues its imports on the one import executor thread: on a NanoPi
     R5C, importing the runtime here waited 31 s, and with that moved to `broker`'s module level, forwarding the
-    platforms waited 34 s instead; the service start takes 6-8 s more. Until Home Assistant has started the entities
-    are not there.
-
-    A setup's caller learns from its result whether the settings work (the panel's settings restart rolls back on a
-    failure), which is why only a start while Home Assistant starts is deferred.
+    platforms waited 34 s instead, for this integration's platform modules. `broker` loads both with the integration
+    now, and what is left is the service start (6-10 s there).
     """
     await broker.import_runtime(hass)               # loaded with `broker` already: a lookup
     from ildevice_ha.attach import build_hub
@@ -200,12 +190,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                               options=dict(entry.options), hub=hub, transport=transport, retained=retained)
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
         await retained.async_start()
-        runtime.deferred = deferred = hass.state is not CoreState.running
-        if not deferred:
-            try:
-                await _start(hass, entry, runtime)
-            except Exception as e:
-                raise ConfigEntryNotReady(f"could not start: {e}") from e
+        try:
+            await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+            # The hub goes before the service: it has to see the tombstones of devices that dropped out while Home
+            # Assistant was down, or their registry entries would stay behind.
+            await hub.async_start()
+            await runtime.service.start()           # releases whatever it had connected if it fails
+        except Exception as e:
+            raise ConfigEntryNotReady(f"could not start: {e}") from e
     except BaseException:
         if runtime is not None:
             hass.data[DOMAIN].pop(entry.entry_id, None)
@@ -216,56 +208,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await embedded_bridge.stop()
         raise
 
-    @callback
-    def start_later(_hass: HomeAssistant) -> None:
-        runtime.start_task = entry.async_create_task(hass, _deferred_start(hass, entry, runtime),
-                                                     f"{DOMAIN} deferred start")
-
     from . import panel
 
     await panel.async_setup(hass, entry)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
-    if deferred:
-        entry.async_on_unload(async_at_started(hass, start_later))
+    entry.async_on_unload(async_call_later(hass, LINK_REPORT_DELAY, lambda _now: _report_links(runtime)))
     _LOGGER.info("%d device(s) in the device file; IL follows the ones registered on %s (bridge: %s%s)", len(devices),
                  data[CONF_BRIDGE_ROOT], data[CONF_BRIDGE_MODE], ", built-in broker" if data.get(CONF_BROKER_BUILTIN) else "")
     return True
 
 
-async def _start(hass: HomeAssistant, entry: ConfigEntry, runtime: RuntimeData) -> None:
-    """The entity platforms, then the hub, then the service."""
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # The hub goes first: it has to see the tombstones of devices that dropped out while Home Assistant was down, or
-    # their registry entries would stay behind.
-    await runtime.hub.async_start()
-    async with runtime.service_lock:                # an options change may have replaced the service meanwhile
-        await runtime.service.start()               # releases whatever it had connected if it fails
-        runtime.started = True
-
-
-async def _deferred_start(hass: HomeAssistant, entry: ConfigEntry, runtime: RuntimeData) -> None:
-    """`_start`, once Home Assistant has started. An unload cancels it (`async_unload_entry`). A failure reloads the
-    entry, whose setup — Home Assistant running now — starts at once and leaves a failure to Home Assistant's retry."""
-    if entry.state is ConfigEntryState.SETUP_IN_PROGRESS:      # forwarding needs the setup lock this setup holds
-        done = hass.loop.create_future()
-
-        @callback
-        def changed() -> None:
-            if entry.state is not ConfigEntryState.SETUP_IN_PROGRESS and not done.done():
-                done.set_result(None)
-
-        unsubscribe = entry.async_on_state_change(changed)
-        try:
-            await done
-        finally:
-            unsubscribe()
-    if entry.state is not ConfigEntryState.LOADED or hass.data.get(DOMAIN, {}).get(entry.entry_id) is not runtime:
+@callback
+def _report_links(runtime: RuntimeData) -> None:
+    """One line, under this integration's logger, on how many devices report. The reason a device does not is logged
+    by the service as it hears it, under `rustuya_local`: someone reading only this integration's lines would see
+    nothing at all of devices that stay unavailable."""
+    client = runtime.service.bridge_client
+    if client is None:
         return
-    try:
-        await _start(hass, entry, runtime)
-    except Exception:
-        _LOGGER.exception("could not start; reloading the integration, which retries the start")
-        hass.config_entries.async_schedule_reload(entry.entry_id)
+    n = client.link_summary()
+    more = "the warnings logged under `rustuya_local` give the reason"
+    if n["held"] is None:
+        _LOGGER.warning("the bridge has not said which devices it holds, so every device stays unavailable: check that "
+                        "the bridge is running on this broker and root; %s", more)
+    elif n["file"] and not n["held"]:
+        _LOGGER.warning("none of the %d device(s) in the device file is registered on the bridge, so there is nothing "
+                        "to show: add them in the panel's Devices", n["file"])
+    elif n["reporting"] == n["held"]:
+        _LOGGER.info("all %d device(s) on the bridge report (%d in the device file)", n["held"], n["file"])
+    else:
+        _LOGGER.warning("of the %d device(s) on the bridge, %d report, %d are not connected, %d are connected but sent "
+                        "no state and %d were not heard of; %s", n["held"], n["reporting"], n["not_connected"],
+                        n["no_state"], n["not_heard"], more)
 
 
 def _entry_platforms(hass: HomeAssistant, entry: ConfigEntry) -> list[str]:
@@ -292,10 +266,7 @@ async def async_restart_service(hass: HomeAssistant, entry: ConfigEntry) -> None
         devices = await hass.async_add_executor_job(_load_devices_or_none, entry.data[CONF_DEVICES_PATH])
         data = await broker.resolve(hass, entry.data)
         runtime.service = _make_service(hass, entry, data, runtime.transport, devices)
-        if runtime.start_pending:                   # the deferred start starts this one, once Home Assistant has started
-            return
-        await runtime.service.start(resume=runtime.started)
-        runtime.started = True
+        await runtime.service.start(resume=True)
 
 
 def _load_devices_or_none(path: str) -> list[dict]:
@@ -352,15 +323,6 @@ async def async_refresh_devices(hass: HomeAssistant, entry: ConfigEntry) -> None
         if entry.state is not ConfigEntryState.LOADED:
             hass.config_entries.async_schedule_reload(entry.entry_id)
         return
-    if not runtime.started:
-        # not started yet (the deferred start), or its start failed: a service that has not started takes the file at
-        # its start, so build it again with the file as it is now
-        try:
-            await async_restart_service(hass, entry)
-        except Exception:
-            _LOGGER.exception("could not start the service with the new device file; reloading the integration")
-            hass.config_entries.async_schedule_reload(entry.entry_id)
-        return
     records = await hass.async_add_executor_job(_load_devices_or_none, entry.data[CONF_DEVICES_PATH])
     runtime.service.refresh_devices(records)
 
@@ -396,12 +358,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.disabled_by is not None:
         panel.async_remove(hass)
     runtime: RuntimeData = hass.data[DOMAIN][entry.entry_id]
-    # A deferred start still to run or under way stops here, before anything it would start is torn down: left alone,
-    # it would go on to start this runtime's hub and service against the entry set up after this unload.
-    if runtime.start_pending and runtime.start_task is not None:
-        runtime.start_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await runtime.start_task
     # Ask HA to unload the entity platforms before stopping their publisher. If HA refuses, leave the complete
     # runtime in place so the entry remains usable and HA can retry the unload.
     if not await _unload_platforms(hass, entry):

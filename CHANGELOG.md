@@ -11,9 +11,12 @@ Release notes are read by the release workflow before publishing.
 - The bridge's error text, in the log and on the panel's device cards, leaves out the `id` and `name` the bridge adds.
 - Require pyrustuyabridge 0.4.6, whose embedded bridge gives an unreachable device's `reason` and keeps a device that
   rejects the local key reported as such (914) instead of unreachable (905).
-- Let Home Assistant start without waiting for rustuya: while it starts, the entity platforms, the hub and the service
-  start once Home Assistant has started (on a NanoPi R5C, setting up the entry held the start for 47.7 s). The
-  entities appear then.
+- Let Home Assistant start without waiting for rustuya (on a NanoPi R5C, setting up the entry held the start for
+  47.7 s; 10 s now): the integration's modules load with it instead of queueing behind every other integration's
+  imports.
+- A minute after the start, one line under `custom_components.rustuya` says how many of the bridge's devices report,
+  how many are not connected or sent no state, and that the reasons are logged under `rustuya_local`: filtering the
+  log by the integration's name showed nothing of them.
 - A failure to start (the broker unreachable, for one) now leaves the entry *retrying setup*, which Home Assistant
   retries with backoff, instead of failed.
 

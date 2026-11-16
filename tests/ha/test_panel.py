@@ -55,8 +55,6 @@ class FakeRuntime:
     hub: Any = field(default_factory=AsyncMock)
     retained: Any = field(default_factory=AsyncMock)
     service_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    started: bool = True
-    start_pending: bool = False
 
 
 @pytest.fixture

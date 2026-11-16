@@ -197,6 +197,8 @@ assert not [n for n in names if n in sys.modules], "loaded before the integratio
 from custom_components.rustuya import broker
 assert all(n in sys.modules for n in names)
 assert broker._found
+from custom_components.rustuya.const import PLATFORMS
+assert all(f"custom_components.rustuya.{p}" in sys.modules for p in PLATFORMS)     # the forward finds them loaded
 """
     subprocess.run([sys.executable, "-c", code], check=True, cwd=Path(__file__).resolve().parents[2], timeout=60)
 
@@ -429,7 +431,7 @@ async def test_finishing_the_sync_hands_the_new_device_file_to_the_service(hass,
             seen.append(records)
 
     entry_id = next(iter(hass.config_entries.async_entries(DOMAIN))).entry_id
-    hass.data.setdefault(DOMAIN, {})[entry_id] = RuntimeData(service=_Service(), embedded_bridge=None, started=True)
+    hass.data.setdefault(DOMAIN, {})[entry_id] = RuntimeData(service=_Service(), embedded_bridge=None)
     r = await hass.config_entries.options.async_configure(r["flow_id"], {})
     assert r["type"] == "create_entry"
     assert [[d["id"] for d in records] for records in seen] == [["new1"]]   # the file as it is now

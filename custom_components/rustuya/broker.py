@@ -16,6 +16,7 @@ from .const import (
     CONF_BROKER_PASSWORD,
     CONF_BROKER_PORT,
     CONF_BROKER_USERNAME,
+    PLATFORMS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -56,6 +57,11 @@ def _import_runtime() -> dict[str, bool]:
     import rustuya_local.manager_plugin.api  # the panel's converter views
     import rustuya_local.service
     import rustuya_local.validation  # noqa: F401
+
+    # This integration's own platform modules: forwarding the entry imports the ones not loaded yet in the import
+    # executor (`Integration.async_get_platforms`), behind every other integration's imports while Home Assistant starts.
+    for platform in PLATFORMS:
+        importlib.import_module(f"{__package__}.{platform}")
 
     found = {}
     for name in OPTIONAL:

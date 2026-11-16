@@ -364,6 +364,32 @@ class BridgeClient(_BridgeFollower):
             seed.append(Message("state", state))
         return seed
 
+    def link_summary(self) -> dict[str, int | None]:
+        """Where the device file's devices stand, in numbers, for a host to log once things have settled: `file` (in
+        the device file), `held` (of those, on the bridge; None while the bridge has not answered `status`), and of the
+        held ones `reporting` (state heard), `not_connected` (the bridge gave an error), `no_state` (connected, no state
+        yet) and `not_heard` (the bridge said nothing of it). A sub-device has no link of its own, and a gateway may
+        have no state: each counts by what it has."""
+        records = self._records or {}
+        counts: dict[str, int | None] = {"file": len(records), "held": None, "reporting": 0, "not_connected": 0,
+                                         "no_state": 0, "not_heard": 0}
+        if self._registered is None:
+            return counts
+        held = [d for d in records if d in self._registered]
+        counts["held"] = len(held)
+        gateways = {d.get("parent_id") for d in (self._registry or {}).values() if isinstance(d, dict)}
+        for device_id in held:
+            conn = self._last_conn.get(device_id)
+            if isinstance(conn, Disconnected):
+                counts["not_connected"] += 1
+            elif device_id in self._last_state or (conn is not None and device_id in gateways):
+                counts["reporting"] += 1
+            elif conn is not None:
+                counts["no_state"] += 1
+            else:
+                counts["not_heard"] += 1
+        return counts
+
     def _log_link(self, device_id: str, parsed: dict) -> None:
         """Why a device is not connected, as the bridge says it: a warning each time the reason changes (a bridge that
         keeps retrying sends the same one again), and a line when it connects again."""
