@@ -14,9 +14,9 @@ Release notes are read by the release workflow before publishing.
 - Let Home Assistant start without waiting for rustuya (on a NanoPi R5C, setting up the entry held the start for
   47.7 s; 10 s now): the integration's modules load with it instead of queueing behind every other integration's
   imports.
-- A minute after the start, one line under `custom_components.rustuya` says how many of the bridge's devices report,
-  how many are not connected or sent no state, and that the reasons are logged under `rustuya_local`: filtering the
-  log by the integration's name showed nothing of them.
+- A minute after the start, one line under `custom_components.rustuya` says how many of the bridge's devices report:
+  a warning, pointing at the `rustuya_local` warnings, when the bridge reports devices as not connected or nothing
+  reports at all, and otherwise at info level. Filtering the log by the integration's name showed nothing of them.
 - A failure to start (the broker unreachable, for one) now leaves the entry *retrying setup*, which Home Assistant
   retries with backoff, instead of failed.
 

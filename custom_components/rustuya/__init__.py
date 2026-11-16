@@ -220,26 +220,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 @callback
 def _report_links(runtime: RuntimeData) -> None:
-    """One line, under this integration's logger, on how many devices report. The reason a device does not is logged
-    by the service as it hears it, under `rustuya_local`: someone reading only this integration's lines would see
-    nothing at all of devices that stay unavailable."""
+    """One short line, under this integration's logger, on how many devices report: the reason a device does not is
+    logged by the service under `rustuya_local`, which someone reading only this integration's lines never sees. A
+    warning only for what the bridge calls a failure (or nothing reporting at all): a device not heard of may just be
+    one that says nothing until it has something to report (battery powered, a sub-device)."""
     client = runtime.service.bridge_client
     if client is None:
         return
     n = client.link_summary()
-    more = "the warnings logged under `rustuya_local` give the reason"
-    if n["held"] is None:
-        _LOGGER.warning("the bridge has not said which devices it holds, so every device stays unavailable: check that "
-                        "the bridge is running on this broker and root; %s", more)
-    elif n["file"] and not n["held"]:
-        _LOGGER.warning("none of the %d device(s) in the device file is registered on the bridge, so there is nothing "
-                        "to show: add them in the panel's Devices", n["file"])
-    elif n["reporting"] == n["held"]:
-        _LOGGER.info("all %d device(s) on the bridge report (%d in the device file)", n["held"], n["file"])
+    held, failed = n["held"], n["not_connected"] + n["no_state"]
+    if held is None:
+        _LOGGER.warning("the bridge has not answered; see the `rustuya_local` warnings")
+    elif not held:
+        if n["file"]:
+            _LOGGER.warning("none of the %d device(s) in the device file is on the bridge", n["file"])
+    elif failed:
+        _LOGGER.warning("%d of %d device(s) not connected; see the `rustuya_local` warnings", failed, held)
+    elif not n["reporting"]:
+        _LOGGER.warning("none of the %d device(s) has reported; see the `rustuya_local` warnings", held)
     else:
-        _LOGGER.warning("of the %d device(s) on the bridge, %d report, %d are not connected, %d are connected but sent "
-                        "no state and %d were not heard of; %s", n["held"], n["reporting"], n["not_connected"],
-                        n["no_state"], n["not_heard"], more)
+        _LOGGER.info("%d of %d device(s) reporting", n["reporting"], held)
 
 
 def _entry_platforms(hass: HomeAssistant, entry: ConfigEntry) -> list[str]:

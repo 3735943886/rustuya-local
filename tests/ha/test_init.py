@@ -358,13 +358,18 @@ async def test_send_command_writes_a_raw_dp_and_refuses_a_lock(hass, broker, tmp
 
 @pytest.mark.parametrize(("summary", "level", "text"), [
     ({"file": 3, "held": None, "reporting": 0, "not_connected": 0, "no_state": 0, "not_heard": 0},
-     "WARNING", "has not said which devices it holds"),
+     "WARNING", "the bridge has not answered"),
     ({"file": 3, "held": 0, "reporting": 0, "not_connected": 0, "no_state": 0, "not_heard": 0},
-     "WARNING", "none of the 3 device(s)"),
+     "WARNING", "none of the 3 device(s) in the device file is on the bridge"),
     ({"file": 3, "held": 3, "reporting": 3, "not_connected": 0, "no_state": 0, "not_heard": 0},
-     "INFO", "all 3 device(s) on the bridge report"),
+     "INFO", "3 of 3 device(s) reporting"),
+    # a device not heard of is no failure: it may only speak when it has something to report
+    ({"file": 3, "held": 3, "reporting": 2, "not_connected": 0, "no_state": 0, "not_heard": 1},
+     "INFO", "2 of 3 device(s) reporting"),
     ({"file": 3, "held": 3, "reporting": 0, "not_connected": 2, "no_state": 1, "not_heard": 0},
-     "WARNING", "0 report, 2 are not connected, 1 are connected but sent no state"),
+     "WARNING", "3 of 3 device(s) not connected"),
+    ({"file": 3, "held": 3, "reporting": 0, "not_connected": 0, "no_state": 0, "not_heard": 3},
+     "WARNING", "none of the 3 device(s) has reported"),
 ])
 def test_the_link_report_is_logged_under_the_integrations_own_logger(caplog, summary, level, text):
     """Someone who reads only `custom_components.rustuya` lines still learns that devices do not report, and where
