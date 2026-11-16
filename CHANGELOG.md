@@ -19,6 +19,9 @@ Release notes are read by the release workflow before publishing.
   reports at all, and otherwise at info level. Filtering the log by the integration's name showed nothing of them.
 - A failure to start (the broker unreachable, for one) now leaves the entry *retrying setup*, which Home Assistant
   retries with backoff, instead of failed.
+- The panel's *Edit device* and *Register manually* say that a device whose LAN broadcasts do not reach this host
+  needs both its IP and its version, and ask before saving a Wi-Fi device with an IP but no version (the bridge does
+  not connect until it knows the version). The README says the same under *Requirements* and *Troubleshooting*.
 
 ## [0.2.2] — 2026-11-13
 

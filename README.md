@@ -21,6 +21,11 @@ Tuya Cloud is only used once, to fetch your device list and local keys (QR code 
   itself; Home Assistant's **MQTT** integration is not required. Without one, rustuya can run a small broker of its own
   (see *Setup*).
 - rustuya-bridge, either one you already run, or the one rustuya can run inside Home Assistant (amd64 and aarch64).
+- Devices are found by the broadcasts they send on the LAN (UDP 6666/6667), which do not cross VLANs or routers. If
+  they cannot reach Home Assistant (another VLAN, a firewall, client isolation, a container without host networking),
+  enter each device's IP address and protocol version by hand in the panel (*Devices → Edit device*). That only
+  replaces the discovery: Home Assistant must still be able to open a TCP connection to each device (port 6668), so
+  the VLANs need a route and a firewall rule that allows it.
 
 ## Installation
 
@@ -55,8 +60,8 @@ Home Assistant restart the devices show their last values, unavailable, until th
 *Configure → Add the rustuya panel to the sidebar* adds an administrator panel. It shows:
 
 - **Devices**: the Tuya Cloud list compared with what the bridge holds. You can filter by *missing*, *bridge only*,
-  *mismatch*, *online* and *offline*, see sub-devices under their gateway, add, update or remove devices, and
-  *Register manually* (Wi-Fi devices or sub-devices without a cloud login).
+  *mismatch*, *online* and *offline*, see sub-devices under their gateway, add, update or remove devices, edit a
+  device's IP, key and version (*Edit device*), and *Register manually* (Wi-Fi devices or sub-devices without a cloud login).
 - **Converter files**: list, edit, delete or drop in your own rule files (see [Non-standard devices](#non-standard-devices)),
   and *Update builtin rules*.
 - **Options**:
@@ -170,8 +175,11 @@ Then remove rustuya in HACS and restart.
   - *not connected … code 914*: the bridge reached the device but it rejected the local key or protocol version.
   - *not connected … code 905*: the bridge cannot reach it. With rustuya-bridge 0.4.6 or later the `reason` says how:
     `refused` or `closed` (often another local client, such as LocalTuya or Tuya Local, holding the device's only
-    connection), `unreachable` or `dial_timeout` (IP, subnet, VLAN, firewall), `not_located` (no IP set and none heard
-    on the LAN; in a container, use host networking).
+    connection), `unreachable` or `dial_timeout` (IP, subnet, VLAN, firewall), `not_located` (the IP or the protocol
+    version is not set and no broadcast from the device was heard: set both in the panel's *Edit device*, trying
+    version `3.4`, then `3.5`, then `3.3`; or let the broadcasts through, which in a container means host networking).
+    If `not_located` then turns into `unreachable` or `dial_timeout`, the device is located but Home Assistant cannot
+    open a connection to it: a route or firewall rule between the networks is missing.
   - *connected but has sent no state*: the connection is up but the device's state never arrives; usually a wrong protocol
     version.
 - **Commands or values look doubled**: run only one rustuya per bridge. The integration cannot see a standalone daemon or

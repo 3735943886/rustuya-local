@@ -152,6 +152,8 @@ const I18N = {
     close_panel: "Close panel",
     menu: "Panel menu", edit_device: "Edit device", edit_hint: "Edit the bridge values. Device ID and type cannot be changed.",
     manual_add: "Register manually", manual_hint: "Register without Tuya Cloud. Leave IP/version blank for automatic detection. ID may be generated from IP or CID and name.",
+    lan_hint: "If this host cannot hear the devices' LAN broadcasts (another VLAN, a firewall, a container without host networking), set both IP and version; the IP alone is not enough. This host must still be able to open a TCP connection to the device (port 6668).",
+    confirm_no_version: "No version is set. The bridge only connects once it knows the version, so it will keep waiting for a broadcast from the device. Save anyway?",
     cat_all: "all", cat_missing: "missing", cat_orphan: "Bridge only", cat_mismatch: "mismatch", cat_synced: "synced", cat_online: "online", cat_offline: "offline",
     cloud_code: "User code (only for a new login)", cloud_fetch: "Fetch", cancel: "Cancel",
     cloud_qr_alt: "QR code to scan with the Smart Life or Tuya Smart app",
@@ -221,6 +223,8 @@ const I18N = {
     close_panel: "패널 닫기",
     menu: "패널 메뉴", edit_device: "기기 수정", edit_hint: "브리지에 등록된 값을 수정합니다. 기기 ID와 유형은 변경할 수 없습니다.",
     manual_add: "수동 등록", manual_hint: "클라우드 없이 등록합니다. IP·버전을 비우면 자동 탐색합니다. ID는 IP 또는 CID와 이름으로 자동 생성할 수 있습니다.",
+    lan_hint: "기기의 LAN 브로드캐스트가 이 호스트에 닿지 않으면(다른 VLAN, 방화벽, host 네트워크가 아닌 컨테이너) IP와 버전을 모두 입력해야 합니다. IP만으로는 연결되지 않습니다. 이 호스트에서 기기로 가는 TCP 연결(포트 6668)은 여전히 가능해야 합니다.",
+    confirm_no_version: "버전이 비어 있습니다. 브리지는 버전을 알아야 연결하므로, 기기의 브로드캐스트를 계속 기다리게 됩니다. 그대로 저장할까요?",
     cat_all: "전체", cat_missing: "없음", cat_orphan: "브릿지 전용", cat_mismatch: "불일치", cat_synced: "일치", cat_online: "온라인", cat_offline: "오프라인",
     cloud_code: "사용자 코드 (새 로그인일 때만)", cloud_fetch: "가져오기", cancel: "취소",
     cloud_qr_alt: "Smart Life 또는 Tuya Smart 앱으로 스캔할 QR 코드",
@@ -701,7 +705,9 @@ class BridgeSection {
       el("option", { value: "WiFi" }, "Wi-Fi"), el("option", { value: "SubDevice" }, "Sub-device"));
     type.value = initial.type || "WiFi";
     type.disabled = !!device;
+    const lanHint = el("p", { class: "muted" }, t("lan_hint"));      // the IP/version fields are Wi-Fi only
     const render = () => {
+      lanHint.hidden = type.value !== "WiFi";
       fields.replaceChildren(...["id", "name", ...(type.value === "WiFi" ? ["ip", "key", "version"] : ["cid", "parent_id"])].map((key) => {
         inputs[key] ||= el("input", { type: "text", autocomplete: "off", placeholder: key, "aria-label": key, title: key,
           value: initial[key] === "Auto" ? "" : initial[key] || "", readonly: !!device && key === "id" });
@@ -718,6 +724,8 @@ class BridgeSection {
       for (const key of ["id", "name", ...(type.value === "WiFi" ? ["ip", "key", "version"] : ["cid", "parent_id"])]) {
         if (inputs[key].value.trim()) body[key] = inputs[key].value.trim();
       }
+      // an IP without a version is not dialled: the bridge waits for a broadcast to learn the version
+      if (type.value === "WiFi" && body.ip && !body.version && !confirm(t("confirm_no_version"))) return;
       submit.disabled = true;
       this.busy = true;
       try {
@@ -733,7 +741,7 @@ class BridgeSection {
         submit.disabled = false;
       }
       await this.load();
-    } }, el("h3", {}, t(device ? "edit_device" : "manual_add")), el("p", { class: "muted" }, t(device ? "edit_hint" : "manual_hint")), type, fields, error,
+    } }, el("h3", {}, t(device ? "edit_device" : "manual_add")), el("p", { class: "muted" }, t(device ? "edit_hint" : "manual_hint")), lanHint, type, fields, error,
     el("div", { class: "foot" }, el("button", { type: "button", onclick: () => this.dialog.close() }, t("cancel")), submit));
     this.dialog.replaceChildren(form);
     this.dialog.showModal();
