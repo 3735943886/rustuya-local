@@ -180,8 +180,9 @@ Then remove rustuya in HACS and restart.
     version `3.4`, then `3.5`, then `3.3`; or let the broadcasts through, which in a container means host networking).
     If `not_located` then turns into `unreachable` or `dial_timeout`, the device is located but Home Assistant cannot
     open a connection to it: a route or firewall rule between the networks is missing.
-  - *connected but has sent no state*: the connection is up but the device's state never arrives; usually a wrong protocol
-    version.
+  - *connected but has sent no state*: the connection is up but the device's state never arrives. Often a wrong protocol
+    version; but some devices only take commands and never report a state of their own (an IR blaster, for one), and
+    for those this is expected.
 - **Commands or values look doubled**: run only one rustuya per bridge. The integration cannot see a standalone daemon or
   rustuya-manager plugin on the same bridge, since it no longer shares IL with them over MQTT.
 - **Debug logs**:
