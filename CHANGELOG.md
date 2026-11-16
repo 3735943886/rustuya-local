@@ -4,6 +4,8 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-11-17
+
 - Log why a device is unavailable, once per reason: a warning naming the device, the bridge's error (with the `reason`
   rustuya-bridge 0.4.6 adds to an unreachable device); a warning when a device is connected but its state never
   arrives; and a warning, once per device, when an event's dps cannot be read. Before, all of these were silent or
