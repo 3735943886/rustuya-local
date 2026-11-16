@@ -242,11 +242,12 @@ def _report_links(runtime: RuntimeData) -> None:
         _LOGGER.info("%d of %d device(s) reporting", n["reporting"], held)
 
 
-def _entry_platforms(hass: HomeAssistant, entry: ConfigEntry) -> list[str]:
+def _entry_platforms(hass: HomeAssistant, entry: ConfigEntry) -> set[str]:
     """The entity platforms set up for the entry: a forward that failed partway set up some of them, and unloading one
-    that was never set up raises."""
-    return [p.domain for p in async_get_platforms(hass, DOMAIN)
-            if p.config_entry is not None and p.config_entry.entry_id == entry.entry_id]
+    that was never set up raises. A set: Home Assistant up to 2026.9 keeps the platform objects of the entry's earlier
+    setups listed, so after a reload each platform is there twice, and unloading one twice raises as well."""
+    return {p.domain for p in async_get_platforms(hass, DOMAIN)
+            if p.config_entry is not None and p.config_entry.entry_id == entry.entry_id}
 
 
 async def _unload_platforms(hass: HomeAssistant, entry: ConfigEntry) -> bool:

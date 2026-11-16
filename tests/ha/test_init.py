@@ -138,6 +138,20 @@ async def test_setup_fails_cleanly_when_the_broker_is_unreachable(hass, tmp_path
     assert not _entry_platforms(hass, entry)
     assert await hass.config_entries.async_unload(entry.entry_id)
 
+def test_a_platform_listed_twice_is_unloaded_once(monkeypatch):
+    """Home Assistant up to 2026.9 keeps the platform objects of an entry's earlier setups listed: after a reload each
+    platform is there twice, and unloading one twice fails the unload."""
+    from types import SimpleNamespace
+
+    import custom_components.rustuya as integration
+
+    entry = SimpleNamespace(entry_id="e")
+    listed = [SimpleNamespace(domain=d, config_entry=entry) for d in ("light", "switch", "light", "switch")]
+    listed.append(SimpleNamespace(domain="sensor", config_entry=None))
+    monkeypatch.setattr(integration, "async_get_platforms", lambda hass, domain: listed)
+    assert sorted(_entry_platforms(None, entry)) == ["light", "switch"]
+
+
 async def test_driving_the_first_device_does_no_blocking_io_in_the_event_loop(hass, broker, tmp_path, socket_enabled,
                                                                                monkeypatch):
     """The host reads rule files and the binding loads its engine: the service preloads them in a worker
