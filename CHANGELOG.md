@@ -4,6 +4,11 @@ Release notes are read by the release workflow before publishing.
 
 ## [Unreleased]
 
+- The rustuya panel is no longer in the sidebar. It is an administrator page at `/rustuya`, opened from *Configure →
+  Open the rustuya panel* (or a bookmark), and the *Add to the sidebar* option and the panel's *Hide panel* are gone;
+  its close button returns to the integration's page. A sidebar entry added before disappears on upgrade. The panel is
+  now registered before the service starts, so its *Settings* stay reachable when the start fails.
+
 ## [0.2.3] — 2026-11-17
 
 - Log why a device is unavailable, once per reason: a warning naming the device, the bridge's error (with the `reason`

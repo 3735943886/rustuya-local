@@ -1,4 +1,5 @@
-"""The advanced panel (panel.py): registered with the `panel` option, and its file API on <config>/rustuya_converters."""
+"""The advanced panel (panel.py): an administrator page out of the sidebar, and its file API on
+<config>/rustuya_converters."""
 
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.rustuya import panel
-from custom_components.rustuya.const import CONF_PACK, CONF_PANEL, DOMAIN
+from custom_components.rustuya.const import CONF_PACK, DOMAIN
 
 
 @dataclass
@@ -87,23 +88,11 @@ async def loaded(hass, tmp_path, monkeypatch):
     return load
 
 
-async def test_the_panel_follows_the_option(hass, loaded):
-    hass.data[frontend.DATA_EXTRA_MODULE_URL] = frontend.UrlManager(lambda *_: None, [])
-    await loaded({CONF_PANEL: False})
-    assert panel.PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {})
-    hass.data[DOMAIN].clear()
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        await hass.config_entries.async_remove(entry.entry_id)
-
-    await loaded({CONF_PANEL: True})
+async def test_the_panel_is_an_admin_page_out_of_the_sidebar(hass, loaded):
+    await loaded({})
     p = hass.data[frontend.DATA_PANELS][panel.PANEL_URL]
-    assert p.require_admin and p.sidebar_title == "rustuya"
-    assert p.sidebar_icon == "rustuya:logo"
-    icons = Path(panel.__file__).parent / "www" / "rustuya-icons.js"
-    icon_hash = hashlib.sha256(icons.read_bytes()).hexdigest()[:10]
-    assert any(url.startswith(f"{panel.STATIC_URL}/rustuya-icons.js?v=") and url.endswith(f"-{icon_hash}")
-               for url in hass.data[frontend.DATA_EXTRA_MODULE_URL].urls)
-    assert p.config_panel_domain is None          # Configure stays the options flow, where the panel is turned off
+    assert p.require_admin and p.sidebar_title is None and p.sidebar_icon is None
+    assert p.config_panel_domain is None          # Configure stays the options flow, which links to the panel
     # the file's hash in the URL: a changed file is never taken from a browser's cache (same release or not)
     js = (Path(panel.__file__).parent / "www" / "rustuya-panel.js").read_bytes()
     assert p.config["_panel_custom"]["module_url"].endswith("-" + hashlib.sha256(js).hexdigest()[:10])
@@ -113,7 +102,7 @@ async def test_the_panel_follows_the_option(hass, loaded):
 
 
 async def test_the_file_api(hass, loaded, hass_client, tmp_path):
-    _, service = await loaded({CONF_PANEL: True, CONF_PACK: True})
+    _, service = await loaded({CONF_PACK: True})
     c = await hass_client()
 
     r = await c.get("/api/rustuya/converters")
@@ -144,28 +133,22 @@ async def test_the_file_api(hass, loaded, hass_client, tmp_path):
     assert (await r.json()) == {"started": True} and service.syncs == [1]
 
 
-async def test_the_api_is_gone_with_the_panel_off(hass, loaded, hass_client):
-    await loaded({CONF_PANEL: False})
+async def test_the_service_api_answers_404_while_rustuya_is_not_running(hass, loaded, hass_client):
+    entry, _ = await loaded({})
+    entry.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    hass.data[DOMAIN].pop(entry.entry_id)
     c = await hass_client()
-    assert (await c.get("/api/rustuya/converters")).status == 404
+    r = await c.get("/api/rustuya/converters")
+    assert r.status == 404 and (await r.json())["message"] == "rustuya is not running"
     assert (await c.post("/api/rustuya/pack")).status == 404
-
-
-async def test_the_panel_turns_itself_off(hass, loaded, hass_client):
-    entry, _ = await loaded({CONF_PANEL: True, CONF_PACK: True})
-    c = await hass_client()
-    r = await c.delete("/api/rustuya/panel")
-    assert r.status == 200 and await r.json() == {"panel": False}
-    assert entry.options == {CONF_PANEL: False, CONF_PACK: True}
-    assert (await c.delete("/api/rustuya/panel")).status == 404        # off now: the API is gone with it
+    assert (await c.get("/api/rustuya/settings")).status == 200      # what fixes a failed start stays available
 
 
 async def test_the_api_is_for_administrators(hass, loaded, hass_client, hass_read_only_access_token):
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     c = await hass_client(hass_read_only_access_token)
     assert (await c.get("/api/rustuya/converters")).status == 403
     assert (await c.put("/api/rustuya/converters/a.py", json={"content": "X = 1"})).status == 403
-    assert (await c.delete("/api/rustuya/panel")).status == 403
 
 
 def _diff():
@@ -184,7 +167,7 @@ async def test_the_bridge_list(hass, loaded, hass_client, monkeypatch):
 
     manager = FakeManager(sync_result=_diff())
     install(monkeypatch, manager)
-    _, service = await loaded({CONF_PANEL: True})
+    _, service = await loaded({})
     c = await hass_client()
     assert (await (await c.get("/api/rustuya/bridge")).json())["online"] == {}      # the service not started yet
     service.hub = FakeHub({"gw": FakeDriver(True), "fan": FakeDriver(False)})
@@ -208,7 +191,7 @@ async def test_bridge_commands(hass, loaded, hass_client, monkeypatch):
 
     manager = FakeManager(sync_result=_diff())
     install(monkeypatch, manager)
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     c = await hass_client()
 
     r = await c.post("/api/rustuya/bridge", json={"add": ["sub1", "lamp", "old"], "update": ["fan"],
@@ -224,7 +207,7 @@ async def test_bridge_commands(hass, loaded, hass_client, monkeypatch):
 async def test_the_bridge_list_when_it_cannot_be_had(hass, loaded, hass_client, monkeypatch):
     from custom_components.rustuya import manager_session
 
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     c = await hass_client()
     monkeypatch.setattr(manager_session, "available", AsyncMock(return_value=False))
     assert (await c.get("/api/rustuya/bridge")).status == 501
@@ -272,7 +255,7 @@ async def test_live_links_while_subscribed(hass, loaded, hass_ws_client, monkeyp
 
     monkeypatch.setattr(rustuya_local.host, "MqttTransport", FakeMqtt)
     await broker.publish("rustuya/error/lamp", json.dumps({"errorCode": 0}), retain=True)
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     ws = await hass_ws_client(hass)
 
     await ws.send_json({"id": 1, "type": "rustuya/subscribe_links"})
@@ -306,7 +289,7 @@ async def test_live_links_refuse_when_off_or_unreachable(hass, loaded, hass_ws_c
             pass
 
     monkeypatch.setattr(rustuya_local.host, "MqttTransport", Down)
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     ws = await hass_ws_client(hass)
     await ws.send_json({"id": 1, "type": "rustuya/subscribe_links"})
     r = await ws.receive_json()
@@ -314,7 +297,7 @@ async def test_live_links_refuse_when_off_or_unreachable(hass, loaded, hass_ws_c
 
 
 async def test_settings_show_what_setup_left_at_its_defaults(hass, loaded, hass_client):
-    entry, _ = await loaded({CONF_PANEL: True})
+    entry, _ = await loaded({})
     hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external"})
     c = await hass_client()
     r = await c.get("/api/rustuya/settings")
@@ -333,7 +316,7 @@ async def test_settings_show_what_setup_left_at_its_defaults(hass, loaded, hass_
     {"bridge_root": " rustuya"}, {"bridge_log_level": "warn"}, {"broker_host": "x"}, ["il"],
 ])
 async def test_settings_refuse_what_cannot_work(hass, loaded, hass_client, monkeypatch, body):
-    entry, _ = await loaded({CONF_PANEL: True})
+    entry, _ = await loaded({})
     hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external"})
     applied = []
     monkeypatch.setattr(panel, "_apply", lambda *a: applied.append(a))
@@ -343,7 +326,7 @@ async def test_settings_refuse_what_cannot_work(hass, loaded, hass_client, monke
 
 
 async def test_a_settings_change_restarts_with_the_new_ones(hass, loaded, hass_client, monkeypatch):
-    entry, _ = await loaded({CONF_PANEL: True})
+    entry, _ = await loaded({})
     hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external"})
     applied = []
 
@@ -364,7 +347,7 @@ async def test_a_settings_change_restarts_with_the_new_ones(hass, loaded, hass_c
 
 
 async def test_a_new_root_for_an_external_bridge_is_checked(hass, loaded, hass_client, monkeypatch):
-    entry, _ = await loaded({CONF_PANEL: True})
+    entry, _ = await loaded({})
     hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "external"})
     applied = []
     monkeypatch.setattr(panel, "_apply", lambda *a: applied.append(a))
@@ -417,7 +400,7 @@ async def test_apply_clears_the_old_topics_between_stop_and_start(hass, monkeypa
 
 
 async def test_the_options_other_than_the_panel_are_in_the_panel(hass, loaded, hass_client, monkeypatch):
-    entry, _ = await loaded({CONF_PANEL: True, CONF_PACK: False})
+    entry, _ = await loaded({CONF_PACK: False})
 
     async def restart(_hass, e, *, data=None, options=None, between=None):      # stored, as the restart would
         _hass.config_entries.async_update_entry(e, options=options)
@@ -430,15 +413,15 @@ async def test_the_options_other_than_the_panel_are_in_the_panel(hass, loaded, h
     assert await r.json() == {"restarting": False}
     r = await c.put("/api/rustuya/options", json={"allow_hazardous": True, "pack": True})
     assert await r.json() == {"restarting": True}
-    assert entry.options == {CONF_PANEL: True, CONF_PACK: True, "allow_hazardous": True}
+    assert entry.options == {CONF_PACK: True, "allow_hazardous": True}
 
 
 @pytest.mark.parametrize("body", [{"panel": False}, {"pack": "yes"}, {"other": True}, [True]])
 async def test_the_options_api_takes_only_those_three(hass, loaded, hass_client, body):
-    entry, _ = await loaded({CONF_PANEL: True})
+    entry, _ = await loaded({})
     c = await hass_client()
     assert (await c.put("/api/rustuya/options", json=body)).status == 400
-    assert entry.options == {CONF_PANEL: True}
+    assert entry.options == {}
 
 
 async def _poll_until(c, states, timeout=5.0):
@@ -458,7 +441,7 @@ async def test_fetching_from_tuya_cloud_in_the_panel(hass, loaded, hass_client, 
 
     import custom_components.rustuya as integration
 
-    entry, _ = await loaded({CONF_PANEL: True})
+    entry, _ = await loaded({})
     handed = []
 
     async def refresh(_hass, e):
@@ -485,7 +468,7 @@ async def test_fetching_from_tuya_cloud_in_the_panel(hass, loaded, hass_client, 
 async def test_the_panel_form_starts_from_the_saved_login_code(hass, loaded, hass_client, tmp_path):
     """The code of the saved login (`tuyacreds.json` beside the device file) comes with the status while no fetch runs,
     read without a manager session."""
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     c = await hass_client()
     (tmp_path / "tuyacreds.json").write_text('{"user_code": "saved1", "token_info": {}}')
     assert await (await c.get("/api/rustuya/cloud")).json() == {"state": "idle", "user_code": "saved1"}
@@ -496,7 +479,7 @@ async def test_the_panel_form_starts_from_the_saved_login_code(hass, loaded, has
 async def test_a_panel_fetch_can_be_cancelled_and_ends_when_nothing_polls(hass, loaded, hass_client, monkeypatch):
     from fake_manager import FakeManager, WizardState, install
 
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     c = await hass_client()
     manager = FakeManager(wizard_script=[WizardState.AWAITING_SCAN])
     install(monkeypatch, manager)
@@ -538,28 +521,23 @@ async def test_restart_stops_stores_and_starts_in_order(hass, monkeypatch):
     assert calls == ["unload", "between", ("setup", {"a": 1}, {"x": 2})]
 
 
-async def test_a_panel_only_change_adds_or_removes_it_without_a_restart(hass, monkeypatch):
+async def test_only_an_options_change_restarts_the_service(hass, monkeypatch):
     import custom_components.rustuya as integration
 
-    entry = MockConfigEntry(domain=DOMAIN, options={CONF_PANEL: False, CONF_PACK: True})
+    entry = MockConfigEntry(domain=DOMAIN, options={CONF_PACK: True}, data={"x": 1})
     entry.add_to_hass(hass)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = integration.RuntimeData(
         service=FakeService(), embedded_bridge=None, options=dict(entry.options))
-    panel_calls, restarts = [], []
-
-    async def panel_setup(_hass, e):
-        panel_calls.append(e.options.get(CONF_PANEL))
-
-    monkeypatch.setattr(panel, "async_setup", panel_setup)
+    restarts = []
 
     async def restart(_hass, e):
         restarts.append(e.entry_id)
 
     monkeypatch.setattr(integration, "async_restart_service", restart)
-    hass.config_entries.async_update_entry(entry, options={CONF_PANEL: True, CONF_PACK: True})
+    hass.config_entries.async_update_entry(entry, data={"x": 2})          # options as they were
     await integration._async_reload(hass, entry)
-    assert panel_calls == [True] and restarts == []
-    hass.config_entries.async_update_entry(entry, options={CONF_PANEL: True, CONF_PACK: False})
+    assert restarts == []
+    hass.config_entries.async_update_entry(entry, options={CONF_PACK: False})
     await integration._async_reload(hass, entry)
     assert restarts == [entry.entry_id]
 
@@ -570,7 +548,7 @@ async def test_a_reload_keeps_the_panel_and_disabling_removes_it(hass, loaded, d
 
     import custom_components.rustuya as integration
 
-    entry, _ = await loaded({CONF_PANEL: True})
+    entry, _ = await loaded({})
     assert panel.PANEL_URL in hass.data[frontend.DATA_PANELS]
     if disabled:
         entry.disabled_by = ConfigEntryDisabler.USER
@@ -581,7 +559,7 @@ async def test_a_reload_keeps_the_panel_and_disabling_removes_it(hass, loaded, d
 async def test_an_options_save_restarts_the_service_alone_and_rolls_back(hass, loaded, monkeypatch):
     import custom_components.rustuya as integration
 
-    entry, _ = await loaded({CONF_PANEL: True, CONF_PACK: True})
+    entry, _ = await loaded({CONF_PACK: True})
     runtime = hass.data[DOMAIN][entry.entry_id]
     seen = []
 
@@ -591,7 +569,7 @@ async def test_an_options_save_restarts_the_service_alone_and_rolls_back(hass, l
     monkeypatch.setattr(integration, "async_restart_service", restart)
     unload = hass.config_entries.async_unload
     monkeypatch.setattr(hass.config_entries, "async_unload", AsyncMock(side_effect=AssertionError("no full restart")))
-    await panel._restart(hass, entry, options={CONF_PANEL: True, CONF_PACK: False})
+    await panel._restart(hass, entry, options={CONF_PACK: False})
     monkeypatch.setattr(hass.config_entries, "async_unload", unload)
     assert seen == [False] and entry.options[CONF_PACK] is False and runtime.options[CONF_PACK] is False
 
@@ -603,7 +581,7 @@ async def test_an_options_save_restarts_the_service_alone_and_rolls_back(hass, l
     monkeypatch.setattr(integration, "async_restart_service", fails_with_the_new)
     seen.clear()
     with pytest.raises(panel.RestartFailed, match="Previous settings restored"):
-        await panel._restart(hass, entry, options={CONF_PANEL: True, CONF_PACK: True})
+        await panel._restart(hass, entry, options={CONF_PACK: True})
     assert seen == [True, False] and entry.options[CONF_PACK] is False and runtime.options[CONF_PACK] is False
 
 
@@ -611,7 +589,7 @@ async def test_an_options_save_restarts_the_service_alone_and_rolls_back(hass, l
 async def test_unload_stops_the_embedded_bridge_even_when_service_stop_fails(hass, loaded, cancelled):
     import custom_components.rustuya as integration
 
-    entry, service = await loaded({CONF_PANEL: True})
+    entry, service = await loaded({})
     runtime = hass.data[DOMAIN][entry.entry_id]
     error = asyncio.CancelledError() if cancelled else RuntimeError("command drain failed")
     service.stop = AsyncMock(side_effect=error)
@@ -634,7 +612,7 @@ async def test_unload_stops_the_embedded_bridge_even_when_service_stop_fails(has
 async def test_unload_platform_failure_keeps_the_runtime_running(hass, loaded, monkeypatch):
     import custom_components.rustuya as integration
 
-    entry, service = await loaded({CONF_PANEL: True})
+    entry, service = await loaded({})
     runtime = hass.data[DOMAIN][entry.entry_id]
     service.stop = AsyncMock()
     monkeypatch.setattr(integration, "_entry_platforms", lambda hass, entry: ["switch"])    # set up, and HA refuses
@@ -653,7 +631,7 @@ async def test_unload_platform_failure_keeps_the_runtime_running(hass, loaded, m
 ])
 async def test_concurrent_partial_saves_keep_both_changes(hass, loaded, hass_client, monkeypatch,
                                                        endpoint, first, second):
-    entry, _ = await loaded({CONF_PANEL: True, CONF_PACK: True})
+    entry, _ = await loaded({CONF_PACK: True})
     hass.config_entries.async_update_entry(entry, data={**entry.data, "bridge_mode": "embedded",
                                                         "bridge_state_file": "/s.json", "bridge_log_level": "warn"})
     client = await hass_client()
@@ -725,7 +703,7 @@ async def test_manual_bridge_registration(hass, loaded, hass_client, monkeypatch
 
     manager = FakeManager(sync_result=_diff())
     install(monkeypatch, manager)
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     client = await hass_client()
     response = await client.put('/api/rustuya/bridge', json=device)
     assert response.status == 200
@@ -737,7 +715,7 @@ async def test_manual_bridge_registration(hass, loaded, hass_client, monkeypatch
                                    {'id': 'x', 'type': 'SubDevice'}, {'id': 'x', 'cid': '1'},
                                    {'id': 'x', 'unknown': 'value'}])
 async def test_invalid_manual_registration(hass, loaded, hass_client, device):
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     client = await hass_client()
     assert (await client.put('/api/rustuya/bridge', json=device)).status == 400
 
@@ -747,7 +725,7 @@ async def test_manual_registration_rejects_existing_device(hass, loaded, hass_cl
 
     manager = FakeManager(sync_result=_diff())
     install(monkeypatch, manager)
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     client = await hass_client()
     assert (await client.put('/api/rustuya/bridge', json={'id': 'old'})).status == 409
     assert manager.commands == []
@@ -759,7 +737,7 @@ async def test_edit_registered_device(hass, loaded, hass_client, monkeypatch, de
 
     manager = FakeManager(sync_result=_diff())
     install(monkeypatch, manager)
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     client = await hass_client()
     response = await client.patch('/api/rustuya/bridge', json={
         'id': device_id, 'name': 'Edited', 'key': 'new-key', 'ip': '192.0.2.2',
@@ -781,14 +759,14 @@ async def test_edit_rejects_invalid_device(hass, loaded, hass_client, monkeypatc
 
     manager = FakeManager(sync_result=_diff())
     install(monkeypatch, manager)
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     client = await hass_client()
     assert (await client.patch('/api/rustuya/bridge', json=body)).status == status
     assert manager.commands == []
 
 
 async def test_failed_restart_restores_previous_settings(hass, monkeypatch):
-    entry = MockConfigEntry(domain=DOMAIN, data={"devices_path": "good.json"}, options={CONF_PANEL: True})
+    entry = MockConfigEntry(domain=DOMAIN, data={"devices_path": "good.json"}, options={})
     entry.add_to_hass(hass)
     monkeypatch.setattr(hass.config_entries, "async_unload", AsyncMock(return_value=True))
     setup = AsyncMock(side_effect=[False, True])
@@ -800,7 +778,7 @@ async def test_failed_restart_restores_previous_settings(hass, monkeypatch):
 
 
 async def test_settings_remain_editable_after_startup_failure(hass, loaded, hass_client, monkeypatch):
-    entry, _ = await loaded({CONF_PANEL: True})
+    entry, _ = await loaded({})
     entry.mock_state(hass, ConfigEntryState.SETUP_ERROR)
     hass.data[DOMAIN].pop(entry.entry_id)
     apply = AsyncMock()
@@ -818,7 +796,7 @@ async def test_registration_waits_for_registry_refresh_before_closing(hass, load
     manager = FakeManager(sync_result=_diff())
     manager.wait_registry_refresh = AsyncMock()
     install(monkeypatch, manager)
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     client = await hass_client()
     response = await client.post("/api/rustuya/bridge", json={"add": ["sub1", "lamp"]})
     assert response.status == 200
@@ -833,7 +811,7 @@ async def test_panel_registry_and_commands_use_the_service_without_opening_manag
 
     from custom_components.rustuya import manager_session
 
-    _, service = await loaded({CONF_PANEL: True})
+    _, service = await loaded({})
     records = {'gw': {'id': 'gw', 'name': 'Gateway'},
                'sub': {'id': 'sub', 'name': 'Button', 'cid': 'c1', 'parent_id': 'gw'}}
     (tmp_path / 'tuyadevices.json').write_text(json.dumps(list(records.values())))
@@ -871,7 +849,7 @@ async def test_cloud_status_polls_extend_the_idle_deadline(hass, loaded, hass_cl
 
     from fake_manager import FakeManager, WizardState, install
 
-    await loaded({CONF_PANEL: True})
+    await loaded({})
     manager = FakeManager(wizard_script=[WizardState.AWAITING_SCAN])
     install(monkeypatch, manager)
     monkeypatch.setattr(panel.CloudFetch, "IDLE_TIMEOUT", 0.3)

@@ -1,4 +1,5 @@
-"""Entry 1.1 -> 1.2: the default files move under `.storage/rustuya/`; a path the user chose stays."""
+"""Entry 1.1 -> 1.2: the default files move under `.storage/rustuya/`; a path the user chose stays.
+Entry 1.2 -> 1.3: the `panel` option is dropped."""
 
 from __future__ import annotations
 
@@ -12,12 +13,14 @@ from custom_components.rustuya.const import (
     CONF_BRIDGE_ROOT,
     CONF_BRIDGE_STATE_FILE,
     CONF_DEVICES_PATH,
+    CONF_PACK,
     DOMAIN,
 )
 
 
-def _entry(hass, devices_path: str, state_file: str) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=1, data={
+def _entry(hass, devices_path: str, state_file: str, minor_version: int = 1,
+           options: dict | None = None) -> MockConfigEntry:
+    entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=minor_version, options=options or {}, data={
         CONF_BRIDGE_MODE: "embedded", "broker_host": "h", "broker_port": 1883, "broker_username": "",
         "broker_password": "", CONF_BRIDGE_ROOT: "rustuya", CONF_DEVICES_PATH: devices_path,
         CONF_BRIDGE_STATE_FILE: state_file})
@@ -49,7 +52,7 @@ async def test_default_files_move(hass, tmp_path):
     await _migrate(hass, entry)
 
     new = storage / "rustuya"
-    assert entry.minor_version == 2
+    assert entry.minor_version == 3
     assert entry.data[CONF_DEVICES_PATH] == str(new / "tuyadevices.json")
     assert entry.data[CONF_BRIDGE_STATE_FILE] == str(new / "bridge_state.json")
     assert (new / "tuyadevices.json").read_text() == "[]"
@@ -76,6 +79,18 @@ async def test_a_chosen_path_stays(hass, tmp_path):
 
     await _migrate(hass, entry)
 
-    assert entry.minor_version == 2
+    assert entry.minor_version == 3
     assert entry.data[CONF_DEVICES_PATH] == str(devices) and entry.data[CONF_BRIDGE_STATE_FILE] == str(state)
     assert devices.is_file()
+
+
+async def test_the_panel_option_is_dropped(hass, tmp_path):
+    _storage(hass, tmp_path)
+    devices, state = tmp_path / "mine.json", tmp_path / "state.json"
+    entry = _entry(hass, str(devices), str(state), minor_version=2, options={"panel": True, CONF_PACK: False})
+
+    await _migrate(hass, entry)
+
+    assert entry.minor_version == 3
+    assert dict(entry.options) == {CONF_PACK: False}
+    assert entry.data[CONF_DEVICES_PATH] == str(devices)             # 1.2's file move does not run again

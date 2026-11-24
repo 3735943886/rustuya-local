@@ -45,7 +45,6 @@ from .const import (
     CONF_IL_PREFIX,
     CONF_IL_SOURCE,
     CONF_PACK,
-    CONF_PANEL,
     CONVERTERS_DIR,
     CREDS_FILE,
     DEFAULT_BRIDGE_LOG_LEVEL,
@@ -79,7 +78,7 @@ SEND_COMMAND_SCHEMA = vol.Schema({
 class RuntimeData:
     service: Any
     embedded_bridge: Any | None
-    options: dict[str, Any] | None = None       # what the service started with (a panel-only change needs no restart)
+    options: dict[str, Any] | None = None       # what the service started with (an unchanged update needs no restart)
     hub: Any = None                             # the ildevice hub creating this entry's entities; outlives the service
     transport: Any = None                       # the in-process IL transport between the service and the hub
     retained: Any = None                        # keeps what the transport retains across Home Assistant restarts
@@ -158,6 +157,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     platforms waited 34 s instead, for this integration's platform modules. `broker` loads both with the integration
     now, and what is left is the service start (6-10 s there).
     """
+    from . import panel
+
+    # first: the panel's Settings must be reachable to fix a start that fails below
+    await panel.async_setup(hass, entry)
     await broker.import_runtime(hass)               # loaded with `broker` already: a lookup
     from ildevice_ha.attach import build_hub
     from ildevice_ha.const import CONF_AUTO_ADD
@@ -208,9 +211,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await embedded_bridge.stop()
         raise
 
-    from . import panel
-
-    await panel.async_setup(hass, entry)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     entry.async_on_unload(async_call_later(hass, LINK_REPORT_DELAY, lambda _now: _report_links(runtime)))
     _LOGGER.info("%d device(s) in the device file; IL follows those registered on %s (bridge: %s%s)", len(devices),
@@ -295,7 +295,10 @@ def _move_file(old: str, new: str) -> None:
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """1.1 -> 1.2: the device file and the embedded bridge's state file move from `.storage/rustuya_*.json` to
     `.storage/rustuya/`, and with the device file the Tuya login rustuya-manager keeps beside it (`tuyacreds.json`,
-    which sat loose in `.storage/`). Only a path still at the old default moves; one the user chose stays where it is."""
+    which sat loose in `.storage/`). Only a path still at the old default moves; one the user chose stays where it is.
+
+    1.2 -> 1.3: the `panel` option, which put the panel in the sidebar, is dropped; the panel is always available at
+    its own address."""
     if entry.version > 1:
         return False                       # a downgrade from a future version: nothing here can read it
     if entry.minor_version < 2:
@@ -310,6 +313,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                                       hass.config.path(STORAGE_DIR, CREDS_FILE))
         hass.config_entries.async_update_entry(entry, data=data, minor_version=2)
         _LOGGER.info("migrated to entry version 1.2 (files under %s)", hass.config.path(STORAGE_DIR))
+    if entry.minor_version < 3:
+        options = {k: v for k, v in entry.options.items() if k != "panel"}
+        hass.config_entries.async_update_entry(entry, options=options, minor_version=3)
     return True
 
 
@@ -329,16 +335,10 @@ async def async_refresh_devices(hass: HomeAssistant, entry: ConfigEntry) -> None
 
 
 async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """An options change restarts the service, except one of the panel alone: that only adds or removes the panel."""
-    from . import panel
-
+    """An options change restarts the service; an update that leaves the options as they are (one of the data) does
+    not."""
     runtime: RuntimeData | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    new = dict(entry.options)
-    if runtime is None:
-        return
-    if runtime.options is not None and _without_panel(new) == _without_panel(runtime.options):
-        runtime.options = new
-        await panel.async_setup(hass, entry)            # adds it, or removes it when the option is off
+    if runtime is None or (runtime.options is not None and dict(entry.options) == runtime.options):
         return
     try:
         await async_restart_service(hass, entry)
@@ -347,15 +347,11 @@ async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
         hass.config_entries.async_schedule_reload(entry.entry_id)
 
 
-def _without_panel(options: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in options.items() if k != CONF_PANEL}
-
-
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from . import panel
 
-    # a restart (a reload) keeps the panel in the sidebar: taking it away closes it for whoever has it open, and the
-    # setup that follows puts it back anyway; only disabling the entry (or deleting it, below) removes it
+    # a restart (a reload) keeps the panel: taking it away closes it for whoever has it open, and the setup that follows
+    # puts it back anyway; only disabling the entry (or deleting it, below) removes it
     if entry.disabled_by is not None:
         panel.async_remove(hass)
     runtime: RuntimeData = hass.data[DOMAIN][entry.entry_id]

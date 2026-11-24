@@ -39,7 +39,6 @@ from .const import (
     CONF_BROKER_PORT,
     CONF_BROKER_USERNAME,
     CONF_DEVICES_PATH,
-    CONF_PANEL,
     DEFAULT_BRIDGE_LOG_LEVEL,
     DEFAULT_BRIDGE_ROOT,
     DEFAULT_BRIDGE_STATE_FILE,
@@ -230,7 +229,8 @@ class _ManagerSteps:
 
 class RustuyaConfigFlow(_ManagerSteps, config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
-    MINOR_VERSION = 2       # 1.2: the default files moved under `.storage/rustuya/` (`async_migrate_entry`)
+    MINOR_VERSION = 3       # 1.2: the default files moved under `.storage/rustuya/`; 1.3: no `panel` option
+                            # (`async_migrate_entry`)
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
@@ -400,27 +400,14 @@ class RustuyaOptionsFlow(_ManagerSteps, config_entries.OptionsFlow):
         self._logged_in = False     # a login wrote a new device file: hand it to the entry however this flow ends
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        # the panel's own Hide panel removes it; here only adding it, or its link once added
-        panel = ["panel_open"] if self.config_entry.options.get(CONF_PANEL) else ["panel_show"]
-        options = [*panel, "cloud_wizard", "bridge_sync"] if await manager_session.available(self.hass) else panel
+        options = ["panel", "cloud_wizard", "bridge_sync"] if await manager_session.available(self.hass) else ["panel"]
         return self.async_show_menu(step_id="init", menu_options=options)
 
-    # ---- the panel: one click, then a link to it (a flow cannot navigate the page itself) --------------------------
-
-    def _panel_link(self, reason: str) -> FlowResult:
+    async def async_step_panel(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """A link to the panel, which is not in the sidebar (a flow cannot navigate the page itself)."""
         from .panel import PANEL_URL
 
-        return self.async_abort(reason=reason, description_placeholders={"url": f"/{PANEL_URL}"})
-
-    async def async_step_panel_show(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Enable the panel; the update listener applies the change without a restart. The other options
-        (hazardous control, unused data points, the pack) are in its Options card."""
-        entry = self.config_entry
-        self.hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_PANEL: True})
-        return self._panel_link("panel_shown")
-
-    async def async_step_panel_open(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        return self._panel_link("panel_open")
+        return self.async_abort(reason="panel", description_placeholders={"url": f"/{PANEL_URL}"})
 
     async def _async_manager(self) -> Any:
         if self._manager is None:

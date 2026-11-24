@@ -1,11 +1,11 @@
-"""The advanced panel: a sidebar page for `<config>/rustuya_converters` and the bridge's device list against the cloud
-list, turned on by the `panel` option.
+"""The advanced panel: a page for `<config>/rustuya_converters` and the bridge's device list against the cloud list.
 
-The panel is registered while the entry is loaded with the option on, and removed on unload (an options change reloads
-the entry, so it follows the option). The API views and the static path cannot be unregistered in Home Assistant, so
-they are registered once and answer 404 whenever no loaded entry has the panel on. The files are the same ones the
-manager plugin tab edits (`rustuya_local.manager_plugin.api`); they change how every device is driven, so every view
-is for administrators only.
+Like rusthinq's backup page, the panel is not in the sidebar: it is an administrator-only page at `/rustuya`, which the
+integration's Configure links to. It is registered as soon as the entry sets up, before the service starts, so that its
+Settings remain available when the start fails, and it is removed only when the entry is disabled or deleted. The API
+views and the static path cannot be unregistered in Home Assistant, so they are registered once; views that need the
+running service answer 404 while it is not running. The files are the same ones the manager plugin tab edits
+(`rustuya_local.manager_plugin.api`); they change how every device is driven, so every view is for administrators only.
 """
 
 from __future__ import annotations
@@ -38,7 +38,6 @@ from .const import (
     CONF_BRIDGE_STATE_FILE,
     CONF_DEVICES_PATH,
     CONF_PACK,
-    CONF_PANEL,
     CONVERTERS_DIR,
     DEFAULT_OPTIONS,
     DOMAIN,
@@ -58,27 +57,18 @@ async def async_setup(hass: HomeAssistant, entry: Any) -> None:
         hass.data[_VIEWS_KEY] = True
         await hass.http.async_register_static_paths(
             [StaticPathConfig(STATIC_URL, str(WWW), False)])
-        for view in (ConvertersView, ConverterView, PackView, BridgeView, PanelView, SettingsView, OptionsView,
-                     CloudView):
+        for view in (ConvertersView, ConverterView, PackView, BridgeView, SettingsView, OptionsView, CloudView):
             hass.http.register_view(view())
         websocket_api.async_register_command(hass, ws_subscribe_links)
-    if not entry.options.get(CONF_PANEL, False):
-        async_remove(hass)
-        return
     if PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
         # the file's own hash, not only the release: a changed file is never served from a browser's cache
         version = (await async_get_integration(hass, DOMAIN)).version
-        # Load independently of the panel so the sidebar logo is available on every HA page.
-        if frontend.DATA_EXTRA_MODULE_URL in hass.data:
-            icon_digest = await hass.async_add_executor_job(_digest, WWW / "rustuya-icons.js")
-            frontend.add_extra_js_url(hass, f"{STATIC_URL}/rustuya-icons.js?v={version}-{icon_digest}")
         digest = await hass.async_add_executor_job(_digest, WWW / "rustuya-panel.js")
+        # no `sidebar_title`: the page stays out of the sidebar. No `config_panel_domain` either: it would make the
+        # integration's Configure open this page instead of the options flow, which holds the cloud login and sync.
         await panel_custom.async_register_panel(
             hass, frontend_url_path=PANEL_URL, webcomponent_name="rustuya-panel",
-            module_url=f"{STATIC_URL}/rustuya-panel.js?v={version}-{digest}",
-            sidebar_title="rustuya", sidebar_icon="rustuya:logo", require_admin=True)
-            # no `config_panel_domain`: it makes the integration's Configure open this panel instead of the options
-            # flow, which is where the panel is turned back off
+            module_url=f"{STATIC_URL}/rustuya-panel.js?v={version}-{digest}", require_admin=True)
 
 
 def _digest(path: Path) -> str:
@@ -93,9 +83,9 @@ def async_remove(hass: HomeAssistant) -> None:
 
 
 def _runtime(hass: HomeAssistant) -> tuple[Any, Any] | None:
-    """(entry, runtime) of the loaded entry with the panel on; None otherwise (the views then answer 404)."""
+    """(entry, runtime) of the loaded entry; None otherwise (the views then answer 404)."""
     for entry in hass.config_entries.async_entries(DOMAIN):
-        if entry.state is ConfigEntryState.LOADED and entry.options.get(CONF_PANEL, False):
+        if entry.state is ConfigEntryState.LOADED:
             runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
             if runtime is not None:
                 return entry, runtime
@@ -121,9 +111,9 @@ def _entry_view(handler: Callable[..., Awaitable[web.Response]]) -> Callable[...
         found = _runtime(request.app["hass"])
         if found is None and self.allow_unloaded:
             found = next(((entry, None) for entry in request.app["hass"].config_entries.async_entries(DOMAIN)
-                          if entry.disabled_by is None and entry.options.get(CONF_PANEL, False)), None)
+                          if entry.disabled_by is None), None)
         if found is None:
-            return self.json_message("the rustuya panel is off", HTTPStatus.NOT_FOUND)
+            return self.json_message("rustuya is not running", HTTPStatus.NOT_FOUND)
         try:
             return await handler(self, request, *found, **match)
         except RestartFailed as e:
@@ -190,22 +180,8 @@ class ConverterView(_View):
         return await self._files(request, delete_converter, name)
 
 
-class PanelView(_View):
-    """DELETE: turn the panel off from the panel itself (the `panel` option; the entry reloads and takes it away).
-    The integration's Configure adds it back."""
-
-    url = "/api/rustuya/panel"
-    name = "api:rustuya:panel"
-
-    @_entry_view
-    async def delete(self, request: web.Request, entry: Any, runtime: Any) -> web.Response:
-        request.app["hass"].config_entries.async_update_entry(entry, options={**entry.options, CONF_PANEL: False})
-        return self.json({"panel": False})
-
-
 class OptionsView(_View):
-    """GET / PUT the entry's options other than the panel (which stays in Configure, to turn the panel back on):
-    remote control of hazardous devices, exposing unused data points, the override pack. A change is an options
+    """GET / PUT the entry's options: remote control of hazardous devices, exposing unused data points, the override pack. A change is an options
     update, which reloads the entry as Configure's did."""
 
     allow_unloaded = True
@@ -674,7 +650,7 @@ async def ws_subscribe_links(hass: HomeAssistant, connection: websocket_api.Acti
 
     found = _runtime(hass)
     if found is None:
-        connection.send_error(msg["id"], "not_found", "the rustuya panel is off")
+        connection.send_error(msg["id"], "not_found", "rustuya is not running")
         return
     data = await broker.resolve(hass, found[0].data)
     transport = broker.transport(data, f"rustuya-panel-{secrets.token_hex(4)}")

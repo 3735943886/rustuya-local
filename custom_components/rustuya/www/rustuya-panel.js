@@ -193,8 +193,7 @@ const I18N = {
     settings_title: "Settings",
     settings_intro: "Set up with their defaults. Saving restarts the integration.",
     settings_unreadable: "Cannot read the settings: {error}", confirm_settings: "Save {names} and restart rustuya?",
-    sync_now: "Update builtin rules", hide_title: "Remove this panel from the sidebar; the integration's Configure adds it back",
-    hide: "Hide panel", pack_title: "Builtin rules",
+    sync_now: "Update builtin rules", pack_title: "Builtin rules",
     pack_intro: "Official rules included with tuya-interpreter. Fetch the latest rules without updating the integration.",
     converters_title: "Custom converters",
     converters_intro: "Rule files (*.json: override blocks and declarative converters) in rustuya_converters/. Saved files apply within seconds. See tuya-interpreter docs/device-customization.md, \"User overrides\". Drop files here to copy them in.",
@@ -203,8 +202,8 @@ const I18N = {
     confirm_replace_pack: "{name} comes from the override pack. Replaced, it is yours: the pack no longer updates or removes it.",
     confirm_replace: "{name} already exists. Replace it?",
     copied: "Copied {names}", not_copied: "Not copied: {names}",
-    confirm_hide_unsaved: "Unsaved changes in {names} will be lost. Remove the rustuya panel from the sidebar anyway?",
-    and: " and ", not_hidden: "Not hidden: {error}", files_unreadable: "Cannot list the files: {error}",
+    confirm_close_unsaved: "Unsaved changes in {names} will be lost. Close the rustuya panel anyway?",
+    and: " and ", files_unreadable: "Cannot list the files: {error}",
     no_files: "No files yet. Built-in fixes apply without any.",
     pack_checking: "Checking for updates…", pack_current: "Builtin rules are up to date.",
     pack_available: "Builtin rule updates are available.", pack_check_error: "Cannot check for updates: {error}",
@@ -264,8 +263,7 @@ const I18N = {
     settings_title: "설정",
     settings_intro: "설정 과정에서 기본값으로 정해진 값들입니다. 저장하면 통합구성요소가 재시작됩니다.",
     settings_unreadable: "설정을 읽을 수 없습니다: {error}", confirm_settings: "{names}을(를) 저장하고 rustuya를 재시작할까요?",
-    sync_now: "Builtin 규칙 업데이트", hide_title: "사이드바에서 이 패널을 없앱니다. 통합구성요소의 구성(Configure)에서 다시 추가할 수 있습니다",
-    hide: "패널 숨기기", pack_title: "Builtin 규칙",
+    sync_now: "Builtin 규칙 업데이트", pack_title: "Builtin 규칙",
     pack_intro: "tuya-interpreter에 포함된 공식 규칙입니다. 통합구성요소 업데이트 없이 최신 규칙을 가져옵니다.",
     converters_title: "커스텀 컨버터",
     converters_intro: "rustuya_converters/ 안의 규칙 파일(*.json: 오버라이드 블록과 선언형 컨버터). 저장한 파일은 몇 초 안에 적용됩니다. tuya-interpreter docs/device-customization.md의 \"User overrides\"를 참고하세요. 여기에 파일을 끌어다 놓으면 복사됩니다.",
@@ -274,8 +272,8 @@ const I18N = {
     confirm_replace_pack: "{name}은(는) 오버라이드 팩의 파일입니다. 바꾸면 내 파일이 되어 팩이 더 이상 갱신하거나 지우지 않습니다.",
     confirm_replace: "{name}이(가) 이미 있습니다. 바꿀까요?",
     copied: "{names} 복사함", not_copied: "복사하지 못함: {names}",
-    confirm_hide_unsaved: "{names}의 저장하지 않은 변경이 사라집니다. 그래도 사이드바에서 rustuya 패널을 없앨까요?",
-    and: ", ", not_hidden: "숨기지 못했습니다: {error}", files_unreadable: "파일 목록을 읽을 수 없습니다: {error}",
+    confirm_close_unsaved: "{names}의 저장하지 않은 변경이 사라집니다. 그래도 rustuya 패널을 닫을까요?",
+    and: ", ", files_unreadable: "파일 목록을 읽을 수 없습니다: {error}",
     no_files: "아직 파일이 없습니다. 기본 수정은 파일 없이도 적용됩니다.",
     pack_checking: "업데이트 확인 중…", pack_current: "최신 Builtin 규칙을 사용 중입니다.",
     pack_available: "Builtin 규칙 업데이트가 있습니다.", pack_check_error: "업데이트 확인 실패: {error}",
@@ -482,7 +480,7 @@ class BridgeSection {
       el("div", { class: "head" }, el("h2", {}, t("bridge_title")),
         el("div", { class: "end" }, menu,
           el("button", { class: "icon-button", title: t("close_panel"), "aria-label": t("close_panel"),
-            onclick: () => panel._hide() }, el("ha-icon", { icon: "mdi:close" })))),
+            onclick: () => panel._close() }, el("ha-icon", { icon: "mdi:close" })))),
       el("div", { class: "muted" }, t("bridge_intro")),
       this.chips, this.status, this.list, this.dialog, this.cloud.root);
   }
@@ -1070,17 +1068,11 @@ class RustuyaPanel extends HTMLElement {
     if (text) this._toast(text);
   }
 
-  async _hide() {
+  _close() {
     const unsaved = [["options_title", this._options], ["settings_title", this._settings]].filter(([, x]) => x.dirty())
       .map(([key]) => t(key));
-    // asked only when something would be lost; otherwise it just goes (Configure adds it back)
-    if (unsaved.length && !confirm(t("confirm_hide_unsaved", { names: unsaved.join(t("and")) }))) return;
-    try {
-      await this._api("DELETE", "panel");
-    } catch (e) {
-      this._toast(t("not_hidden", { error: message(e) }));
-      return;
-    }
+    // asked only when something would be lost; otherwise it just goes (Configure links back to it)
+    if (unsaved.length && !confirm(t("confirm_close_unsaved", { names: unsaved.join(t("and")) }))) return;
     // Home Assistant's own navigation (the frontend listens for location-changed), to the integration's page
     history.replaceState(null, "", "/config/integrations/integration/rustuya");
     window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: true } }));

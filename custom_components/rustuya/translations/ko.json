@@ -98,8 +98,7 @@
     "step": {
       "init": {
         "menu_options": {
-          "panel_show": "사이드바에 rustuya 패널 추가",
-          "panel_open": "rustuya 패널 열기",
+          "panel": "rustuya 패널 열기",
           "cloud_wizard": "Tuya Cloud에서 기기 가져오기",
           "bridge_sync": "브리지와 기기 동기화"
         }
@@ -139,8 +138,7 @@
       "wizard_failed": "Tuya Cloud에서 가져오지 못했습니다: {error}",
       "no_devices": "클라우드 목록에도 브리지에도 기기가 없습니다.",
       "manager_busy": "다른 Tuya Cloud 가져오기 또는 기기 동기화 창이 아직 열려 있습니다. 그 창을 닫고 다시 시도하세요.",
-      "panel_shown": "사이드바에 rustuya 패널이 추가되었습니다: [열기]({url}). 패널의 Options에서 잠금장치·경보·차고문 원격 제어, 분류되지 않는 데이터 포인트, Builtin 규칙 자동 업데이트를 설정합니다.",
-      "panel_open": "[rustuya 패널 열기]({url})"
+      "panel": "[rustuya 패널 열기]({url}). 브리지의 기기, 변환 규칙 파일, 옵션(잠금장치·경보·차고문 원격 제어, 분류되지 않는 데이터 포인트, Builtin 규칙 자동 업데이트), 설정이 있습니다. 관리자만 열 수 있으며 사이드바에는 없으므로, 바로 열려면 즐겨찾기에 추가하세요."
     },
     "error": {
       "publish_failed": "브리지에 명령을 보내지 못했습니다.",

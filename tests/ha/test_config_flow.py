@@ -20,7 +20,6 @@ from custom_components.rustuya.const import (
     CONF_DEVICES_PATH,
     CONF_EXPOSE_UNUSED,
     CONF_PACK,
-    CONF_PANEL,
     DOMAIN,
 )
 
@@ -341,36 +340,15 @@ def _entry(hass, tmp_path):
     return entry
 
 
-async def test_the_panel_is_one_click_from_configure(hass, tmp_path, monkeypatch):
-    """Add turns it on (keeping the other options) and links to it; then Open links (Hide is in the panel itself)."""
-    from unittest.mock import AsyncMock
-
-    from homeassistant.config_entries import ConfigEntryState
-
-    import custom_components.rustuya as integration
-    from custom_components.rustuya import panel
-
+async def test_configure_links_to_the_panel(hass, tmp_path):
+    """The panel is not in the sidebar: Configure links to it, and changes nothing."""
     entry = _entry(hass, tmp_path)
-    hass.config_entries.async_update_entry(entry, options={CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True,
-                                                           CONF_PACK: False})
-    entry.mock_state(hass, ConfigEntryState.LOADED)
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = integration.RuntimeData(
-        service=None, embedded_bridge=None, options=dict(entry.options))
-    entry.async_on_unload(entry.add_update_listener(integration._async_reload))
-    setup_panel = AsyncMock()
-    monkeypatch.setattr(panel, "async_setup", setup_panel)
+    options = dict(entry.options)
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["menu_options"][0] == "panel_show"
-    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "panel_show"})
-    assert r["type"] == "abort" and r["reason"] == "panel_shown" and r["description_placeholders"] == {"url": "/rustuya"}
-    assert entry.options == {CONF_ALLOW_HAZARDOUS: True, CONF_EXPOSE_UNUSED: True, CONF_PACK: False, CONF_PANEL: True}
-    await hass.async_block_till_done()
-    setup_panel.assert_awaited_once_with(hass, entry)
-
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["menu_options"][0] == "panel_open" and "panel_hide" not in result["menu_options"]
-    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "panel_open"})
-    assert r["reason"] == "panel_open" and entry.options[CONF_PANEL] is True
+    assert result["menu_options"][0] == "panel"
+    r = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "panel"})
+    assert r["type"] == "abort" and r["reason"] == "panel" and r["description_placeholders"] == {"url": "/rustuya"}
+    assert dict(entry.options) == options
 
 
 async def test_a_session_still_open_elsewhere_aborts_with_a_hint(hass, tmp_path, monkeypatch):
@@ -393,7 +371,7 @@ async def test_options_menu_hides_manager_steps_when_manager_is_unavailable(hass
     monkeypatch.setattr(manager_session, "available", AsyncMock(return_value=False))
     entry = _entry(hass, tmp_path)
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["menu_options"] == ["panel_show"]
+    assert result["menu_options"] == ["panel"]
 
 
 async def _open_sync(hass, tmp_path, monkeypatch, diff):

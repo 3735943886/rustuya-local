@@ -57,7 +57,8 @@ Home Assistant restart the devices show their last values, unavailable, until th
 
 ## The rustuya panel
 
-*Configure → Add the rustuya panel to the sidebar* adds an administrator panel. It shows:
+*Configure → Open the rustuya panel* links to an administrator page at `/rustuya` (for example
+`http://homeassistant.local:8123/rustuya`). It is not in the sidebar, so bookmark it to open it directly. It shows:
 
 - **Devices**: the Tuya Cloud list compared with what the bridge holds. You can filter by *missing*, *bridge only*,
   *mismatch*, *online* and *offline*, see sub-devices under their gateway, add, update or remove devices, edit a
@@ -75,7 +76,8 @@ Home Assistant restart the devices show their last values, unavailable, until th
 
   Saving restarts the integration.
 
-*Hide panel* in its toolbar removes it from the sidebar again. The integration and the panel are available in English and Korean.
+The panel is available even when the integration fails to start, so its *Settings* can fix the cause. The integration
+and the panel are available in English and Korean.
 
 ## Cover settings
 
